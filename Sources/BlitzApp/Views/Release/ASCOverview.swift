@@ -152,7 +152,7 @@ struct ASCOverview: View {
                                         }
                                     }
                                 } else if let url = field.actionUrl, let nsUrl = URL(string: url) {
-                                    Button("Open in ASC") {
+                                    Button("Open in Web") {
                                         NSWorkspace.shared.open(nsUrl)
                                     }
                                     .buttonStyle(.bordered)

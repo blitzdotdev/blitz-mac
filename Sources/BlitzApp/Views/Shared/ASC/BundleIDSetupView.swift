@@ -21,8 +21,9 @@ struct BundleIDSetupView: View {
     @State private var error: String?
     @State private var createdBundleId = ""
     @State private var capabilitiesEnabled = 0
+    @State private var showAdditional = false
 
-    // Ordered by commonality — most-used capabilities first
+    // Capabilities supported by the ASC API (can be enabled automatically)
     private static let capabilities: [(type: String, name: String)] = [
         ("PUSH_NOTIFICATIONS", "Push Notifications"),
         ("IN_APP_PURCHASE", "In-App Purchase"),
@@ -52,6 +53,37 @@ struct BundleIDSetupView: View {
         ("COREMEDIA_HLS_LOW_LATENCY", "HLS Low Latency"),
         ("SYSTEM_EXTENSION_INSTALL", "System Extension"),
         ("USER_MANAGEMENT", "User Management"),
+    ]
+
+    // Additional capabilities only configurable through the Apple Developer portal
+    private static let portalOnlyCapabilities: [String] = [
+        "5G Network Slicing",
+        "App Attest",
+        "Background Modes",
+        "Communication Notifications",
+        "Extended Virtual Addressing",
+        "Family Controls",
+        "Fonts",
+        "Group Activities",
+        "Head Pose",
+        "HealthKit Estimate Recalibration",
+        "HLS Interstitial Previews",
+        "Increased Debugging Memory Limit",
+        "Journaling Suggestions",
+        "Keychain Sharing",
+        "Matter Allow Setup Payload",
+        "MDM Managed Associated Domains",
+        "Media Device Discovery",
+        "Messages Collaboration",
+        "On Demand Install Capable",
+        "Push to Talk",
+        "Sensitive Content Analysis",
+        "Shared with You",
+        "SIM Inserted for Wireless Carriers",
+        "Spatial Audio Profile",
+        "Sustained Execution",
+        "Time Sensitive Notifications",
+        "WeatherKit",
     ]
 
     private func sanitize(_ input: String) -> String {
@@ -166,6 +198,51 @@ struct BundleIDSetupView: View {
                 }
             }
             .padding(.top, 4)
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { showAdditional.toggle() }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: showAdditional ? "chevron.down" : "chevron.right")
+                        .font(.caption2)
+                    Text("Additional Capabilities (\(Self.portalOnlyCapabilities.count))")
+                        .font(.caption)
+                }
+                .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 4)
+
+            if showAdditional {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "info.circle")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Text("These must be enabled manually in the ")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        + Text("[Developer portal](https://developer.apple.com/account/resources/identifiers/list)")
+                            .font(.caption)
+                    }
+
+                    LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], spacing: 6) {
+                        ForEach(Self.portalOnlyCapabilities, id: \.self) { name in
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.square")
+                                    .font(.callout)
+                                    .foregroundStyle(.quaternary)
+                                Text(name)
+                                    .font(.callout)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                }
+                .padding(10)
+                .background(.background.secondary)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
         }
 
         if let error {

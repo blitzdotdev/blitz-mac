@@ -6,7 +6,7 @@ struct ReviewView: View {
     private var asc: ASCManager { appState.ascManager }
 
     @State private var ageRatingExpanded = false
-    @State private var contactExpanded = false
+    @State private var contactExpanded = true
     @State private var isSavingAgeRating = false
     @State private var isSavingContact = false
 
@@ -98,26 +98,38 @@ struct ReviewView: View {
                 }
 
                 // Age Rating
-                DisclosureGroup(isExpanded: $ageRatingExpanded) {
-                    ageRatingForm
-                } label: {
-                    HStack {
-                        Text("Age Rating")
-                            .font(.headline)
-                        Spacer()
-                        if asc.ageRatingDeclaration != nil {
-                            Text("Configured")
-                                .font(.caption)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(Color.green.opacity(0.15))
-                                .foregroundStyle(.green)
-                                .clipShape(Capsule())
-                        } else {
-                            Text("Not set")
-                                .font(.caption)
-                                .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 0) {
+                    Button {
+                        withAnimation { ageRatingExpanded.toggle() }
+                    } label: {
+                        HStack {
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .rotationEffect(.degrees(ageRatingExpanded ? 90 : 0))
+                                .animation(.easeInOut(duration: 0.15), value: ageRatingExpanded)
+                            Text("Age Rating")
+                                .font(.headline)
+                            Spacer()
+                            if asc.ageRatingDeclaration != nil {
+                                Text("Configured")
+                                    .font(.caption)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Color.green.opacity(0.15))
+                                    .foregroundStyle(.green)
+                                    .clipShape(Capsule())
+                            } else {
+                                Text("Not set")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
                         }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    if ageRatingExpanded {
+                        ageRatingForm
                     }
                 }
                 .padding(16)

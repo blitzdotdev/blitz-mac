@@ -359,6 +359,16 @@ private struct InAppPurchasesSection: View {
         } message: {
             Text("This will permanently delete \"\(deleteTarget?.attributes.name ?? "")\".")
         }
+        .onChange(of: asc.pendingCreateValues) { _, pending in
+            guard let pending, pending["kind"] == "iap" else { return }
+            showCreateForm = true
+            if let v = pending["type"] { iapType = v }
+            if let v = pending["name"] { iapRefName = v }
+            if let v = pending["productId"] { iapProductId = v }
+            if let v = pending["displayName"] { iapDisplayName = v }
+            if let v = pending["description"] { iapDescription = v }
+            asc.pendingCreateValues = nil
+        }
     }
 
     private func resetForm() {
@@ -544,6 +554,7 @@ private struct SubscriptionsSection: View {
     @State private var subScreenshotPath = ""
     @State private var showValidation = false
     @State private var deleteTarget: ASCSubscription?
+    @State private var deleteGroupTarget: ASCSubscriptionGroup?
 
     private let durations = ["ONE_WEEK", "ONE_MONTH", "TWO_MONTHS", "THREE_MONTHS", "SIX_MONTHS", "ONE_YEAR"]
 
@@ -583,7 +594,8 @@ private struct SubscriptionsSection: View {
                     SubscriptionGroupRow(
                         group: group, asc: asc,
                         expandedId: $expandedId,
-                        deleteTarget: $deleteTarget
+                        deleteTarget: $deleteTarget,
+                        onDeleteGroup: { deleteGroupTarget = group }
                     )
                 }
             }
@@ -669,6 +681,27 @@ private struct SubscriptionsSection: View {
         } message: {
             Text("This will permanently delete \"\(deleteTarget?.attributes.name ?? "")\".")
         }
+        .alert("Delete Subscription Group?", isPresented: .init(
+            get: { deleteGroupTarget != nil }, set: { if !$0 { deleteGroupTarget = nil } }
+        )) {
+            Button("Delete", role: .destructive) {
+                if let g = deleteGroupTarget { Task { await asc.deleteSubscriptionGroup(id: g.id) } }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will permanently delete the group \"\(deleteGroupTarget?.attributes.referenceName ?? "")\".")
+        }
+        .onChange(of: asc.pendingCreateValues) { _, pending in
+            guard let pending, pending["kind"] == "subscription" else { return }
+            showCreateForm = true
+            if let v = pending["groupName"] { subGroupName = v; newGroupName = v }
+            if let v = pending["name"] { subRefName = v }
+            if let v = pending["productId"] { subProductId = v }
+            if let v = pending["displayName"] { subDisplayName = v }
+            if let v = pending["description"] { subDescription = v }
+            if let v = pending["duration"] { subDuration = v }
+            asc.pendingCreateValues = nil
+        }
     }
 
     private func resetForm() {
@@ -689,6 +722,7 @@ private struct SubscriptionGroupRow: View {
     var asc: ASCManager
     @Binding var expandedId: String?
     @Binding var deleteTarget: ASCSubscription?
+    let onDeleteGroup: () -> Void
     @State private var editGroupName: String = ""
     @State private var isSavingGroup = false
 
@@ -699,6 +733,12 @@ private struct SubscriptionGroupRow: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
+                let subs = asc.subscriptionsPerGroup[group.id] ?? []
+                if subs.isEmpty {
+                    Button(role: .destructive, action: onDeleteGroup) {
+                        Image(systemName: "trash").font(.caption)
+                    }.buttonStyle(.borderless)
+                }
             }
 
             // Group localization edit
@@ -896,10 +936,16 @@ private struct RefreshButton: View {
 private struct SubmitForReviewButton: View {
     let itemName: String
     let asc: ASCManager
-    let onSubmit: () async -> Void
+    let onSubmit: () async -> Bool
 
     @State private var showConfirm = false
     @State private var isSubmitting = false
+    @State private var showFirstTimeAlert = false
+
+    private var ascVersionURL: URL? {
+        guard let appId = asc.app?.id else { return nil }
+        return URL(string: "https://appstoreconnect.apple.com/apps/\(appId)/appstore")
+    }
 
     var body: some View {
         Button("Submit for Review") {
@@ -913,13 +959,27 @@ private struct SubmitForReviewButton: View {
             Button("Submit") {
                 isSubmitting = true
                 Task {
-                    await onSubmit()
+                    let success = await onSubmit()
                     isSubmitting = false
+                    if !success, let err = asc.writeError, err.hasPrefix("FIRST_SUBMISSION:") {
+                        asc.writeError = nil
+                        showFirstTimeAlert = true
+                    }
                 }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Submit \"\(itemName)\" for App Review? This cannot be undone.")
+        }
+        .alert("First-Time Submission", isPresented: $showFirstTimeAlert) {
+            if let url = ascVersionURL {
+                Button("Open App Store Connect") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Apple requires the first IAP/Subscription to be submitted with an app version via the App Store Connect website.\n\nIn App Store Connect website: go to your app version, scroll to \"In-App Purchases and Subscriptions\", click \"Select In-App Purchases or Subscriptions\", check the items to include, then submit the version for review.\n\nAfter the first approval, future submissions can be done directly from Blitz.")
         }
         .overlay {
             if isSubmitting {

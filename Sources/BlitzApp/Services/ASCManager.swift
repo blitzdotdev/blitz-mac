@@ -48,6 +48,7 @@ final class ASCManager {
     var reviewDetail: ASCReviewDetail?
     var pendingFormValues: [String: [String: String]] = [:]  // tab → field → value (for MCP pre-fill)
     var pendingFormVersion: Int = 0  // Incremented when pendingFormValues changes; views watch this
+    var pendingCreateValues: [String: String]?  // Pre-fill values for IAP/subscription create forms (from MCP)
     var showSubmitPreview = false
     var isSubmitting = false
     var submissionError: String?
@@ -315,18 +316,18 @@ final class ASCManager {
         case .ascOverview:
             let versions = try await service.fetchAppStoreVersions(appId: appId)
             appStoreVersions = versions
+            appInfo = try? await service.fetchAppInfo(appId: appId)
             // Fetch all data needed for submission readiness
             if let latestId = versions.first?.id {
                 localizations = try await service.fetchLocalizations(versionId: latestId)
-                ageRatingDeclaration = try? await service.fetchAgeRating(versionId: latestId)
                 reviewDetail = try? await service.fetchReviewDetail(versionId: latestId)
                 let locs = localizations
                 if let firstLocId = locs.first?.id {
                     screenshotSets = try await service.fetchScreenshotSets(localizationId: firstLocId)
                 }
             }
-            appInfo = try? await service.fetchAppInfo(appId: appId)
             if let infoId = appInfo?.id {
+                ageRatingDeclaration = try? await service.fetchAgeRating(appInfoId: infoId)
                 appInfoLocalization = try? await service.fetchAppInfoLocalization(appInfoId: infoId)
             }
             builds = try await service.fetchBuilds(appId: appId)
@@ -374,8 +375,11 @@ final class ASCManager {
             let versions = try await service.fetchAppStoreVersions(appId: appId)
             appStoreVersions = versions
             if let latestId = versions.first?.id {
-                ageRatingDeclaration = try? await service.fetchAgeRating(versionId: latestId)
                 reviewDetail = try? await service.fetchReviewDetail(versionId: latestId)
+            }
+            appInfo = try? await service.fetchAppInfo(appId: appId)
+            if let infoId = appInfo?.id {
+                ageRatingDeclaration = try? await service.fetchAgeRating(appInfoId: infoId)
             }
             builds = try await service.fetchBuilds(appId: appId)
 
@@ -498,8 +502,8 @@ final class ASCManager {
         writeError = nil
         do {
             try await service.patchAgeRating(id: id, attributes: attributes)
-            if let latestId = appStoreVersions.first?.id {
-                ageRatingDeclaration = try? await service.fetchAgeRating(versionId: latestId)
+            if let infoId = appInfo?.id {
+                ageRatingDeclaration = try? await service.fetchAgeRating(appInfoId: infoId)
             }
         } catch {
             writeError = error.localizedDescription
@@ -592,10 +596,9 @@ final class ASCManager {
                     try await service.uploadIAPReviewScreenshot(iapId: iap.id, path: path)
                 }
 
-                createProgressMessage = "Finalizing…"
+                createProgressMessage = "Waiting for status update…"
                 createProgress = 0.9
-                try await Task.sleep(for: .seconds(2))
-                inAppPurchases = try await service.fetchInAppPurchases(appId: appId)
+                try await pollRefreshIAPs(service: service, appId: appId)
                 createProgress = 1.0
             } catch {
                 writeError = error.localizedDescription
@@ -721,13 +724,9 @@ final class ASCManager {
                     try await service.uploadSubscriptionReviewScreenshot(subscriptionId: sub.id, path: path)
                 }
 
-                createProgressMessage = "Finalizing…"
-                createProgress = 0.93
-                try await Task.sleep(for: .seconds(2))
-                subscriptionGroups = try await service.fetchSubscriptionGroups(appId: appId)
-                for g in subscriptionGroups {
-                    subscriptionsPerGroup[g.id] = try await service.fetchSubscriptionsInGroup(groupId: g.id)
-                }
+                createProgressMessage = "Waiting for status update…"
+                createProgress = 0.9
+                try await pollRefreshSubscriptions(service: service, appId: appId)
                 createProgress = 1.0
             } catch {
                 writeError = error.localizedDescription
@@ -807,23 +806,70 @@ final class ASCManager {
         }
     }
 
-    // MARK: - Review Submissions
-
-    func submitIAPForReview(id: String) async {
+    func deleteSubscriptionGroup(id: String) async {
         guard let service else { return }
         guard let appId = app?.id else { return }
         writeError = nil
         do {
-            try await service.submitIAPForReview(iapId: id)
-            inAppPurchases = try await service.fetchInAppPurchases(appId: appId)
+            try await service.deleteSubscriptionGroup(groupId: id)
+            subscriptionGroups = try await service.fetchSubscriptionGroups(appId: appId)
+            subscriptionsPerGroup.removeValue(forKey: id)
         } catch {
             writeError = error.localizedDescription
         }
     }
 
-    func submitSubscriptionForReview(id: String) async {
-        guard let service else { return }
-        guard let appId = app?.id else { return }
+    // MARK: - Post-Create Polling
+
+    private func pollRefreshIAPs(service: AppStoreConnectService, appId: String) async throws {
+        for _ in 0..<5 {
+            try await Task.sleep(for: .seconds(1))
+            inAppPurchases = try await service.fetchInAppPurchases(appId: appId)
+            let allResolved = inAppPurchases.allSatisfy { $0.attributes.state != "MISSING_METADATA" }
+            if allResolved { return }
+        }
+    }
+
+    private func pollRefreshSubscriptions(service: AppStoreConnectService, appId: String) async throws {
+        for _ in 0..<5 {
+            try await Task.sleep(for: .seconds(1))
+            subscriptionGroups = try await service.fetchSubscriptionGroups(appId: appId)
+            for g in subscriptionGroups {
+                subscriptionsPerGroup[g.id] = try await service.fetchSubscriptionsInGroup(groupId: g.id)
+            }
+            let allResolved = subscriptionsPerGroup.values.joined().allSatisfy { $0.attributes.state != "MISSING_METADATA" }
+            if allResolved { return }
+        }
+    }
+
+    // MARK: - Review Submissions
+
+    /// Returns true on success, false on failure (writeError set).
+    /// Sets writeError to a message starting with "FIRST_SUBMISSION:" if the first-time restriction applies.
+    func submitIAPForReview(id: String) async -> Bool {
+        guard let service else { return false }
+        guard let appId = app?.id else { return false }
+        writeError = nil
+        do {
+            try await service.submitIAPForReview(iapId: id)
+            inAppPurchases = try await service.fetchInAppPurchases(appId: appId)
+            return true
+        } catch {
+            let msg = error.localizedDescription
+            if msg.contains("FIRST_IAP") || msg.contains("first In-App Purchase") || msg.contains("first in-app purchase") {
+                writeError = "FIRST_SUBMISSION:" + msg
+            } else {
+                writeError = msg
+            }
+            return false
+        }
+    }
+
+    /// Returns true on success, false on failure (writeError set).
+    /// Sets writeError to a message starting with "FIRST_SUBMISSION:" if the first-time restriction applies.
+    func submitSubscriptionForReview(id: String) async -> Bool {
+        guard let service else { return false }
+        guard let appId = app?.id else { return false }
         writeError = nil
         do {
             try await service.submitSubscriptionForReview(subscriptionId: id)
@@ -831,8 +877,15 @@ final class ASCManager {
             for g in subscriptionGroups {
                 subscriptionsPerGroup[g.id] = try await service.fetchSubscriptionsInGroup(groupId: g.id)
             }
+            return true
         } catch {
-            writeError = error.localizedDescription
+            let msg = error.localizedDescription
+            if msg.contains("FIRST_SUBSCRIPTION") || msg.contains("first subscription") {
+                writeError = "FIRST_SUBMISSION:" + msg
+            } else {
+                writeError = msg
+            }
+            return false
         }
     }
 

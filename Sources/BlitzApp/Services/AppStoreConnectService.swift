@@ -12,8 +12,39 @@ enum ASCError: LocalizedError {
         switch self {
         case .invalidURL: return "Invalid URL"
         case .notFound(let what): return "\(what) not found"
-        case .httpError(let code, let body): return "HTTP \(code): \(body.prefix(300))"
+        case .httpError(let code, let body): return "HTTP \(code): \(Self.parseErrorMessages(body))"
         }
+    }
+
+    /// Extract human-readable error messages from ASC JSON error responses.
+    private static func parseErrorMessages(_ body: String) -> String {
+        guard let data = body.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let errors = json["errors"] as? [[String: Any]] else {
+            return String(body.prefix(300))
+        }
+        var messages: [String] = []
+        for error in errors {
+            if let detail = error["detail"] as? String {
+                messages.append(detail)
+            } else if let title = error["title"] as? String {
+                messages.append(title)
+            }
+            // Parse associatedErrors for richer context
+            if let meta = error["meta"] as? [String: Any],
+               let assoc = meta["associatedErrors"] as? [String: [[String: Any]]] {
+                for (_, subErrors) in assoc {
+                    for sub in subErrors {
+                        if let detail = sub["detail"] as? String {
+                            messages.append(detail)
+                        } else if let title = sub["title"] as? String {
+                            messages.append(title)
+                        }
+                    }
+                }
+            }
+        }
+        return messages.isEmpty ? String(body.prefix(300)) : messages.joined(separator: "\n")
     }
 }
 
@@ -803,14 +834,21 @@ final class AppStoreConnectService {
         let equalizations = try await fetchSubscriptionPriceEqualizations(pricePointId: pricePointId)
         let total = equalizations.count
 
-        // Create a price entry for each territory with rate-limit handling
-        for (index, eq) in equalizations.enumerated() {
-            // Throttle: pause briefly every 40 requests to avoid 429/500
-            if index > 0 && index % 40 == 0 {
-                try await Task.sleep(for: .seconds(2))
+        // Set prices for all territories in parallel (10 concurrent)
+        let counter = ProgressCounter()
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            let maxConcurrent = 10
+            for (index, eq) in equalizations.enumerated() {
+                if index >= maxConcurrent {
+                    try await group.next()
+                }
+                group.addTask {
+                    try await self.postSubscriptionPriceWithRetry(subscriptionId: subscriptionId, pricePointId: eq.id)
+                    let done = await counter.increment()
+                    onProgress?(done, total)
+                }
             }
-            try await postSubscriptionPriceWithRetry(subscriptionId: subscriptionId, pricePointId: eq.id)
-            onProgress?(index + 1, total)
+            try await group.waitForAll()
         }
     }
 
@@ -1191,9 +1229,9 @@ final class AppStoreConnectService {
 
     // MARK: - Fetch: AgeRating
 
-    func fetchAgeRating(versionId: String) async throws -> ASCAgeRatingDeclaration {
+    func fetchAgeRating(appInfoId: String) async throws -> ASCAgeRatingDeclaration {
         let resp = try await get(
-            "appStoreVersions/\(versionId)/ageRatingDeclaration",
+            "appInfos/\(appInfoId)/ageRatingDeclaration",
             as: ASCSingleResponse<ASCAgeRatingDeclaration>.self
         )
         return resp.data
@@ -1421,6 +1459,14 @@ struct ASCScreenshotReservation: Decodable, Identifiable {
             let name: String
             let value: String
         }
+    }
+}
+
+private actor ProgressCounter {
+    private var count = 0
+    func increment() -> Int {
+        count += 1
+        return count
     }
 }
 

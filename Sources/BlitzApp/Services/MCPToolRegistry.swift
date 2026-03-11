@@ -216,21 +216,22 @@ enum MCPToolRegistry {
         // -- ASC IAP / Subscriptions / Pricing --
         tools.append(tool(
             name: "asc_create_iap",
-            description: "Create an in-app purchase in App Store Connect. Creates the IAP, adds en-US localization, and sets the price.",
+            description: "Create an in-app purchase in App Store Connect. Creates the IAP, adds en-US localization, sets the price, and uploads a review screenshot. You MUST provide a screenshot — take one of the IAP content in the app simulator first (e.g. the purchase UI or content being unlocked), save to /tmp, then pass the path.",
             properties: [
                 "productId": ["type": "string", "description": "Unique product identifier (e.g. com.app.coins100)"],
                 "name": ["type": "string", "description": "Internal reference name"],
                 "type": ["type": "string", "description": "IAP type", "enum": ["CONSUMABLE", "NON_CONSUMABLE", "NON_RENEWING_SUBSCRIPTION"]],
                 "displayName": ["type": "string", "description": "User-facing display name (en-US localization)"],
                 "price": ["type": "string", "description": "Price in USD (e.g. \"0.99\", \"4.99\")"],
-                "description": ["type": "string", "description": "User-facing description (optional)"]
+                "description": ["type": "string", "description": "User-facing description (optional)"],
+                "screenshotPath": ["type": "string", "description": "Path to review screenshot (min 640x920px PNG/JPEG). Use blitz-iphone to take a screenshot of the IAP content in the simulator."]
             ],
-            required: ["productId", "name", "type", "displayName", "price"]
+            required: ["productId", "name", "type", "displayName", "price", "screenshotPath"]
         ))
 
         tools.append(tool(
             name: "asc_create_subscription",
-            description: "Create an auto-renewable subscription in App Store Connect. Creates or reuses a subscription group, adds the subscription with en-US localization, and sets the price.",
+            description: "Create an auto-renewable subscription in App Store Connect. Creates or reuses a subscription group, adds the subscription with en-US localization, sets the price, and uploads a review screenshot. You MUST provide a screenshot — take one of the subscription content in the app simulator first (e.g. the paywall or premium features screen), save to /tmp, then pass the path.",
             properties: [
                 "groupName": ["type": "string", "description": "Subscription group name (created if doesn't exist)"],
                 "productId": ["type": "string", "description": "Unique product identifier"],
@@ -240,9 +241,10 @@ enum MCPToolRegistry {
                     "ONE_WEEK", "ONE_MONTH", "TWO_MONTHS", "THREE_MONTHS", "SIX_MONTHS", "ONE_YEAR"
                 ]],
                 "price": ["type": "string", "description": "Price in USD (e.g. \"4.99\")"],
-                "description": ["type": "string", "description": "User-facing description (optional)"]
+                "description": ["type": "string", "description": "User-facing description (optional)"],
+                "screenshotPath": ["type": "string", "description": "Path to review screenshot (min 640x920px PNG/JPEG). Use blitz-iphone to take a screenshot of the subscription content in the simulator."]
             ],
-            required: ["groupName", "productId", "name", "displayName", "duration", "price"]
+            required: ["groupName", "productId", "name", "displayName", "duration", "price", "screenshotPath"]
         ))
 
         tools.append(tool(

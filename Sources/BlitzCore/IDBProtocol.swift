@@ -120,9 +120,15 @@ public actor IDBClient {
 
     /// Input text
     public func inputText(udid: String, text: String) async throws {
-        let jsonData = try JSONSerialization.data(withJSONObject: text)
-        let jsonString = String(data: jsonData, encoding: .utf8) ?? "\"\(text)\""
-        try await runInShell(udid: udid, command: "ui text \(jsonString) --json")
+        // Manually JSON-encode the string — JSONSerialization rejects bare strings
+        // without .fragmentsAllowed, which isn't available on all targets.
+        let escaped = text
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+            .replacingOccurrences(of: "\t", with: "\\t")
+        try await runInShell(udid: udid, command: "ui text \"\(escaped)\" --json")
     }
 
     /// Press a button (HOME, LOCK, etc.)

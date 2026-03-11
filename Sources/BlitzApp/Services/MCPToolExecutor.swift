@@ -843,17 +843,11 @@ actor MCPToolExecutor {
               let name = args["name"] as? String,
               let type = args["type"] as? String,
               let displayName = args["displayName"] as? String,
-              let priceStr = args["price"] as? String else {
+              let priceStr = args["price"] as? String,
+              let screenshotPath = args["screenshotPath"] as? String else {
             throw MCPServerService.MCPError.invalidToolArgs
         }
         let description = args["description"] as? String
-
-        guard let service = await MainActor.run(body: { appState.ascManager.service }) else {
-            return mcpText("Error: ASC service not configured")
-        }
-        guard let appId = await MainActor.run(body: { appState.ascManager.app?.id }) else {
-            return mcpText("Error: no ASC app loaded. Open a project with a bundle ID first.")
-        }
 
         // Validate type
         let validTypes = ["CONSUMABLE", "NON_CONSUMABLE", "NON_RENEWING_SUBSCRIPTION"]
@@ -861,31 +855,35 @@ actor MCPToolExecutor {
             return mcpText("Error: invalid type '\(type)'. Must be one of: \(validTypes.joined(separator: ", "))")
         }
 
-        // Step 1: Create IAP
-        let iap = try await service.createInAppPurchase(
-            appId: appId, name: name, productId: productId, inAppPurchaseType: type
-        )
-
-        // Step 2: Localize (en-US)
-        try await service.localizeInAppPurchase(
-            iapId: iap.id, locale: "en-US", name: displayName, description: description
-        )
-
-        // Step 3: Fetch price points and find match
-        let pricePoints = try await service.fetchInAppPurchasePricePoints(iapId: iap.id)
-        guard let match = pricePoints.first(where: { Self.priceMatches($0.attributes.customerPrice, target: priceStr) }) else {
-            let available = pricePoints.compactMap { $0.attributes.customerPrice }
-                .filter { Double($0) ?? 0 > 0 }
-                .prefix(20)
-            return mcpText("IAP created (id: \(iap.id)) and localized, but no price point matching $\(priceStr). Available: \(available.joined(separator: ", ")). Set price manually.")
+        // Pre-fill form values so the UI shows them
+        await MainActor.run {
+            var values: [String: String] = [
+                "kind": "iap",
+                "name": name, "productId": productId, "type": type,
+                "displayName": displayName, "price": priceStr
+            ]
+            if let description { values["description"] = description }
+            appState.ascManager.pendingCreateValues = values
         }
 
-        // Step 4: Set price
-        try await service.setInAppPurchasePrice(iapId: iap.id, pricePointId: match.id)
+        // Delegate to ASCManager (same flow as the SwiftUI form)
+        await MainActor.run {
+            appState.ascManager.createIAP(
+                name: name, productId: productId, type: type,
+                displayName: displayName, description: description,
+                price: priceStr, screenshotPath: screenshotPath
+            )
+        }
+
+        // Poll until creation completes
+        let result = await pollASCCreation()
+
+        if let error = result {
+            return mcpText("Error creating IAP: \(error)")
+        }
 
         return mcpJSON([
             "success": true,
-            "iapId": iap.id,
             "productId": productId,
             "type": type,
             "displayName": displayName,
@@ -899,17 +897,11 @@ actor MCPToolExecutor {
               let name = args["name"] as? String,
               let displayName = args["displayName"] as? String,
               let duration = args["duration"] as? String,
-              let priceStr = args["price"] as? String else {
+              let priceStr = args["price"] as? String,
+              let screenshotPath = args["screenshotPath"] as? String else {
             throw MCPServerService.MCPError.invalidToolArgs
         }
         let description = args["description"] as? String
-
-        guard let service = await MainActor.run(body: { appState.ascManager.service }) else {
-            return mcpText("Error: ASC service not configured")
-        }
-        guard let appId = await MainActor.run(body: { appState.ascManager.app?.id }) else {
-            return mcpText("Error: no ASC app loaded. Open a project with a bundle ID first.")
-        }
 
         // Validate duration
         let validDurations = ["ONE_WEEK", "ONE_MONTH", "TWO_MONTHS", "THREE_MONTHS", "SIX_MONTHS", "ONE_YEAR"]
@@ -917,49 +909,56 @@ actor MCPToolExecutor {
             return mcpText("Error: invalid duration '\(duration)'. Must be one of: \(validDurations.joined(separator: ", "))")
         }
 
-        // Step 1: Find or create subscription group
-        let existingGroups = try await service.fetchSubscriptionGroups(appId: appId)
-        let group: ASCSubscriptionGroup
-        if let existing = existingGroups.first(where: { $0.attributes.referenceName == groupName }) {
-            group = existing
-        } else {
-            group = try await service.createSubscriptionGroup(appId: appId, referenceName: groupName)
-            // Localize the new group
-            try await service.localizeSubscriptionGroup(groupId: group.id, locale: "en-US", name: groupName)
+        // Pre-fill form values so the UI shows them
+        await MainActor.run {
+            var values: [String: String] = [
+                "kind": "subscription",
+                "groupName": groupName, "name": name, "productId": productId,
+                "displayName": displayName, "duration": duration, "price": priceStr
+            ]
+            if let description { values["description"] = description }
+            appState.ascManager.pendingCreateValues = values
         }
 
-        // Step 2: Create subscription
-        let sub = try await service.createSubscription(
-            groupId: group.id, name: name, productId: productId, subscriptionPeriod: duration
-        )
-
-        // Step 3: Localize subscription (en-US)
-        try await service.localizeSubscription(
-            subscriptionId: sub.id, locale: "en-US", name: displayName, description: description
-        )
-
-        // Step 4: Fetch price points and find match
-        let pricePoints = try await service.fetchSubscriptionPricePoints(subscriptionId: sub.id)
-        guard let match = pricePoints.first(where: { Self.priceMatches($0.attributes.customerPrice, target: priceStr) }) else {
-            let available = pricePoints.compactMap { $0.attributes.customerPrice }
-                .filter { Double($0) ?? 0 > 0 }
-                .prefix(20)
-            return mcpText("Subscription created (id: \(sub.id)) and localized, but no price point matching $\(priceStr). Available: \(available.joined(separator: ", ")). Set price manually.")
+        // Delegate to ASCManager (same flow as the SwiftUI form)
+        await MainActor.run {
+            appState.ascManager.createSubscription(
+                groupName: groupName, name: name, productId: productId,
+                displayName: displayName, description: description,
+                duration: duration, price: priceStr, screenshotPath: screenshotPath
+            )
         }
 
-        // Step 5: Set price
-        try await service.setSubscriptionPrice(subscriptionId: sub.id, pricePointId: match.id)
+        // Poll until creation completes
+        let result = await pollASCCreation()
+
+        if let error = result {
+            return mcpText("Error creating subscription: \(error)")
+        }
 
         return mcpJSON([
             "success": true,
-            "subscriptionId": sub.id,
-            "groupId": group.id,
             "groupName": groupName,
             "productId": productId,
             "displayName": displayName,
             "duration": duration,
             "price": priceStr
         ] as [String: Any])
+    }
+
+    /// Poll ASCManager.isCreating until it finishes. Returns the error string if failed, nil on success.
+    private func pollASCCreation() async -> String? {
+        // Wait for isCreating to become true (task starts)
+        for _ in 0..<10 {
+            let creating = await MainActor.run { appState.ascManager.isCreating }
+            if creating { break }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        // Wait for isCreating to become false (task completes)
+        while await MainActor.run(body: { appState.ascManager.isCreating }) {
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+        return await MainActor.run { appState.ascManager.writeError }
     }
 
     // MARK: - Tab State Tool

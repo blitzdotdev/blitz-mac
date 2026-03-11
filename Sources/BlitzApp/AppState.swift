@@ -235,8 +235,6 @@ final class SimulatorStreamManager {
     var errorMessage: String?
     var statusMessage: String?
     var fps: Int = 0
-    var showTextInput = false
-    var textInput = ""
     /// True when the stream was paused by a tab switch (not manually stopped)
     var isPaused = false
 

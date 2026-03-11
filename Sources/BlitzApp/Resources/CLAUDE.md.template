@@ -1,8 +1,8 @@
 # {{PROJECT_TYPE_HEADER}}
 
-## blitz-ios
+## blitz-macos
 
-This project is opened in **Blitz**, a native macOS iOS development IDE with integrated simulator streaming. The user sees a live simulator view alongside your code. Blitz manages the build pipeline, simulator lifecycle, and dev servers — you focus on writing code.
+This project is opened in **Blitz**, a native macOS iOS development IDE with integrated simulator streaming. The user sees Build, Release, Insights, Testflight tab groups, and can see simulator view in Build>Simulator tab. Blitz manages the build pipeline, simulator lifecycle, and mcp Ser ver — you focus on writing code.
 
 ### Important: What Blitz Manages (Do NOT Do These Manually)
 
@@ -14,7 +14,7 @@ This project is opened in **Blitz**, a native macOS iOS development IDE with int
 
 Two MCP servers are configured in `.mcp.json`:
 
-- **`blitz-macos`** — Controls the Blitz app: project state, navigation, App Store Connect forms, build pipeline, settings.
+- **`blitz-macos`** — Controls the Blitz app: project state, tab navigation, App Store Connect forms, build pipeline, settings.
 - **`blitz-iphone`** — Controls the iOS device/simulator: tap, swipe, type, screenshots, UI hierarchy. See [iPhone MCP docs](https://github.com/blitzdotdev/iPhone-mcp).
 
 ### Testing Workflow
@@ -92,10 +92,12 @@ Fill App Store Connect form fields. Auto-navigates to the tab (if auto-nav permi
 | primaryCategory | string | yes | GAMES, UTILITIES, PRODUCTIVITY, SOCIAL_NETWORKING, PHOTO_AND_VIDEO, MUSIC, TRAVEL, SPORTS, HEALTH_AND_FITNESS, EDUCATION, BUSINESS, FINANCE, NEWS, FOOD_AND_DRINK, LIFESTYLE, SHOPPING, ENTERTAINMENT, REFERENCE, MEDICAL, NAVIGATION, WEATHER, DEVELOPER_TOOLS |
 | contentRightsDeclaration | string | yes | DOES_NOT_USE_THIRD_PARTY_CONTENT / USES_THIRD_PARTY_CONTENT |
 
-**pricing**
+**monetization**
 | field | type | required | values |
 |---|---|---|---|
 | isFree | string | yes | "true" / "false" |
+
+To set a paid price, use the `asc_set_app_price` tool (not `asc_fill_form`). For in-app purchases and subscriptions, use `asc_create_iap` and `asc_create_subscription` — see dedicated tool docs below.
 
 **review.ageRating**
 Boolean fields (value "true"/"false"):
@@ -169,18 +171,73 @@ Upload an IPA to App Store Connect / TestFlight. Optionally polls until build pr
 | ipaPath | string | no | Path to IPA (uses latest app_store_build output if omitted) |
 | skipPolling | boolean | no | Skip waiting for build processing (default: false) |
 
-### Recommended full workflow (build + submission)
+**Note on first-time IAP/Subscription submission:** Apple requires the first IAP or Subscription to be submitted together with an app version via the App Store Connect website. In ASC web: go to your app version, scroll to "In-App Purchases and Subscriptions", click "Select In-App Purchases or Subscriptions", check the items to include, then submit the version for review. After the first approval, future IAP/Subscription submissions can be done directly from Blitz.
 
-1. `app_store_setup_signing` teamId=YOUR_TEAM_ID (one-time per bundle ID)
-2. `app_store_build`
-3. `app_store_upload`
-4. `asc_fill_form` tab=storeListing (description, keywords, supportUrl, privacyPolicyUrl)
-5. `asc_fill_form` tab=appDetails (copyright, primaryCategory, contentRightsDeclaration)
-6. `asc_fill_form` tab=review.ageRating (all 22 fields)
-7. `asc_fill_form` tab=review.contact (contactFirstName...contactPhone)
-8. `asc_fill_form` tab=monetization (isFree=true)
-9. Use `blitz-iphone` `get_screenshot` to capture, then `asc_upload_screenshots` for **both** APP_IPHONE_67 and APP_IPAD_PRO_3GEN_129
-10. Tell user to set Privacy Nutrition Labels manually in App Store Connect
-11. `asc_open_submit_preview` — fix any flagged missing fields, then submit
+### asc_set_app_price
 
-**Note:** Privacy nutrition labels (app data usages) must be completed once manually at App Store Connect — this is not exposed in Apple's REST API.
+Set the app's price on the App Store.
+
+| param | type | required | notes |
+|---|---|---|---|
+| price | string | yes | Price in USD (e.g. "0.99", "0" for free) |
+| effectiveDate | string | no | ISO date for scheduled price change (e.g. "2026-06-01"). Omit for immediate. |
+
+### asc_create_iap
+
+Create an in-app purchase. Creates the IAP, adds en-US localization, sets the price, and uploads a review screenshot. **You must take a screenshot first** — use `blitz-iphone` to capture the IAP content in the simulator (e.g. the purchase UI or content being unlocked), save to /tmp, then pass the path.
+
+| param | type | required | notes |
+|---|---|---|---|
+| productId | string | yes | Unique product identifier (e.g. com.app.coins100) |
+| name | string | yes | Internal reference name |
+| type | string | yes | CONSUMABLE, NON_CONSUMABLE, or NON_RENEWING_SUBSCRIPTION |
+| displayName | string | yes | User-facing display name (en-US) |
+| price | string | yes | Price in USD (e.g. "0.99") |
+| screenshotPath | string | yes | Path to review screenshot (min 640x920px PNG/JPEG) |
+| description | string | no | User-facing description |
+
+### asc_create_subscription
+
+Create an auto-renewable subscription. Creates or reuses a subscription group. **You must take a screenshot first** — use `blitz-iphone` to capture the subscription content in the simulator (e.g. the paywall or premium features screen), save to /tmp, then pass the path.
+
+| param | type | required | notes |
+|---|---|---|---|
+| groupName | string | yes | Subscription group name (created if doesn't exist) |
+| productId | string | yes | Unique product identifier |
+| name | string | yes | Internal reference name |
+| displayName | string | yes | User-facing display name (en-US) |
+| duration | string | yes | ONE_WEEK, ONE_MONTH, TWO_MONTHS, THREE_MONTHS, SIX_MONTHS, ONE_YEAR |
+| price | string | yes | Price in USD (e.g. "4.99") |
+| screenshotPath | string | yes | Path to review screenshot (min 640x920px PNG/JPEG) |
+| description | string | no | User-facing description |
+
+### Recommended full workflow (code + build + submission)
+
+0. Code the app in the pwd, using the current pwd's framework language
+1. Check submission readiness: call `get_tab_state` with `tab: "ascOverview"` — check `submissionReadiness.isComplete` and review `submissionReadiness.missingRequired` for any missing fields
+2. Fill all required ASC forms until submission readiness is complete:
+    - `asc_fill_form` tab `"storeListing"` — title, description, keywords, supportUrl, privacyPolicyUrl
+    - `asc_fill_form` tab `"appDetails"` — copyright, primaryCategory, contentRightsDeclaration
+    - `asc_fill_form` tab `"monetization"` — isFree (use `asc_set_app_price` for paid pricing)
+    - `asc_fill_form` tab `"review.ageRating"` — set all applicable content descriptors
+    - `asc_fill_form` tab `"review.contact"` — contactFirstName, contactLastName, contactEmail, contactPhone
+    - `asc_upload_screenshots` — upload for APP_IPHONE_67 and APP_IPAD_PRO_3GEN_129 display types
+    - Re-check `get_tab_state` tab `"ascOverview"` to confirm all required fields are filled
+3. **Manual step:** Tell the user to set Privacy Nutrition Labels manually in [App Store Connect](https://appstoreconnect.apple.com) — this is not exposed in Apple's REST API
+4. `app_store_setup_signing` teamId=YOUR_TEAM_ID (one-time per bundle ID)
+5. `app_store_build`
+6. `app_store_upload`
+7. `asc_open_submit_preview` — fix any flagged missing fields, then submit
+
+---
+
+## App Store Knowledge Base
+
+### WeatherKit Setup
+
+WeatherKit requires enablement in **two separate places** on the Apple Developer portal, or API calls will fail with a JWT authentication error:
+
+1. **Capabilities**: In [Certificates, Identifiers & Profiles](https://developer.apple.com/account/resources/identifiers/list) > Identifiers, select the app's bundle ID (or create a new one via "+" > App IDs), go to the Capabilities tab, and enable **WeatherKit**.
+2. **App Services**: On the same identifier page, switch to the App Services tab and enable **WeatherKit** there as well.
+
+Both must be enabled — enabling only Capabilities will result in a JWT auth error at runtime.
