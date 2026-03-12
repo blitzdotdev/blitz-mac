@@ -608,7 +608,7 @@ assert_file_contains "postinstall references dist/server in .app Resources" \
 # ─────────────────────────────────────────────────────────────────────────────
 section "16. NodeSidecarService.swift — ~/.blitz/node-runtime search path"
 
-SIDECAR_SWIFT="$ROOT_DIR/Sources/BlitzApp/Services/NodeSidecarService.swift"
+SIDECAR_SWIFT="$ROOT_DIR/src/Services/NodeSidecarService.swift"
 
 assert_file_contains "node-runtime path present in candidates" \
     "node-runtime/bin/node" "$SIDECAR_SWIFT"

@@ -24,7 +24,7 @@ npm run release
 swift test
 
 # Run a single test
-swift test --filter BlitzCoreTests.SimctlClientTests/testParseDeviceList
+swift test --filter BlitzTests.SimctlClientTests/testParseDeviceList
 
 # Build installer pkg
 bash scripts/build-pkg.sh
@@ -34,10 +34,9 @@ bash scripts/build-pkg.sh
 
 **Blitz** is a native macOS SwiftUI app (requires macOS 14+) for iOS development. It provides simulator management, screen capture, database browsing, App Store Connect integration, and an MCP server for Claude Code integration. Built with Swift Package Manager (no Xcode project).
 
-### Two-target structure
+### Single-target structure
 
-- **BlitzCore** (`Sources/BlitzCore/`) — Pure Swift library with no UI dependencies. Contains process execution (`ProcessRunner`), simulator control (`SimctlClient`), WDA client for physical devices (`WDAClient`), project metadata types (`ProjectMetadata`), and the Node.js sidecar protocol definitions (`SidecarProtocol`).
-- **BlitzApp** (`Sources/BlitzApp/`) — SwiftUI executable. Depends on BlitzCore. Contains all UI, services, and the MCP server.
+All Swift source lives in `src/`. Core types (process execution, simulator control, device interaction, project metadata, sidecar protocol) live alongside UI, services, and the MCP server in one executable target.
 
 ### App State
 

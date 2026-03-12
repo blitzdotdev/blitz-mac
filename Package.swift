@@ -8,14 +8,12 @@ let package = Package(
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "Blitz", targets: ["BlitzApp"]),
-        .library(name: "BlitzCore", targets: ["BlitzCore"]),
+        .executable(name: "Blitz", targets: ["Blitz"]),
     ],
     targets: [
         .executableTarget(
-            name: "BlitzApp",
-            dependencies: ["BlitzCore"],
-            path: "Sources/BlitzApp",
+            name: "Blitz",
+            path: "src",
             exclude: ["Metal"],
             resources: [.process("Resources"), .copy("Templates")],
             linkerSettings: [
@@ -28,14 +26,10 @@ let package = Package(
                 .linkedFramework("AppKit"),
             ]
         ),
-        .target(
-            name: "BlitzCore",
-            path: "Sources/BlitzCore"
-        ),
         .testTarget(
-            name: "BlitzCoreTests",
-            dependencies: ["BlitzCore"],
-            path: "Tests/BlitzCoreTests"
+            name: "BlitzTests",
+            dependencies: ["Blitz"],
+            path: "Tests/BlitzTests"
         ),
     ]
 )
