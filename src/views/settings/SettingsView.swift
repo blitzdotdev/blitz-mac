@@ -39,8 +39,6 @@ struct SettingsView: View {
                 Toggle("Auto-navigate to tab on tool call", isOn: $settings.autoNavEnabled)
                     .onChange(of: settings.autoNavEnabled) { _, _ in settings.save() }
 
-                Divider()
-
                 Toggle("Approve all", isOn: Binding(
                     get: {
                         gateableCategories.allSatisfy { settings.permissionToggles[$0.0.rawValue] ?? false }

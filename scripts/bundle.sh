@@ -35,6 +35,21 @@ mkdir -p "$BUNDLE_DIR/Contents/Resources"
 # Copy binary
 cp ".build/${CONFIG}/${APP_NAME}" "$BUNDLE_DIR/Contents/MacOS/${APP_NAME}"
 
+# Generate app icon (.icns) from PNG
+ICON_PNG="$ROOT_DIR/src/resources/blitz-icon.png"
+if [ -f "$ICON_PNG" ]; then
+    ICONSET_DIR=$(mktemp -d)/Blitz.iconset
+    mkdir -p "$ICONSET_DIR"
+    for size in 16 32 128 256 512; do
+        sips -z $size $size "$ICON_PNG" --out "$ICONSET_DIR/icon_${size}x${size}.png" >/dev/null 2>&1
+        double=$((size * 2))
+        sips -z $double $double "$ICON_PNG" --out "$ICONSET_DIR/icon_${size}x${size}@2x.png" >/dev/null 2>&1
+    done
+    iconutil -c icns "$ICONSET_DIR" -o "$BUNDLE_DIR/Contents/Resources/AppIcon.icns"
+    rm -rf "$(dirname "$ICONSET_DIR")"
+    echo "Generated AppIcon.icns"
+fi
+
 # Copy Metal shader resources
 for bundle_dir in .build/${CONFIG}/*.bundle; do
     if [ -d "$bundle_dir" ]; then
@@ -52,6 +67,8 @@ cat > "$BUNDLE_DIR/Contents/Info.plist" << PLIST
     <string>Blitz</string>
     <key>CFBundleIdentifier</key>
     <string>com.blitz.macos</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleName</key>
     <string>Blitz</string>
     <key>CFBundleDisplayName</key>

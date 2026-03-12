@@ -77,6 +77,10 @@ final class BlitzAppDelegate: NSObject, NSApplicationDelegate {
         if let fileMenu = NSApp.mainMenu?.item(withTitle: "File") {
             fileMenu.title = "Project"
         }
+        // Set dock icon from bundled resource (needed for swift run / non-.app launches)
+        if let icon = Bundle.module.image(forResource: "blitz-icon") {
+            NSApp.applicationIconImage = icon
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
