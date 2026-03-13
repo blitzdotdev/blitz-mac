@@ -110,9 +110,15 @@ struct SimulatorView: View {
                 VStack(spacing: 12) {
                     ProgressView()
                         .controlSize(.large)
-                    Text("Booting simulator...")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
+                    if let name = appState.simulatorManager.bootingDeviceName {
+                        Text("Switching to \(name)...")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Booting simulator...")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {

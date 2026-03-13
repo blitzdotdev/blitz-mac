@@ -167,6 +167,7 @@ final class SimulatorManager {
     var isStreaming = false
     var streamFPS: Int = 30
     var isBooting = false
+    var bootingDeviceName: String?
 
     func loadSimulators() async {
         let client = SimctlClient()
@@ -181,20 +182,31 @@ final class SimulatorManager {
                     lastBootedAt: device.lastBootedAt
                 )
             }
-            bootedDeviceId = simulators.first(where: { $0.isBooted })?.udid
+            // Only auto-select a booted device if it's supported
+            bootedDeviceId = simulators.first(where: {
+                $0.isBooted && SimulatorConfigDatabase.isSupported($0.name)
+            })?.udid
         } catch {
             print("Failed to load simulators: \(error)")
         }
     }
 
     /// Boot a simulator if none is currently running. Called when a project opens.
+    /// Prefers supported devices (iPhone 16/17); falls back to any iPhone.
     func bootIfNeeded() async {
         await loadSimulators()
-        if bootedDeviceId != nil { return }
 
+        // If a supported device is already booted, keep it
+        if let bootedId = bootedDeviceId,
+           let booted = simulators.first(where: { $0.udid == bootedId }),
+           SimulatorConfigDatabase.isSupported(booted.name) { return }
+
+        // Otherwise pick a supported device to boot (prefer shutdown ones to avoid conflicts)
         guard let target = simulators.first(where: {
-            $0.name.lowercased().contains("iphone")
-        }) ?? simulators.first else { return }
+            SimulatorConfigDatabase.isSupported($0.name) && !$0.isBooted
+        }) ?? simulators.first(where: {
+            SimulatorConfigDatabase.isSupported($0.name)
+        }) else { return }
 
         isBooting = true
         defer { isBooting = false }

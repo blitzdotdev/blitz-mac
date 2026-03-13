@@ -35,7 +35,7 @@ struct SimulatorConfigDatabase {
     }
 
     private static let devices: [String: SimulatorDeviceConfig] = {
-        guard let url = Bundle.main.url(forResource: "simulator-config", withExtension: "json"),
+        guard let url = Bundle.appResources.url(forResource: "simulator-config", withExtension: "json"),
               let data = try? Data(contentsOf: url),
               let file = try? JSONDecoder().decode(ConfigFile.self, from: data) else { return [:] }
         return file.devices

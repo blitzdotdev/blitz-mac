@@ -67,5 +67,6 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .scrollDisabled(true)
     }
 }

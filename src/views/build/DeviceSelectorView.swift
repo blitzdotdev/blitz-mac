@@ -2,7 +2,6 @@ import SwiftUI
 
 struct DeviceSelectorView: View {
     @Bindable var appState: AppState
-    @State private var isBooting = false
 
     private var supportedSimulators: [SimulatorInfo] {
         appState.simulatorManager.simulators.filter {
@@ -19,11 +18,12 @@ struct DeviceSelectorView: View {
                     }) {
                         HStack {
                             Text(sim.name)
-                            if sim.isBooted {
+                            if sim.udid == appState.simulatorManager.bootedDeviceId {
                                 Image(systemName: "checkmark")
                             }
                         }
                     }
+                    .disabled(appState.simulatorManager.isBooting)
                 }
 
                 if supportedSimulators.isEmpty {
@@ -48,7 +48,7 @@ struct DeviceSelectorView: View {
                     Text("Select Device")
                         .font(.system(size: 11))
                 }
-                if isBooting {
+                if appState.simulatorManager.isBooting {
                     ProgressView()
                         .scaleEffect(0.6)
                 }
@@ -59,21 +59,47 @@ struct DeviceSelectorView: View {
     }
 
     private func selectSimulator(_ sim: SimulatorInfo) async {
-        if sim.isBooted {
-            appState.simulatorManager.bootedDeviceId = sim.udid
-            return
+        let manager = appState.simulatorManager
+        let oldId = manager.bootedDeviceId
+        guard sim.udid != oldId else { return }
+
+        manager.isBooting = true
+        manager.bootingDeviceName = sim.name
+        defer {
+            manager.isBooting = false
+            manager.bootingDeviceName = nil
         }
 
-        isBooting = true
-        defer { isBooting = false }
+        // 1. Stop the current stream
+        await appState.simulatorStream.stopStreaming()
 
-        let service = SimulatorService()
-        do {
-            try await service.boot(udid: sim.udid)
-            appState.simulatorManager.bootedDeviceId = sim.udid
-            await appState.simulatorManager.loadSimulators()
-        } catch {
-            print("Failed to boot simulator: \(error)")
+        // 2. Shutdown the old simulator
+        if let oldId {
+            let service = SimulatorService()
+            try? await service.shutdown(udid: oldId)
+        }
+
+        // 3. Boot the new simulator in background
+        if !sim.isBooted {
+            let service = SimulatorService()
+            do {
+                try await service.bootInBackground(udid: sim.udid)
+            } catch {
+                print("Failed to boot simulator: \(error)")
+                return
+            }
+        }
+
+        // 4. Update state and refresh device list
+        manager.bootedDeviceId = sim.udid
+        await manager.loadSimulators()
+
+        // 5. Start streaming the new device
+        if appState.activeTab == .simulator {
+            await appState.simulatorStream.startStreaming(
+                bootedDeviceId: sim.udid,
+                fps: appState.settingsStore.simulatorFPS
+            )
         }
     }
 }

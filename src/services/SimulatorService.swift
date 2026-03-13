@@ -46,6 +46,43 @@ actor SimulatorService {
         try await openSimulatorApp()
     }
 
+    /// Boot a simulator without bringing Simulator.app to the foreground.
+    func bootInBackground(udid: String) async throws {
+        logger.info("Booting simulator \(udid) in background...")
+
+        do {
+            try await simctl.boot(udid: udid)
+        } catch {
+            if let processError = error as? ProcessRunner.ProcessError,
+               processError.stderr.contains("current state: Booted") {
+                logger.info("Simulator already booted")
+            } else {
+                throw error
+            }
+        }
+
+        // Wait for boot, repeatedly pushing Simulator.app to background.
+        // Simulator.app may steal focus when it detects a newly booted device,
+        // so we keep sending it back for the entire boot duration.
+        logger.info("Waiting for simulator to finish booting (background)...")
+        for i in 1...15 {
+            // Push Simulator.app to background on each poll
+            _ = try? await ProcessRunner.run("open", arguments: ["-gja", "Simulator"])
+
+            let devices = try await simctl.listDevices()
+            if let device = devices.first(where: { $0.udid == udid }), device.isBooted {
+                logger.info("Simulator booted after \(i)s")
+                // A few extra pushes — Simulator.app often steals focus right after boot
+                for _ in 0..<3 {
+                    try await Task.sleep(for: .milliseconds(300))
+                    _ = try? await ProcessRunner.run("open", arguments: ["-gja", "Simulator"])
+                }
+                return
+            }
+            try await Task.sleep(for: .seconds(1))
+        }
+    }
+
     /// Shutdown a simulator
     func shutdown(udid: String) async throws {
         try await simctl.shutdown(udid: udid)
