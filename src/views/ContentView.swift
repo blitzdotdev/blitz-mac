@@ -72,8 +72,7 @@ struct ContentView: View {
             // Auto-start stream if landing on simulator tab
             if appState.activeTab == .simulator {
                 await appState.simulatorStream.startStreaming(
-                    bootedDeviceId: appState.simulatorManager.bootedDeviceId,
-                    fps: appState.settingsStore.simulatorFPS
+                    bootedDeviceId: appState.simulatorManager.bootedDeviceId
                 )
             }
             // Load ASC credentials for the initial project
@@ -130,13 +129,10 @@ struct ContentView: View {
                 // Resume/start stream when entering simulator tab
                 if newTab == .simulator {
                     if appState.simulatorStream.isPaused {
-                        await appState.simulatorStream.resumeStream(
-                            fps: appState.settingsStore.simulatorFPS
-                        )
+                        await appState.simulatorStream.resumeStream()
                     } else if !appState.simulatorStream.isCapturing {
                         await appState.simulatorStream.startStreaming(
-                            bootedDeviceId: appState.simulatorManager.bootedDeviceId,
-                            fps: appState.settingsStore.simulatorFPS
+                            bootedDeviceId: appState.simulatorManager.bootedDeviceId
                         )
                     }
                 }

@@ -117,9 +117,8 @@ enum MCPToolRegistry {
 
         tools.append(tool(
             name: "settings_update",
-            description: "Update app settings (FPS, cursor)",
+            description: "Update app settings (cursor)",
             properties: [
-                "simulatorFPS": ["type": "integer", "description": "Frame rate (30 or 60)"],
                 "showCursor": ["type": "boolean", "description": "Show cursor overlay"],
                 "cursorSize": ["type": "number", "description": "Cursor size in pixels"]
             ],

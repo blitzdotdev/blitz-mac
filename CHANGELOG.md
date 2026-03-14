@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.0.19
+- Hardcode FPS to 50
+
 ## 1.0.18
 - MCP tool bug fix
 

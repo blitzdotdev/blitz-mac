@@ -498,7 +498,6 @@ actor MCPToolExecutor {
     private func executeSettingsGet() async -> [String: Any] {
         let settings = await MainActor.run { () -> [String: Any] in
             [
-                "simulatorFPS": appState.settingsStore.simulatorFPS,
                 "showCursor": appState.settingsStore.showCursor,
                 "cursorSize": appState.settingsStore.cursorSize,
                 "defaultSimulatorUDID": appState.settingsStore.defaultSimulatorUDID ?? ""
@@ -509,7 +508,6 @@ actor MCPToolExecutor {
 
     private func executeSettingsUpdate(_ args: [String: Any]) async -> [String: Any] {
         await MainActor.run {
-            if let fps = args["simulatorFPS"] as? Int { appState.settingsStore.simulatorFPS = fps }
             if let cursor = args["showCursor"] as? Bool { appState.settingsStore.showCursor = cursor }
             if let size = args["cursorSize"] as? Double { appState.settingsStore.cursorSize = size }
         }

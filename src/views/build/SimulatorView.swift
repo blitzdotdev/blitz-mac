@@ -98,8 +98,7 @@ struct SimulatorView: View {
                             Task {
                                 await stream.startStreaming(
                                     bootedDeviceId: appState.simulatorManager.bootedDeviceId,
-                                    fps: appState.settingsStore.simulatorFPS
-                                )
+                                    )
                             }
                         }
                         .buttonStyle(.borderedProminent)
@@ -142,8 +141,7 @@ struct SimulatorView: View {
                             Task {
                                 await stream.startStreaming(
                                     bootedDeviceId: appState.simulatorManager.bootedDeviceId,
-                                    fps: appState.settingsStore.simulatorFPS
-                                )
+                                    )
                             }
                         }
                         .buttonStyle(.borderedProminent)
@@ -163,10 +161,6 @@ struct SimulatorView: View {
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 DeviceSelectorView(appState: appState)
-            }
-
-            ToolbarItem(placement: .primaryAction) {
-                FPSCounterView(stream: stream)
             }
 
             ToolbarItem(placement: .primaryAction) {
@@ -190,7 +184,6 @@ struct SimulatorView: View {
                         Task {
                             await stream.startStreaming(
                                 bootedDeviceId: appState.simulatorManager.bootedDeviceId,
-                                fps: appState.settingsStore.simulatorFPS
                             )
                         }
                     }
@@ -279,17 +272,3 @@ struct SimulatorView: View {
     }
 }
 
-/// Isolates FPS observation so that frequent fps updates don't re-evaluate
-/// SimulatorView.body, which would reconstruct the toolbar and dismiss popovers.
-private struct FPSCounterView: View {
-    let stream: SimulatorStreamManager
-
-    var body: some View {
-        if stream.isCapturing {
-            Text("\(stream.fps) FPS")
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 4)
-        }
-    }
-}

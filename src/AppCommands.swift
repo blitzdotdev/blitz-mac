@@ -91,8 +91,7 @@ struct AppCommands: Commands {
                 Task {
                     await appState.simulatorManager.bootIfNeeded()
                     await appState.simulatorStream.startStreaming(
-                        bootedDeviceId: appState.simulatorManager.bootedDeviceId,
-                        fps: appState.settingsStore.simulatorFPS
+                        bootedDeviceId: appState.simulatorManager.bootedDeviceId
                     )
                 }
             }

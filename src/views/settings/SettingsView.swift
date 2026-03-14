@@ -18,11 +18,6 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("Simulator") {
-                Picker("Frame Rate", selection: $settings.simulatorFPS) {
-                    Text("30 FPS").tag(30)
-                    Text("60 FPS").tag(60)
-                }
-
                 Toggle("Show Cursor Overlay", isOn: $settings.showCursor)
 
                 if settings.showCursor {

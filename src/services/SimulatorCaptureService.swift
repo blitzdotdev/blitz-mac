@@ -31,7 +31,7 @@ final class SimulatorCaptureService: NSObject, @unchecked Sendable {
     var onFrame: ((CVPixelBuffer) -> Void)?
 
     private var skipFrameCount = 0
-    private var configuredFPS: Int = 30
+    private static let fps = 50
 
     private let simulatorBundleIDs = [
         "com.apple.iphonesimulator",
@@ -54,14 +54,13 @@ final class SimulatorCaptureService: NSObject, @unchecked Sendable {
     /// Start capturing the simulator window.
     /// Calls SCShareableContent exactly ONCE. If the window isn't visible yet,
     /// retries the query up to 10 times (1s apart).
-    func startCapture(fps: Int = 30, retryForWindow: Bool = true) async throws {
+    func startCapture(retryForWindow: Bool = true) async throws {
         guard !isCapturing else {
             logger.warning("Already capturing")
             return
         }
 
-        logger.info("Starting capture at \(fps) FPS...")
-        self.configuredFPS = fps
+        logger.info("Starting capture at \(Self.fps) FPS...")
 
         // Step 1: Query SCShareableContent ONCE to get permission sorted out.
         // If this throws, it's a permission error — bail immediately, no retry.
@@ -104,7 +103,7 @@ final class SimulatorCaptureService: NSObject, @unchecked Sendable {
         config.width = Int(window.frame.width * scale)
         config.height = Int(window.frame.height * scale)
         config.pixelFormat = kCVPixelFormatType_32BGRA
-        config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(fps))
+        config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(Self.fps))
         config.queueDepth = 3
         config.showsCursor = false
         config.capturesAudio = false
@@ -183,7 +182,7 @@ final class SimulatorCaptureService: NSObject, @unchecked Sendable {
         config.width = newWidth
         config.height = newHeight
         config.pixelFormat = kCVPixelFormatType_32BGRA
-        config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(configuredFPS))
+        config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(Self.fps))
         config.queueDepth = 3
         config.showsCursor = false
         config.capturesAudio = false

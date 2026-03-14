@@ -165,7 +165,6 @@ final class SimulatorManager {
     var simulators: [SimulatorInfo] = []
     var bootedDeviceId: String?
     var isStreaming = false
-    var streamFPS: Int = 30
     var isBooting = false
     var bootingDeviceName: String?
 
@@ -240,12 +239,9 @@ final class SimulatorStreamManager {
     var isCapturing = false
     var errorMessage: String?
     var statusMessage: String?
-    var fps: Int = 0
     /// True when the stream was paused by a tab switch (not manually stopped)
     var isPaused = false
 
-    private var fpsTimer: Timer?
-    private var lastFrameCount: Int = 0
     private var rendererInitialized = false
 
     func ensureRenderer() {
@@ -259,7 +255,7 @@ final class SimulatorStreamManager {
     }
 
     /// Full start: ensure renderer, open Simulator.app, connect SCStream.
-    func startStreaming(bootedDeviceId: String?, fps: Int) async {
+    func startStreaming(bootedDeviceId: String?) async {
         guard !isCapturing else { return }
         guard bootedDeviceId != nil else {
             statusMessage = "No simulator booted"
@@ -276,7 +272,7 @@ final class SimulatorStreamManager {
 
         statusMessage = "Connecting to simulator..."
         do {
-            try await captureService.startCapture(fps: fps, retryForWindow: true)
+            try await captureService.startCapture(retryForWindow: true)
         } catch {
             errorMessage = error.localizedDescription
             statusMessage = nil
@@ -286,13 +282,11 @@ final class SimulatorStreamManager {
         if captureService.isCapturing {
             isCapturing = true
             statusMessage = nil
-            startFPSTimer()
         }
     }
 
     /// Full stop: stop SCStream, clear state.
     func stopStreaming() async {
-        stopFPSTimer()
         await captureService.stopCapture()
         isCapturing = false
         isPaused = false
@@ -302,45 +296,24 @@ final class SimulatorStreamManager {
     func pauseStream() async {
         guard isCapturing else { return }
         isPaused = true
-        stopFPSTimer()
         await captureService.stopCapture()
         isCapturing = false
     }
 
     /// Resume: restart SCStream after a pause. No window retry needed since sim is already running.
-    func resumeStream(fps: Int) async {
+    func resumeStream() async {
         guard isPaused else { return }
         isPaused = false
         ensureRenderer()
 
         do {
-            try await captureService.startCapture(fps: fps, retryForWindow: false)
+            try await captureService.startCapture(retryForWindow: false)
             if captureService.isCapturing {
                 isCapturing = true
-                startFPSTimer()
             }
         } catch {
             errorMessage = error.localizedDescription
         }
-    }
-
-    func startFPSTimer() {
-        fpsTimer?.invalidate()
-        lastFrameCount = captureService.frameCount
-        fpsTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                let current = self.captureService.frameCount
-                self.fps = current - self.lastFrameCount
-                self.lastFrameCount = current
-            }
-        }
-    }
-
-    func stopFPSTimer() {
-        fpsTimer?.invalidate()
-        fpsTimer = nil
-        fps = 0
     }
 }
 

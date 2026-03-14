@@ -11,7 +11,6 @@ final class SettingsService {
 
     private let settingsURL: URL
 
-    var simulatorFPS: Int = 30
     var showCursor: Bool = true
     var cursorSize: Double = 20
     var defaultSimulatorUDID: String?
@@ -30,7 +29,6 @@ final class SettingsService {
         guard let data = try? Data(contentsOf: settingsURL),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
 
-        if let fps = json["simulatorFPS"] as? Int { simulatorFPS = fps }
         if let cursor = json["showCursor"] as? Bool { showCursor = cursor }
         if let size = json["cursorSize"] as? Double { cursorSize = size }
         if let udid = json["defaultSimulatorUDID"] as? String { defaultSimulatorUDID = udid }
@@ -41,7 +39,6 @@ final class SettingsService {
 
     func save() {
         var json: [String: Any] = [
-            "simulatorFPS": simulatorFPS,
             "showCursor": showCursor,
             "cursorSize": cursorSize,
             "autoNavEnabled": autoNavEnabled,

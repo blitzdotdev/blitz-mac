@@ -97,8 +97,7 @@ struct DeviceSelectorView: View {
         // 5. Start streaming the new device
         if appState.activeTab == .simulator {
             await appState.simulatorStream.startStreaming(
-                bootedDeviceId: sim.udid,
-                fps: appState.settingsStore.simulatorFPS
+                bootedDeviceId: sim.udid
             )
         }
     }
