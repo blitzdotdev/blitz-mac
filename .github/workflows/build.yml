@@ -2,10 +2,10 @@ name: Build & Verify
 
 on:
   push:
-    branches: [main, open]
+    branches: [master, main, open]
     tags: ['v*']
   pull_request:
-    branches: [main]
+    branches: [master, main]
 
 jobs:
   build:
