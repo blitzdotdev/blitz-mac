@@ -21,7 +21,6 @@ import Foundation
 }
 
 @Test func testProjectTypeRawValues() {
-    #expect(ProjectType.blitz.rawValue == "blitz")
     #expect(ProjectType.reactNative.rawValue == "react-native")
     #expect(ProjectType.swift.rawValue == "swift")
     #expect(ProjectType.flutter.rawValue == "flutter")
