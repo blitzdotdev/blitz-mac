@@ -50,3 +50,6 @@ yarn-error.log
 .idea/
 *.swp
 *~
+compose.dev.yaml
+.aibox
+.idea/workspace.xml

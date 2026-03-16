@@ -61,7 +61,7 @@ bash scripts/bundle.sh release
 ## Verify a release binary
 
 Every GitHub release includes `SHA256SUMS.txt` with checksums of the CI-built binary. To verify:
-
+[claude-mono (1).md](../../Downloads/claude-mono%20%281%29.md)
 **Option 1: Check a downloaded binary against release checksums**
 ```bash
 # Download both Blitz.app.zip and SHA256SUMS.txt from the GitHub release

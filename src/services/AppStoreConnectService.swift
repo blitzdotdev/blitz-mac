@@ -711,6 +711,50 @@ final class AppStoreConnectService {
         _ = try await post(path: "inAppPurchaseAvailabilities", body: body)
     }
 
+    /// Create app availability for all given territories using the v2 compound-document endpoint.
+    /// POST /v2/appAvailabilities
+    func createAppAvailability(appId: String, territoryIds: [String]) async throws {
+        // Build inline-create entries for each territory
+        var territoryRefs: [[String: Any]] = []
+        var included: [[String: Any]] = []
+
+        for (index, territoryId) in territoryIds.enumerated() {
+            let tempId = "${ta\(index)}"
+            territoryRefs.append(["type": "territoryAvailabilities", "id": tempId])
+            included.append([
+                "type": "territoryAvailabilities",
+                "id": tempId,
+                "attributes": ["available": true],
+                "relationships": [
+                    "territory": ["data": ["type": "territories", "id": territoryId]]
+                ]
+            ] as [String: Any])
+        }
+
+        let body: [String: Any] = [
+            "data": [
+                "type": "appAvailabilities",
+                "attributes": ["availableInNewTerritories": true],
+                "relationships": [
+                    "app": ["data": ["type": "apps", "id": appId]],
+                    "territoryAvailabilities": ["data": territoryRefs]
+                ]
+            ] as [String: Any],
+            "included": included
+        ]
+        _ = try await post(fullPath: "/v2/appAvailabilities", body: body)
+    }
+
+    /// Ensure app availability is set for all territories. Silently succeeds if already configured (409).
+    func ensureAppAvailability(appId: String) async throws {
+        let territoryIds = try await fetchAllTerritories()
+        do {
+            try await createAppAvailability(appId: appId, territoryIds: territoryIds)
+        } catch let ASCError.httpError(status, _) where status == 409 {
+            // 409 Conflict means availability already exists — that's fine
+        }
+    }
+
     func createSubscriptionAvailability(subscriptionId: String, territoryIds: [String]) async throws {
         let territoryData = territoryIds.map { ["type": "territories", "id": $0] }
         let body: [String: Any] = [

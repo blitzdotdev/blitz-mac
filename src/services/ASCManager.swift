@@ -539,6 +539,7 @@ final class ASCManager {
         writeError = nil
         do {
             try await service.setAppPrice(appId: appId, pricePointId: pricePointId)
+            try await service.ensureAppAvailability(appId: appId)
             monetizationStatus = "Configured"
         } catch {
             writeError = error.localizedDescription
@@ -920,6 +921,7 @@ final class ASCManager {
         writeError = nil
         do {
             try await service.setPriceFree(appId: appId)
+            try await service.ensureAppAvailability(appId: appId)
             monetizationStatus = "Free"
         } catch {
             writeError = error.localizedDescription

@@ -834,7 +834,8 @@ actor MCPToolExecutor {
         // If price is "0" or "0.00", use the existing setPriceFree method
         if let priceVal = Double(priceStr), priceVal < 0.001 {
             try await service.setPriceFree(appId: appId)
-            return mcpJSON(["success": true, "price": "0.00", "message": "App set to free"])
+            try await service.ensureAppAvailability(appId: appId)
+            return mcpJSON(["success": true, "price": "0.00", "message": "App set to free with territory availability configured"])
         }
 
         // Fetch price points and find matching one
@@ -860,10 +861,12 @@ actor MCPToolExecutor {
                 futurePricePointId: match.id,
                 effectiveDate: effectiveDate
             )
-            return mcpJSON(["success": true, "price": priceStr, "effectiveDate": effectiveDate, "message": "Scheduled price change for \(effectiveDate)"])
+            try await service.ensureAppAvailability(appId: appId)
+            return mcpJSON(["success": true, "price": priceStr, "effectiveDate": effectiveDate, "message": "Scheduled price change for \(effectiveDate) with territory availability configured"])
         }
 
         try await service.setAppPrice(appId: appId, pricePointId: match.id)
+        try await service.ensureAppAvailability(appId: appId)
         return mcpJSON(["success": true, "price": priceStr, "pricePointId": match.id])
     }
 
