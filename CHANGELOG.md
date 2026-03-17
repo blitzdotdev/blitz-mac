@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.0.23
+- Improve auto-update UX: faster dialog, indeterminate progress, no admin prompt
+
 ## 1.0.20
 - Better instructions for App Store Connect API key generation
 
