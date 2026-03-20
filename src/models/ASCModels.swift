@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 // MARK: - Credentials
 
@@ -497,32 +498,48 @@ struct IrisSession: Codable {
         let path: String
     }
 
+    private static let keychainService = "dev.blitz.iris-session"
+    private static let keychainAccount = "iris-cookies"
+
     static func load() -> IrisSession? {
-        let url = sessionURL()
-        guard let data = try? Data(contentsOf: url) else { return nil }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess, let data = result as? Data else { return nil }
         return try? JSONDecoder().decode(IrisSession.self, from: data)
     }
 
     func save() throws {
-        let url = Self.sessionURL()
-        let dir = url.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let data = try JSONEncoder().encode(self)
-        try data.write(to: url, options: .atomic)
-        // Set file permissions to 0600 (owner read/write only)
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o600],
-            ofItemAtPath: url.path
-        )
+        // Delete any existing item first
+        Self.delete()
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.keychainService,
+            kSecAttrAccount as String: Self.keychainAccount,
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+        ]
+        let status = SecItemAdd(query as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            throw NSError(domain: "IrisSession", code: Int(status),
+                          userInfo: [NSLocalizedDescriptionKey: "Failed to save session to Keychain (status: \(status))"])
+        }
     }
 
     static func delete() {
-        try? FileManager.default.removeItem(at: sessionURL())
-    }
-
-    private static func sessionURL() -> URL {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        return home.appendingPathComponent(".blitz/iris-session.json")
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount,
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 }
 

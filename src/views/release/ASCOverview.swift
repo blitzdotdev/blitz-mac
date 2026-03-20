@@ -46,7 +46,7 @@ struct ASCOverview: View {
                 asc.showAppleIDLogin = false
             }
         }
-        .task(id: asc.app?.id) {
+        .onChange(of: asc.appStoreVersions.map(\.id)) { _, _ in
             guard let appId = asc.app?.id else { return }
             let rejectedVersion = asc.appStoreVersions.first(where: {
                 $0.attributes.appStoreState == "REJECTED"
@@ -59,7 +59,7 @@ struct ASCOverview: View {
             // Then try live fetch if we have a session
             asc.loadIrisSession()
             if asc.irisSessionState == .valid {
-                await asc.fetchRejectionFeedback()
+                Task { await asc.fetchRejectionFeedback() }
             }
         }
     }

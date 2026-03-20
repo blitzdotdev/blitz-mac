@@ -1273,7 +1273,7 @@ final class ASCManager {
                     // For reordered ASC screenshots, we need the original file
                     // Download from ASC URL and re-upload
                     if let url = ascShot.imageURL,
-                       let data = try? Data(contentsOf: url),
+                       let (data, _) = try? await URLSession.shared.data(from: url),
                        let fileName = ascShot.attributes.fileName {
                         let tmpPath = FileManager.default.temporaryDirectory.appendingPathComponent(fileName).path
                         try data.write(to: URL(fileURLWithPath: tmpPath))

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.25
+- Add App Store rejection feedback 
+- Screenshot track-based workflow: arrange, reorder, and sync screenshots to ASC
+- Paginate in-app purchases and subscriptions (up to 200 per page)
+- App store review agent for Claude Code available in Blitz projects
+- New MCP tools: screenshots_add_asset, screenshots_set_track, screenshots_save, get_rejection_feedback
+
 ## 1.0.24
 Mac App Support! Now you can import or create macOS applications and upload to the App Store. 
 
