@@ -40,8 +40,8 @@ https://github.com/user-attachments/assets/07364d9f-f6a7-4375-acc8-b7ab46dcc60e
 
 ```bash
 # Clone
-git clone https://github.com/blitzdotdev/blitz-macos.git
-cd blitz-macos
+git clone https://github.com/blitzdotdev/blitz-mac.git
+cd blitz-mac
 
 # Debug build
 swift build
