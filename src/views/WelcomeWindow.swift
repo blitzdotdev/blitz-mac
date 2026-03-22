@@ -31,7 +31,6 @@ struct WelcomeWindow: View {
         })
         .task {
             // Show onboarding on first launch
-            // TODO: remove `true ||` before release
             if !appState.settingsStore.hasCompletedOnboarding {
                 showOnboarding = true
             }
@@ -57,6 +56,20 @@ struct WelcomeWindow: View {
         .sheet(isPresented: $appState.showImportProjectSheet) {
             ImportProjectSheet(appState: appState, isPresented: $appState.showImportProjectSheet)
         }
+        .sheet(isPresented: appleIDLoginBinding, onDismiss: {
+            appState.ascManager.cancelPendingWebAuth()
+        }) {
+            AppleIDLoginSheet { session in
+                appState.ascManager.setIrisSession(session)
+            }
+        }
+    }
+
+    private var appleIDLoginBinding: Binding<Bool> {
+        Binding(
+            get: { appState.ascManager.showAppleIDLogin },
+            set: { appState.ascManager.showAppleIDLogin = $0 }
+        )
     }
 
     // MARK: - Left Panel

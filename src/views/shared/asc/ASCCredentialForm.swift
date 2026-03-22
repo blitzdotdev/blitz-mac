@@ -9,11 +9,11 @@ struct ASCCredentialForm: View {
     @State private var issuerId = ""
     @State private var keyId = ""
     @State private var privateKey = ""
-    @State private var bundleIdInput = ""
     @State private var isSaving = false
     @State private var saveError: String?
     @State private var showFilePicker = false
     @State private var showInstructions = false
+    @State private var privateKeyFileName: String?
 
     private var isValid: Bool {
         !issuerId.trimmingCharacters(in: .whitespaces).isEmpty &&
@@ -33,15 +33,10 @@ struct ASCCredentialForm: View {
                         Text("Connect to App Store Connect")
                             .font(.title2.weight(.semibold))
                     }
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Enter your API credentials to access App Store data.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                        Link("Create a key in App Store Connect \u{2192} Integrations",
-                             destination: URL(string: "https://appstoreconnect.apple.com/access/integrations/api")!)
-                            .font(.callout)
-                    }
-                    .fixedSize(horizontal: false, vertical: true)
+                    Text("Enter your API credentials to access App Store data.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     // Step-by-step instructions for first-time setup
                     VStack(alignment: .leading, spacing: 0) {
@@ -97,28 +92,45 @@ struct ASCCredentialForm: View {
                             .font(.system(.body, design: .monospaced))
                     }
 
-                    labeledField("Private Key (.p8)", hint: "Paste the full PEM content or load from file") {
-                        VStack(alignment: .trailing, spacing: 6) {
-                            TextEditor(text: $privateKey)
-                                .font(.system(.caption, design: .monospaced))
-                                .frame(height: 120)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-                                )
-                            Button("Load .p8 File…") {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Private Key (.p8)")
+                            .font(.callout.weight(.medium))
+                        HStack(spacing: 8) {
+                            Button {
                                 showFilePicker = true
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "doc.badge.plus")
+                                    Text(privateKeyFileName ?? "Choose .p8 File…")
+                                }
                             }
                             .font(.callout)
+
+                            if privateKeyFileName != nil {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                    .font(.body)
+                            }
+
+                            Spacer()
+
+                            Button {
+                                save()
+                            } label: {
+                                if isSaving {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                        .padding(.horizontal, 8)
+                                } else {
+                                    Text("Save Credentials")
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(!isValid || isSaving)
                         }
-                    }
-
-                    Divider()
-
-                    labeledField("Bundle ID", hint: "Must match your app in App Store Connect (e.g. com.mycompany.myapp)") {
-                        TextField("com.example.myapp", text: $bundleIdInput)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
+                        Text("Upload your .p8 key file")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
                     }
                 }
 
@@ -136,29 +148,56 @@ struct ASCCredentialForm: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                // Save button
-                HStack {
-                    Spacer()
+                // Action links
+                VStack(alignment: .leading, spacing: 6) {
                     Button {
-                        save()
+                        let settings = SettingsService.shared
+                        let agent = AIAgent(rawValue: settings.defaultAgentCLI) ?? .claudeCode
+                        let terminal = settings.resolveDefaultTerminal().terminal
+                        let prompt = "Use the /asc-team-key-create skill to create a new App Store Connect API key, then call the asc_set_credentials MCP tool to fill the form so I can verify and save."
+                        TerminalLauncher.launch(
+                            projectPath: BlitzPaths.mcps.path,
+                            agent: agent,
+                            terminal: terminal,
+                            prompt: prompt,
+                            skipPermissions: settings.skipAgentPermissions
+                        )
                     } label: {
-                        if isSaving {
-                            ProgressView()
-                                .controlSize(.small)
-                                .padding(.horizontal, 8)
-                        } else {
-                            Text("Save Credentials")
+                        HStack(spacing: 6) {
+                            Image(systemName: "sparkles")
+                            Text("Setup with AI")
+                            Image(systemName: "arrow.right")
+                                .font(.caption)
                         }
+                        .font(.callout.weight(.medium))
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!isValid || isSaving)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.blue)
+
+                    Link(destination: URL(string: "https://appstoreconnect.apple.com/access/integrations/api")!) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "key")
+                            Text("Setup manually")
+                            Image(systemName: "arrow.right")
+                                .font(.caption)
+                        }
+                        .font(.callout.weight(.medium))
+                    }
                 }
             }
             .padding(28)
         }
         .frame(maxWidth: 540)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { bundleIdInput = bundleId ?? "" }
+        .onChange(of: ascManager.pendingCredentialValues) { _, pending in
+            if let pending {
+                issuerId = pending["issuerId"] ?? ""
+                keyId = pending["keyId"] ?? ""
+                privateKey = pending["privateKey"] ?? ""
+                privateKeyFileName = pending["privateKeyFileName"]
+                ascManager.pendingCredentialValues = nil
+            }
+        }
         .fileImporter(
             isPresented: $showFilePicker,
             allowedContentTypes: [UTType(filenameExtension: "p8") ?? .data]
@@ -167,6 +206,7 @@ struct ASCCredentialForm: View {
                 if url.startAccessingSecurityScopedResource() {
                     defer { url.stopAccessingSecurityScopedResource() }
                     privateKey = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+                    privateKeyFileName = url.lastPathComponent
                 }
             }
         }
@@ -206,21 +246,12 @@ struct ASCCredentialForm: View {
             keyId: keyId.trimmingCharacters(in: .whitespaces),
             privateKey: privateKey.trimmingCharacters(in: .whitespacesAndNewlines)
         )
-        let resolvedBundleId = bundleIdInput.trimmingCharacters(in: .whitespaces)
         Task {
             do {
-                // Save bundle ID to project metadata if user entered/changed it
-                if !resolvedBundleId.isEmpty {
-                    let storage = ProjectStorage()
-                    if var metadata = storage.readMetadata(projectId: projectId) {
-                        metadata.bundleIdentifier = resolvedBundleId
-                        try storage.writeMetadata(projectId: projectId, metadata: metadata)
-                    }
-                }
                 try await ascManager.saveCredentials(
                     creds,
                     projectId: projectId,
-                    bundleId: resolvedBundleId.isEmpty ? bundleId : resolvedBundleId
+                    bundleId: bundleId
                 )
             } catch {
                 saveError = error.localizedDescription

@@ -1,6 +1,7 @@
 import AVKit
 import ScreenCaptureKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Terminal app options for onboarding configuration
 enum TerminalApp: Hashable {
@@ -91,27 +92,66 @@ struct OnboardingView: View {
         _skipAgentPermissions = State(initialValue: appState.settingsStore.skipAgentPermissions)
     }
 
+    // ASC setup state
+    @State private var ascIssuerId = ""
+    @State private var ascKeyId = ""
+    @State private var ascPrivateKey = ""
+    @State private var ascPrivateKeyFileName: String?
+    @State private var ascShowFilePicker = false
+    @State private var ascIsSaving = false
+    @State private var ascSaveError: String?
+    @State private var ascSaveSuccess = false
+    @State private var ascShowInstructions = false
+
+    private var ascIsValid: Bool {
+        !ascIssuerId.trimmingCharacters(in: .whitespaces).isEmpty &&
+        !ascKeyId.trimmingCharacters(in: .whitespaces).isEmpty &&
+        !ascPrivateKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     // Permissions state
     @State private var screenRecordingGranted = false
     @State private var screenRecordingChecking = false
 
-    // 0 = config, 1 = import slide, 2 = ask ai slide, 3 = permissions (if needed)
+    /// Skip the ASC slide if credentials are already configured (or just saved during onboarding)
+    private var skipASCSlide: Bool {
+        ascSaveSuccess || ASCCredentials.load() != nil
+    }
+
+    // Steps: config, [asc setup], import, ask ai, [permissions]
+    // ASC slide is skipped if credentials already exist; permissions skipped if already granted
     private var totalSteps: Int {
-        screenRecordingGranted ? 3 : 4
+        var count = 3 // config + import + ask ai
+        if !skipASCSlide { count += 1 }
+        if !screenRecordingGranted { count += 1 }
+        return count
+    }
+
+    /// Map a logical step index to the actual slide, accounting for skipped slides
+    private func slideForStep(_ step: Int) -> Int {
+        var slide = step
+        // slide 0 = config (always)
+        // slide 1 = asc setup (maybe skipped)
+        if skipASCSlide && slide >= 1 {
+            slide += 1 // skip over ASC
+        }
+        return slide
     }
 
     var body: some View {
         VStack(spacing: 0) {
             // Content area
             Group {
-                switch currentStep {
+                switch slideForStep(currentStep) {
                 case 0:
                     configurationStep
                 case 1:
-                    slideImportProject
+                    slideASCSetup
                 case 2:
-                    slideAskAI
+                    slideImportProject
                 case 3:
+                    slideAskAI
+                case 4:
                     slidePermissions
                 default:
                     EmptyView()
@@ -132,6 +172,21 @@ struct OnboardingView: View {
                 selectedTerminal = first
             }
             screenRecordingGranted = CGPreflightScreenCaptureAccess()
+        }
+        .onChange(of: appState.ascManager.pendingCredentialValues) { _, pending in
+            if let pending {
+                ascIssuerId = pending["issuerId"] ?? ""
+                ascKeyId = pending["keyId"] ?? ""
+                ascPrivateKey = pending["privateKey"] ?? ""
+                ascPrivateKeyFileName = pending["privateKeyFileName"]
+                appState.ascManager.pendingCredentialValues = nil
+                // Jump to ASC slide so user can verify
+                if currentStep != 1 {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        currentStep = 1
+                    }
+                }
+            }
         }
     }
 
@@ -334,7 +389,239 @@ struct OnboardingView: View {
         .padding(.top, 2)
     }
 
-    // MARK: - Slide 1: Import Project
+    // MARK: - Slide 1: App Store Connect Setup
+
+    @ViewBuilder
+    private var slideASCSetup: some View {
+        if ascSaveSuccess {
+            VStack(spacing: 16) {
+                Spacer()
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 56))
+                    .foregroundStyle(.green)
+                Text("Credentials saved")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .transition(.opacity)
+        } else {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 14) {
+                // Header
+                VStack(spacing: 4) {
+                    Image(systemName: "shippingbox.fill")
+                        .font(.system(size: 32))
+                        .foregroundStyle(.blue)
+
+                    Text("App Store Connect")
+                        .font(.system(size: 20, weight: .bold))
+
+                    Text("Connect your API key to manage submissions, screenshots, and more.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 420)
+                }
+
+                // Form fields
+                VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Issuer ID")
+                            .font(.callout.weight(.medium))
+                        TextField("xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", text: $ascIssuerId)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(.body, design: .monospaced))
+                    }
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Key ID")
+                            .font(.callout.weight(.medium))
+                        TextField("10-character alphanumeric", text: $ascKeyId)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(.body, design: .monospaced))
+                    }
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Private Key (.p8)")
+                            .font(.callout.weight(.medium))
+                        HStack(spacing: 8) {
+                            Button {
+                                ascShowFilePicker = true
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "doc.badge.plus")
+                                    Text(ascPrivateKeyFileName ?? "Choose .p8 File…")
+                                }
+                            }
+                            .font(.callout)
+
+                            if ascPrivateKeyFileName != nil {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                    .font(.body)
+                            }
+
+                            Spacer()
+
+                            Button {
+                                saveASCCredentials()
+                            } label: {
+                                if ascIsSaving {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                        .padding(.horizontal, 8)
+                                } else {
+                                    Text("Save Credentials")
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(!ascIsValid || ascIsSaving)
+                        }
+                    }
+
+                    if let error = ascSaveError {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: 440)
+
+                // Action links
+                VStack(spacing: 4) {
+                    Button {
+                        launchASCSetupWithAI()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "sparkles")
+                            Text("Setup with AI")
+                            Image(systemName: "arrow.right")
+                                .font(.caption)
+                        }
+                        .font(.callout.weight(.medium))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.blue)
+
+                    Link(destination: URL(string: "https://appstoreconnect.apple.com/access/integrations/api")!) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "key")
+                            Text("Setup manually")
+                            Image(systemName: "arrow.right")
+                                .font(.caption)
+                        }
+                        .font(.callout.weight(.medium))
+                    }
+
+                    // Collapsible instructions
+                    VStack(alignment: .leading, spacing: 0) {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                ascShowInstructions.toggle()
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "chevron.right")
+                                    .font(.caption2.weight(.semibold))
+                                    .rotationEffect(.degrees(ascShowInstructions ? 90 : 0))
+                                Text("How to generate your API key")
+                                    .font(.caption.weight(.medium))
+                            }
+                            .foregroundStyle(.blue)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+
+                        if ascShowInstructions {
+                            VStack(alignment: .leading, spacing: 6) {
+                                ascInstructionStep(1, "Go to **App Store Connect > Users and Access > Integrations > App Store Connect API**")
+                                ascInstructionStep(2, "Select the **Team Keys** tab (not Individual Keys)")
+                                ascInstructionStep(3, "Click the **+** button to generate a new key")
+                                ascInstructionStep(4, "Set Access to **Admin** and give the key a name")
+                                ascInstructionStep(5, "Click **Generate**")
+                                ascInstructionStep(6, "Copy the **Issuer ID** (shown at the top) and the **Key ID** from the key row")
+                                ascInstructionStep(7, "Click **Download** to save the .p8 file")
+                                Text("The .p8 file can only be downloaded once. Store it securely.")
+                                    .font(.caption2)
+                                    .foregroundStyle(.orange)
+                                    .padding(.leading, 20)
+                            }
+                            .padding(.top, 6)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 40)
+            .padding(.vertical, 8)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .fileImporter(
+            isPresented: $ascShowFilePicker,
+            allowedContentTypes: [UTType(filenameExtension: "p8") ?? .data]
+        ) { result in
+            if case .success(let url) = result {
+                if url.startAccessingSecurityScopedResource() {
+                    defer { url.stopAccessingSecurityScopedResource() }
+                    ascPrivateKey = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+                    ascPrivateKeyFileName = url.lastPathComponent
+                }
+            }
+        }
+        } // else
+    }
+
+    @ViewBuilder
+    private func ascInstructionStep(_ number: Int, _ text: LocalizedStringKey) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text("\(number).")
+                .font(.caption2.weight(.semibold).monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 14, alignment: .trailing)
+            Text(text)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func saveASCCredentials() {
+        ascIsSaving = true
+        ascSaveError = nil
+        let creds = ASCCredentials(
+            issuerId: ascIssuerId.trimmingCharacters(in: .whitespaces),
+            keyId: ascKeyId.trimmingCharacters(in: .whitespaces),
+            privateKey: ascPrivateKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        Task {
+            do {
+                try creds.save()
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    ascSaveSuccess = true
+                }
+            } catch {
+                ascSaveError = error.localizedDescription
+            }
+            ascIsSaving = false
+        }
+    }
+
+    private func launchASCSetupWithAI() {
+        let agent = selectedAgent
+        let terminal = selectedTerminal.resolvedFallback
+        let prompt = "Use the /asc-team-key-create skill to create a new App Store Connect API key, then call the asc_set_credentials MCP tool to fill the form so I can verify and save."
+        TerminalLauncher.launch(
+            projectPath: BlitzPaths.mcps.path,
+            agent: agent,
+            terminal: terminal,
+            prompt: prompt,
+            skipPermissions: skipAgentPermissions
+        )
+    }
+
+    // MARK: - Slide 2: Import Project (was Slide 1)
 
     private var slideImportProject: some View {
         VStack(spacing: 6) {
@@ -350,7 +637,7 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: - Slide 2: Ask AI
+    // MARK: - Slide 3: Ask AI
 
     private var slideAskAI: some View {
         VStack(spacing: 6) {
@@ -367,7 +654,7 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: - Slide 3: Permissions (Screen Recording)
+    // MARK: - Slide 4: Permissions (Screen Recording)
 
     private var slidePermissions: some View {
         VStack(spacing: 24) {
@@ -479,6 +766,17 @@ struct OnboardingView: View {
             Spacer()
 
             if currentStep < totalSteps - 1 {
+                // Show "Skip" on the ASC setup slide (step 1)
+                if slideForStep(currentStep) == 1 {
+                    Button("Skip") {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            currentStep += 1
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                }
+
                 Button("Next") {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         currentStep += 1
