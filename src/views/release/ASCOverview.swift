@@ -213,20 +213,29 @@ struct ASCOverview: View {
                                         }
                                     }
                                 } else if let url = field.actionUrl, let nsUrl = URL(string: url) {
-                                    if field.hint != nil {
-                                        Button {
-                                            launchClaudeCodeForIAPAttach()
-                                        } label: {
-                                            HStack(spacing: 3) {
-                                                Image(systemName: "sparkles")
-                                                Text("Fix")
-                                            }
+                                    Button {
+                                        launchAIFixForField(field)
+                                    } label: {
+                                        HStack(spacing: 3) {
+                                            Image(systemName: "sparkles")
+                                            Text("Fix")
                                         }
-                                        .buttonStyle(.bordered)
-                                        .controlSize(.small)
                                     }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
                                     Button("Open in Web") {
                                         NSWorkspace.shared.open(nsUrl)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                } else if field.required && (field.value == nil || field.value!.isEmpty) {
+                                    Button {
+                                        launchAIFixForField(field)
+                                    } label: {
+                                        HStack(spacing: 3) {
+                                            Image(systemName: "sparkles")
+                                            Text("Fix")
+                                        }
                                     }
                                     .buttonStyle(.bordered)
                                     .controlSize(.small)
@@ -268,17 +277,16 @@ struct ASCOverview: View {
         }
     }
 
-    private func launchClaudeCodeForIAPAttach() {
+    private func launchAIFixForField(_ field: SubmissionReadiness.FieldStatus) {
         guard let appId = asc.app?.id else { return }
 
-        let readyIAPs = asc.inAppPurchases.filter { $0.attributes.state == "READY_TO_SUBMIT" }
-        let readySubs = asc.subscriptionsPerGroup.values.flatMap { $0 }
-            .filter { $0.attributes.state == "READY_TO_SUBMIT" }
-        let names = (readyIAPs.map { $0.attributes.name ?? $0.id }
-            + readySubs.map { $0.attributes.name ?? $0.id })
-            .joined(separator: ", ")
-
-        let prompt = "Attach these IAPs/subscriptions to app \(appId) for review: \(names). Use the /asc-iap-attach skill."
+        let prompt: String
+        if let hint = field.hint {
+            prompt = "Fix the \"\(field.label)\" submission readiness issue for app \(appId): \(hint)"
+        } else {
+            prompt = "Fix the \"\(field.label)\" submission readiness issue for app \(appId). "
+                + "This field is currently missing or incomplete. Use the App Store Connect MCP tools to resolve it."
+        }
 
         var projectPath: String? = nil
         if let projectId = asc.loadedProjectId {
@@ -288,7 +296,7 @@ struct ASCOverview: View {
         let settings = SettingsService.shared
         let agent = AIAgent(rawValue: settings.defaultAgentCLI) ?? .claudeCode
         let terminal = TerminalApp.from(settings.defaultTerminal)
-        TerminalLauncher.launch(projectPath: projectPath, agent: agent, terminal: terminal, prompt: prompt)
+        TerminalLauncher.launch(projectPath: projectPath, agent: agent, terminal: terminal, prompt: prompt, skipPermissions: settings.skipAgentPermissions)
     }
 
     private var buildProgress: Double {
