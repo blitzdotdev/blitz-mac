@@ -18,6 +18,8 @@
 
 Blitz is a native macOS app that gives AI agents full control over the iOS development lifecycle — simulator/iPhone management, database setup, and App Store Connect submission. It includes built-in MCP servers so Claude Code (or any MCP client) can build, test, and submit your app to the App Store.
 
+[![blitz-mcp MCP server](https://glama.ai/mcp/servers/blitzdotdev/blitz-mac/badges/card.svg)](https://glama.ai/mcp/servers/blitzdotdev/blitz-mac)
+
 <div align="center">
   <img src=".github/assets/before-after.png" width="800" />
 </div>
