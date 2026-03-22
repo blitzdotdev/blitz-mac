@@ -13,6 +13,11 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:-}"
 ENTITLEMENTS="$ROOT_DIR/scripts/Entitlements.plist"
+TIMESTAMP_MODE="${CODESIGN_TIMESTAMP:-auto}"
+
+if [ "$CONFIG" = "debug" ] && [ "$TIMESTAMP_MODE" = "auto" ]; then
+    TIMESTAMP_MODE="none"
+fi
 
 if [ -z "$SIGNING_IDENTITY" ]; then
     echo "WARNING: APPLE_SIGNING_IDENTITY not set, falling back to ad-hoc signing."
@@ -37,17 +42,20 @@ cp ".build/${CONFIG}/${APP_NAME}" "$BUNDLE_DIR/Contents/MacOS/${APP_NAME}"
 
 # Generate app icon (.icns) from PNG
 ICON_PNG="$ROOT_DIR/src/resources/blitz-icon.png"
+ICON_ICNS="$BUNDLE_DIR/Contents/Resources/AppIcon.icns"
 if [ -f "$ICON_PNG" ]; then
-    ICONSET_DIR=$(mktemp -d)/Blitz.iconset
-    mkdir -p "$ICONSET_DIR"
-    for size in 16 32 128 256 512; do
-        sips -z $size $size "$ICON_PNG" --out "$ICONSET_DIR/icon_${size}x${size}.png" >/dev/null 2>&1
-        double=$((size * 2))
-        sips -z $double $double "$ICON_PNG" --out "$ICONSET_DIR/icon_${size}x${size}@2x.png" >/dev/null 2>&1
-    done
-    iconutil -c icns "$ICONSET_DIR" -o "$BUNDLE_DIR/Contents/Resources/AppIcon.icns"
-    rm -rf "$(dirname "$ICONSET_DIR")"
-    echo "Generated AppIcon.icns"
+    if [ ! -f "$ICON_ICNS" ] || [ "$ICON_PNG" -nt "$ICON_ICNS" ]; then
+        ICONSET_DIR=$(mktemp -d)/Blitz.iconset
+        mkdir -p "$ICONSET_DIR"
+        for size in 16 32 128 256 512; do
+            sips -z $size $size "$ICON_PNG" --out "$ICONSET_DIR/icon_${size}x${size}.png" >/dev/null 2>&1
+            double=$((size * 2))
+            sips -z $double $double "$ICON_PNG" --out "$ICONSET_DIR/icon_${size}x${size}@2x.png" >/dev/null 2>&1
+        done
+        iconutil -c icns "$ICONSET_DIR" -o "$ICON_ICNS"
+        rm -rf "$(dirname "$ICONSET_DIR")"
+        echo "Generated AppIcon.icns"
+    fi
 fi
 
 # Copy SPM resource bundles into Contents/Resources/ (standard macOS location).
@@ -125,28 +133,44 @@ PLIST
 # Remove stale codesign temp files from previous failed signing attempts
 find "$BUNDLE_DIR" -name "*.cstemp" -delete 2>/dev/null || true
 
+codesign_bundle_path() {
+    local target="$1"
+
+    if [ "$SIGNING_IDENTITY" = "-" ]; then
+        codesign --force --sign - --entitlements "$ENTITLEMENTS" "$target"
+        return
+    fi
+
+    if [ "$TIMESTAMP_MODE" = "none" ]; then
+        codesign --force --options runtime --timestamp=none \
+            --sign "$SIGNING_IDENTITY" \
+            --entitlements "$ENTITLEMENTS" \
+            "$target"
+        return
+    fi
+
+    if ! codesign --force --options runtime --timestamp \
+        --sign "$SIGNING_IDENTITY" \
+        --entitlements "$ENTITLEMENTS" \
+        "$target" 2>/dev/null; then
+        codesign --force --options runtime --timestamp=none \
+            --sign "$SIGNING_IDENTITY" \
+            --entitlements "$ENTITLEMENTS" \
+            "$target"
+    fi
+}
+
 # Sign nested native binaries first (inside-out — required for notarization)
 if [ "$SIGNING_IDENTITY" != "-" ]; then
     echo "Signing native dependencies..."
     find "$BUNDLE_DIR/Contents/Resources" -type f \( -name "*.node" -o -name "*.dylib" \) 2>/dev/null | while read -r f; do
-        if ! codesign --force --options runtime --timestamp \
-            --sign "$SIGNING_IDENTITY" \
-            --entitlements "$ENTITLEMENTS" \
-            "$f" 2>/dev/null; then
-            codesign --force --options runtime --timestamp=none \
-                --sign "$SIGNING_IDENTITY" \
-                --entitlements "$ENTITLEMENTS" \
-                "$f" 2>/dev/null || true
-        fi
+        codesign_bundle_path "$f" 2>/dev/null || true
         echo "  Signed: $f"
     done
 fi
 
 # Sign the .app bundle (must be after nested signing)
-if [ "$SIGNING_IDENTITY" = "-" ]; then
-    codesign --force --sign - --entitlements "$ENTITLEMENTS" "$BUNDLE_DIR"
-else
-    # Try with timestamp (required for notarization); fall back without for local dev
+if [ "$SIGNING_IDENTITY" != "-" ] && [ "$TIMESTAMP_MODE" = "auto" ]; then
     if ! codesign --force --options runtime --timestamp \
         --sign "$SIGNING_IDENTITY" \
         --entitlements "$ENTITLEMENTS" \
@@ -157,6 +181,8 @@ else
             --entitlements "$ENTITLEMENTS" \
             "$BUNDLE_DIR"
     fi
+else
+    codesign_bundle_path "$BUNDLE_DIR"
 fi
 
 echo ""
