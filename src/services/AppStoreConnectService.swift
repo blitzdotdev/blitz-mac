@@ -275,13 +275,28 @@ final class AppStoreConnectService {
 
     // MARK: - App
 
-    func fetchApp(bundleId: String) async throws -> ASCApp {
+    func fetchApp(bundleId: String, exactName: String? = nil) async throws -> ASCApp {
+        let trimmedBundleId = bundleId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedBundleId.isEmpty else {
+            throw ASCError.notFound("App with a valid bundle ID")
+        }
+
         let resp = try await get("apps", queryItems: [
-            URLQueryItem(name: "filter[bundleId]", value: bundleId),
+            URLQueryItem(name: "filter[bundleId]", value: trimmedBundleId),
             URLQueryItem(name: "limit", value: "1")
         ], as: ASCListResponse<ASCApp>.self)
         guard let app = resp.data.first else {
-            throw ASCError.notFound("App with bundle ID '\(bundleId)'")
+            throw ASCError.notFound("App with bundle ID '\(trimmedBundleId)'")
+        }
+
+        if let exactName {
+            let trimmedExpectedName = exactName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedExpectedName.isEmpty {
+                let actualName = app.attributes.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard actualName == trimmedExpectedName else {
+                    throw ASCError.notFound("App named '\(trimmedExpectedName)' with bundle ID '\(trimmedBundleId)'")
+                }
+            }
         }
         return app
     }
@@ -576,11 +591,63 @@ final class AppStoreConnectService {
     // MARK: - Write: Paid Pricing
 
     func fetchAppPricePoints(appId: String, territory: String = "USA") async throws -> [ASCPricePoint] {
-        let resp = try await get("apps/\(appId)/appPricePoints", queryItems: [
+        var all: [ASCPricePoint] = []
+        var path = "apps/\(appId)/appPricePoints"
+        var queryItems = [
             URLQueryItem(name: "filter[territory]", value: territory),
             URLQueryItem(name: "limit", value: "200")
-        ], as: ASCListResponse<ASCPricePoint>.self)
-        return resp.data
+        ]
+
+        while true {
+            let resp = try await get(path, queryItems: queryItems, as: ASCPaginatedResponse<ASCPricePoint>.self)
+            all.append(contentsOf: resp.data)
+            guard let next = resp.links?.next,
+                  let comps = URLComponents(string: next),
+                  let nextPath = comps.path.split(separator: "/v1/").last else { break }
+            path = String(nextPath)
+            queryItems = comps.queryItems ?? []
+        }
+        return all
+    }
+
+    func fetchAppPricingState(appId: String, on referenceDate: Date = Date()) async throws -> ASCAppPricingState {
+        let schedule = try await get(
+            "apps/\(appId)/appPriceSchedule",
+            as: ASCSingleResponse<ASCPriceSchedule>.self
+        )
+        let prices = try await get(
+            "appPriceSchedules/\(schedule.data.id)/manualPrices",
+            queryItems: [
+                URLQueryItem(name: "include", value: "appPricePoint"),
+                URLQueryItem(name: "limit", value: "200")
+            ],
+            as: ASCListResponse<ASCAppPrice>.self
+        )
+
+        let today = Self.isoDateString(referenceDate)
+        let sortedByStartDesc = prices.data.sorted { lhs, rhs in
+            let lhsStart = lhs.startDate ?? ""
+            let rhsStart = rhs.startDate ?? ""
+            if lhsStart != rhsStart { return lhsStart > rhsStart }
+            return lhs.id > rhs.id
+        }
+
+        let current = sortedByStartDesc.first(where: { Self.isActiveAppPrice($0, on: today) })
+            ?? sortedByStartDesc.first(where: { $0.startDate == nil && $0.endDate == nil })
+
+        let future = prices.data
+            .filter {
+                guard let startDate = $0.startDate else { return false }
+                return startDate > today
+            }
+            .sorted { ($0.startDate ?? "") < ($1.startDate ?? "") }
+            .first
+
+        return ASCAppPricingState(
+            currentPricePointId: current?.appPricePointId,
+            scheduledPricePointId: future?.appPricePointId,
+            scheduledEffectiveDate: future?.startDate
+        )
     }
 
     func setAppPrice(appId: String, pricePointId: String) async throws {
@@ -1365,6 +1432,25 @@ final class AppStoreConnectService {
         } catch {
             return false
         }
+    }
+
+    private static func isoDateString(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+
+    private static func isActiveAppPrice(_ price: ASCAppPrice, on date: String) -> Bool {
+        if let startDate = price.startDate, startDate > date {
+            return false
+        }
+        if let endDate = price.endDate, endDate < date {
+            return false
+        }
+        return true
     }
 
     // MARK: - Bundle IDs
