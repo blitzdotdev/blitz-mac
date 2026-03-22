@@ -848,8 +848,8 @@ actor MCPToolExecutor {
     private func executeASCOpenSubmitPreview() async -> [String: Any] {
         // Navigation already done by preNavigateASCTool
 
-        // Refresh IAP/subscription data so readiness reflects latest iris API state
-        await appState.ascManager.refreshMonetization()
+        // Refresh IAP/subscription data so readiness reflects latest App Store Connect and iris API state
+        await appState.ascManager.refreshSubmissionReadinessData()
 
         var readiness = await MainActor.run { appState.ascManager.submissionReadiness }
 
@@ -875,7 +875,7 @@ actor MCPToolExecutor {
                         do {
                             try await service.attachBuild(versionId: versionId, buildId: latestBuild.id)
                             // Refresh data so readiness reflects the attached build
-                            await appState.ascManager.fetchTabData(.ascOverview)
+                            await appState.ascManager.refreshTabData(.ascOverview)
                             readiness = await MainActor.run { appState.ascManager.submissionReadiness }
                         } catch {
                             // Non-fatal: report in missing fields
@@ -908,135 +908,92 @@ actor MCPToolExecutor {
         return abs(a - b) < 0.001
     }
 
-    /// Check iris API for which IAPs/subscriptions are attached to the next version.
-    /// Populates ASCManager.attachedIAPIds so the readiness check reflects iris state.
-    private func checkIrisAttachmentStatus() async {
-        let appId = await MainActor.run { appState.ascManager.app?.id }
-        guard let appId else { return }
-
-        // Try to read session cookies from keychain
-        guard let storeData = try? readKeychainItem(service: "asc-web-session", account: "asc:web-session:store"),
-              let store = try? JSONSerialization.jsonObject(with: storeData) as? [String: Any],
-              let lastKey = store["last_key"] as? String,
-              let sessions = store["sessions"] as? [String: Any],
-              let sessionDict = sessions[lastKey] as? [String: Any],
-              let cookies = sessionDict["cookies"] as? [String: [[String: Any]]] else { return }
-
-        let cookieStr = cookies.values.flatMap { $0 }.compactMap { c -> String? in
-            guard let name = c["name"] as? String, let value = c["value"] as? String, !name.isEmpty else { return nil }
-            return name.hasPrefix("DES") ? "\(name)=\"\(value)\"" : "\(name)=\(value)"
-        }.joined(separator: "; ")
-
-        guard !cookieStr.isEmpty else { return }
-
-        let urlStr = "https://appstoreconnect.apple.com/iris/v1/apps/\(appId)/subscriptionGroups?include=subscriptions&limit=300&fields%5Bsubscriptions%5D=productId,name,state,submitWithNextAppStoreVersion"
-        guard let url = URL(string: urlStr) else { return }
-
-        var request = URLRequest(url: url)
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
-        request.setValue("https://appstoreconnect.apple.com", forHTTPHeaderField: "Origin")
-        request.setValue("https://appstoreconnect.apple.com/", forHTTPHeaderField: "Referer")
-        request.setValue(cookieStr, forHTTPHeaderField: "Cookie")
-        request.timeoutInterval = 10
-
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let included = json["included"] as? [[String: Any]] else { return }
-
-        var attachedIds: Set<String> = []
-        for item in included {
-            guard let attrs = item["attributes"] as? [String: Any],
-                  let id = item["id"] as? String,
-                  let submitWithNext = attrs["submitWithNextAppStoreVersion"] as? Bool,
-                  submitWithNext else { continue }
-            attachedIds.insert(id)
-        }
-
-        await MainActor.run {
-            appState.ascManager.attachedIAPIds = attachedIds
-        }
-    }
-
-    private func readKeychainItem(service: String, account: String) throws -> Data? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess else { return nil }
-        return result as? Data
-    }
-
     private func executeASCWebAuth() async -> [String: Any] {
-        // Show the Apple ID login sheet and wait for session capture
-        return await withCheckedContinuation { continuation in
-            Task { @MainActor in
-                appState.ascManager.showWebAuthForMCP { session in
-                    // Bridge session cookies to the asc-web-session:store keychain format
-                    var cookiesByDomain: [String: [[String: Any]]] = [:]
-                    for cookie in session.cookies {
-                        let domainKey = cookie.domain.hasPrefix(".") ? String(cookie.domain.dropFirst()) : cookie.domain
-                        cookiesByDomain[domainKey, default: []].append([
-                            "name": cookie.name,
-                            "value": cookie.value,
-                            "domain": cookie.domain,
-                            "path": cookie.path,
-                            "secure": true,
-                            "http_only": true,
-                        ])
-                    }
-
-                    let email = session.email ?? "unknown"
-                    let normalized = email.lowercased().trimmingCharacters(in: .whitespaces)
-                    let hashBytes = SHA256.hash(data: Data(normalized.utf8))
-                    let hashString = hashBytes.map { String(format: "%02x", $0) }.joined()
-
-                    let sessionEntry: [String: Any] = [
-                        "version": 1,
-                        "updated_at": ISO8601DateFormatter().string(from: Date()),
-                        "cookies": cookiesByDomain,
-                    ]
-
-                    let store: [String: Any] = [
-                        "version": 1,
-                        "last_key": hashString,
-                        "sessions": [hashString: sessionEntry],
-                    ]
-
-                    if let data = try? JSONSerialization.data(withJSONObject: store) {
-                        let deleteQuery: [String: Any] = [
-                            kSecClass as String: kSecClassGenericPassword,
-                            kSecAttrService as String: "asc-web-session",
-                            kSecAttrAccount as String: "asc:web-session:store",
-                        ]
-                        SecItemDelete(deleteQuery as CFDictionary)
-
-                        let addQuery: [String: Any] = [
-                            kSecClass as String: kSecClassGenericPassword,
-                            kSecAttrService as String: "asc-web-session",
-                            kSecAttrAccount as String: "asc:web-session:store",
-                            kSecAttrLabel as String: "ASC Web Session Store",
-                            kSecValueData as String: data,
-                            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked,
-                        ]
-                        SecItemAdd(addQuery as CFDictionary, nil)
-                    }
-
-                    continuation.resume(returning: [
-                        "success": true,
-                        "email": email,
-                        "message": "Web session authenticated and saved to keychain. The asc-iap-attach skill can now use the iris API."
-                    ] as [String: Any])
-                }
-            }
+        await MainActor.run {
+            NSApp.activate(ignoringOtherApps: true)
         }
+
+        guard let session = await appState.ascManager.requestWebAuthForMCP() else {
+            return mcpJSON([
+                "success": false,
+                "cancelled": true,
+                "message": "Web authentication was cancelled before a session was captured."
+            ])
+        }
+
+        do {
+            let email = try storeASCWebSession(session)
+            return mcpJSON([
+                "success": true,
+                "email": email,
+                "message": "Web session authenticated and saved to keychain. The asc-iap-attach skill can now use the iris API."
+            ])
+        } catch {
+            return mcpJSON([
+                "success": false,
+                "message": "Authenticated, but failed to save the ASC web session: \(error.localizedDescription)"
+            ])
+        }
+    }
+
+    private func storeASCWebSession(_ session: IrisSession) throws -> String {
+        var cookiesByDomain: [String: [[String: Any]]] = [:]
+        for cookie in session.cookies {
+            let domainKey = cookie.domain.hasPrefix(".") ? String(cookie.domain.dropFirst()) : cookie.domain
+            cookiesByDomain[domainKey, default: []].append([
+                "name": cookie.name,
+                "value": cookie.value,
+                "domain": cookie.domain,
+                "path": cookie.path,
+                "secure": true,
+                "http_only": true,
+            ])
+        }
+
+        let normalizedEmail = (session.email ?? "unknown")
+            .lowercased()
+            .trimmingCharacters(in: .whitespaces)
+        let hashBytes = SHA256.hash(data: Data(normalizedEmail.utf8))
+        let hashString = hashBytes.map { String(format: "%02x", $0) }.joined()
+
+        let sessionEntry: [String: Any] = [
+            "version": 1,
+            "updated_at": ISO8601DateFormatter().string(from: Date()),
+            "cookies": cookiesByDomain,
+        ]
+
+        let store: [String: Any] = [
+            "version": 1,
+            "last_key": hashString,
+            "sessions": [hashString: sessionEntry],
+        ]
+
+        let data = try JSONSerialization.data(withJSONObject: store)
+        let deleteQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "asc-web-session",
+            kSecAttrAccount as String: "asc:web-session:store",
+        ]
+        SecItemDelete(deleteQuery as CFDictionary)
+
+        let addQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "asc-web-session",
+            kSecAttrAccount as String: "asc:web-session:store",
+            kSecAttrLabel as String: "ASC Web Session Store",
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked,
+        ]
+        let status = SecItemAdd(addQuery as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            throw NSError(
+                domain: "ASCWebSessionStore",
+                code: Int(status),
+                userInfo: [NSLocalizedDescriptionKey: "Keychain write failed (status: \(status))"]
+            )
+        }
+
+        return session.email ?? "unknown"
     }
 
     private func executeASCSetAppPrice(_ args: [String: Any]) async throws -> [String: Any] {
@@ -1290,8 +1247,7 @@ actor MCPToolExecutor {
 
         // Refresh IAP/subscription data for overview so readiness reflects latest state
         if tab == .ascOverview {
-            await appState.ascManager.refreshMonetization()
-            await checkIrisAttachmentStatus()
+            await appState.ascManager.refreshSubmissionReadinessData()
         }
 
         // Build tab-specific data

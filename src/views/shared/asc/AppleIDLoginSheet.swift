@@ -23,7 +23,7 @@ private func irisLog(_ msg: String) {
 }
 
 struct AppleIDLoginSheet: View {
-    var subtitle: String = "Sign in to App Store Connect to view Apple's review feedback."
+    var subtitle: String = "Sign in to App Store Connect to authenticate your Apple ID session."
     var onSessionCaptured: (IrisSession) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var isLoading = true

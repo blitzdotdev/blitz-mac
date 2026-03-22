@@ -235,6 +235,7 @@ struct SimulatorView: View {
             // Only capture when simulator is streaming and this tab is active
             guard stream.isCapturing,
                   appState.activeTab == .simulator,
+                  !appState.ascManager.showAppleIDLogin,
                   let udid = appState.simulatorManager.bootedDeviceId else {
                 return event
             }
@@ -271,4 +272,3 @@ struct SimulatorView: View {
         }
     }
 }
-

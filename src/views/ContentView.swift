@@ -25,6 +25,13 @@ struct ContentView: View {
     @State private var tabSwitchTask: Task<Void, Never>?
     @State private var showConnectAI = false
 
+    private var appleIDLoginBinding: Binding<Bool> {
+        Binding(
+            get: { appState.ascManager.showAppleIDLogin },
+            set: { appState.ascManager.showAppleIDLogin = $0 }
+        )
+    }
+
     /// Consume pendingSetupProjectId and run project scaffolding if needed.
     private func startPendingSetupIfNeeded() async {
         guard let pendingId = appState.projectSetup.pendingSetupProjectId,
@@ -163,6 +170,14 @@ struct ContentView: View {
         }
         .sheet(isPresented: $appState.showImportProjectSheet) {
             ImportProjectSheet(appState: appState, isPresented: $appState.showImportProjectSheet)
+        }
+        .sheet(isPresented: appleIDLoginBinding, onDismiss: {
+            appState.ascManager.cancelPendingWebAuth()
+        }) {
+            AppleIDLoginSheet { session in
+                appState.ascManager.setIrisSession(session)
+                Task { await appState.ascManager.fetchRejectionFeedback() }
+            }
         }
         .approvalAlert(appState: appState)
     }
