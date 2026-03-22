@@ -35,7 +35,7 @@ actor MCPToolExecutor {
 
         // Pre-navigate for ASC form tools so the user sees the target tab before approving
         var previousTab: AppTab?
-        if name == "asc_fill_form" || name == "asc_upload_screenshots" || name == "asc_open_submit_preview"
+        if name == "asc_fill_form" || name == "asc_open_submit_preview"
             || name == "asc_create_iap" || name == "asc_create_subscription" || name == "asc_set_app_price"
             || name == "screenshots_add_asset" || name == "screenshots_set_track" || name == "screenshots_save" {
             previousTab = await preNavigateASCTool(name: name, arguments: arguments)
@@ -82,7 +82,7 @@ actor MCPToolExecutor {
             }
         } else if name == "asc_open_submit_preview" {
             targetTab = .ascOverview
-        } else if name == "asc_upload_screenshots" || name == "screenshots_add_asset"
+        } else if name == "screenshots_add_asset"
                     || name == "screenshots_set_track" || name == "screenshots_save" {
             targetTab = .screenshots
         } else if name == "asc_set_app_price" {
@@ -239,8 +239,6 @@ actor MCPToolExecutor {
         // -- ASC Form Tools --
         case "asc_fill_form":
             return try await executeASCFillForm(arguments)
-        case "asc_upload_screenshots":
-            return try await executeASCUploadScreenshots(arguments)
         case "screenshots_add_asset":
             return try await executeScreenshotsAddAsset(arguments)
         case "screenshots_set_track":
@@ -762,27 +760,6 @@ actor MCPToolExecutor {
         _ = await MainActor.run { appState.ascManager.pendingFormValues.removeValue(forKey: tab) }
 
         return mcpJSON(["success": true, "tab": tab, "fieldsUpdated": fieldMap.count])
-    }
-
-    private func executeASCUploadScreenshots(_ args: [String: Any]) async throws -> [String: Any] {
-        guard let rawPaths = args["screenshotPaths"] as? [String],
-              let displayType = args["displayType"] as? String else {
-            throw MCPServerService.MCPError.invalidToolArgs
-        }
-        let locale = args["locale"] as? String ?? "en-US"
-
-        // Expand ~ and validate paths exist
-        let paths = rawPaths.map { ($0 as NSString).expandingTildeInPath }
-        for path in paths {
-            guard FileManager.default.fileExists(atPath: path) else {
-                return mcpText("Error: file not found at \(path)")
-            }
-        }
-
-        await appState.ascManager.uploadScreenshots(paths: paths, displayType: displayType, locale: locale)
-
-        if let err = await checkASCWriteError(tab: "screenshots") { return err }
-        return mcpJSON(["success": true, "uploaded": paths.count])
     }
 
     private func executeScreenshotsAddAsset(_ args: [String: Any]) async throws -> [String: Any] {

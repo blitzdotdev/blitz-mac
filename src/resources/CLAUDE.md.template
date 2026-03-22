@@ -125,15 +125,6 @@ Read the structured data state of any Blitz tab. Returns form field values, subm
 
 Valid tabs: `ascOverview`, `storeListing`, `screenshots`, `appDetails`, `monetization`, `review`, `analytics`, `reviews`, `builds`, `groups`, `betaInfo`, `feedback`
 
-### asc_upload_screenshots
-
-Upload screenshots to App Store Connect.
-```json
-{ "screenshotPaths": ["/tmp/screen1.png"], "displayType": "APP_IPHONE_67", "locale": "en-US" }
-```
-Required display types for iOS: APP_IPHONE_67 (mandatory), APP_IPAD_PRO_3GEN_129 (mandatory).
-Required display type for macOS: APP_DESKTOP (1280x800, 1440x900, 2560x1600, or 2880x1800 at 16:10 ratio).
-
 ### asc_open_submit_preview
 
 No arguments. Checks all required fields and either opens the Submit for Review modal or returns missing fields.
@@ -210,7 +201,7 @@ Create an auto-renewable subscription. Creates or reuses a subscription group.
     - `asc_fill_form` tab `"monetization"` — isFree (use `asc_set_app_price` for paid pricing)
     - `asc_fill_form` tab `"review.ageRating"` — set all applicable content descriptors
     - `asc_fill_form` tab `"review.contact"` — contactFirstName, contactLastName, contactEmail, contactPhone
-    - `asc_upload_screenshots` — upload for APP_IPHONE_67/APP_IPAD_PRO_3GEN_129 (iOS) or APP_DESKTOP (macOS)
+    - Screenshots: `screenshots_add_asset` → `screenshots_set_track` (slots 1-10) → `screenshots_save` for APP_IPHONE_67/APP_IPAD_PRO_3GEN_129 (iOS) or APP_DESKTOP (macOS)
     - Re-check `get_tab_state` tab `"ascOverview"` to confirm all required fields are filled
 3. **Manual step:** Tell the user to set Privacy Nutrition Labels manually in [App Store Connect](https://appstoreconnect.apple.com) — this is not exposed in Apple's REST API
 4. `app_store_setup_signing` teamId=YOUR_TEAM_ID (one-time per bundle ID)

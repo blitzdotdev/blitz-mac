@@ -95,7 +95,7 @@ struct TestsView: View {
 
     1. Navigate to each screen and configure the UI — scroll, tap into views, fill in data
     2. Call `get_screenshot` to capture each state at full resolution
-    3. Use `asc_upload_screenshots` to attach all screenshots to the current App Store version
+    3. Use `screenshots_add_asset` → `screenshots_set_track` → `screenshots_save` to upload to App Store Connect
 
     You get pixel-perfect, context-rich screenshots without touching the simulator.
     """

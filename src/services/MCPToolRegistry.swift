@@ -187,20 +187,6 @@ enum MCPToolRegistry {
             required: ["tab", "fields"]
         ))
 
-        tools.append(tool(
-            name: "asc_upload_screenshots",
-            description: "Upload screenshot files to App Store Connect for the active version. Legacy — prefer screenshots_save with track workflow.",
-            properties: [
-                "screenshotPaths": [
-                    "type": "array",
-                    "items": ["type": "string"]
-                ] as [String: Any],
-                "displayType": ["type": "string", "description": "Display type (use APP_DESKTOP for macOS apps)", "enum": ["APP_IPHONE_67", "APP_IPAD_PRO_3GEN_129", "APP_DESKTOP"]],
-                "locale": ["type": "string", "description": "e.g. en-US"]
-            ],
-            required: ["screenshotPaths", "displayType"]
-        ))
-
         // -- Screenshot Track Tools --
         tools.append(tool(
             name: "screenshots_add_asset",
@@ -350,7 +336,7 @@ enum MCPToolRegistry {
         // ASC mutation tools
         case "asc_fill_form":
             return .ascFormMutation
-        case "asc_upload_screenshots", "screenshots_add_asset", "screenshots_set_track", "screenshots_save":
+        case "screenshots_add_asset", "screenshots_set_track", "screenshots_save":
             return .ascScreenshotMutation
         case "asc_open_submit_preview":
             return .ascSubmitMutation
