@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.27
+## 1.0.29
 - Faster App Store Connect setup with improved onboarding, credential entry, and bundle ID guidance
 - Better review workflows with rejection feedback in Overview and Review, plus a submission history timeline
 - More reliable ASC automation: pricing fixes, auth/session handling, screenshot support, and terminal fallbacks
