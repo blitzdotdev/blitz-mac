@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import ImageIO
+import Security
 
 // MARK: - Screenshot Track Models
 
@@ -89,8 +90,8 @@ final class ASCManager {
     var isLoadingIrisFeedback = false
     var irisFeedbackError: String?
     var showAppleIDLogin = false
-    var webAuthMCPCallback: ((IrisSession) -> Void)?
-    var attachedIAPIds: Set<String> = []  // IAP/subscription IDs attached via iris API
+    private var pendingWebAuthContinuation: CheckedContinuation<IrisSession?, Never>?
+    var attachedSubmissionItemIDs: Set<String> = []  // IAP/subscription IDs attached via iris API
     var resolutionCenterThreads: [IrisResolutionCenterThread] = []
     var rejectionMessages: [IrisResolutionCenterMessage] = []
     var rejectionReasons: [IrisReviewRejection] = []
@@ -212,9 +213,9 @@ final class ASCManager {
         }
         let isFirstVersion = !hasApprovedVersion
         if isFirstVersion {
-            let readyIAPs = inAppPurchases.filter { $0.attributes.state == "READY_TO_SUBMIT" && !attachedIAPIds.contains($0.id) }
+            let readyIAPs = inAppPurchases.filter { $0.attributes.state == "READY_TO_SUBMIT" && !attachedSubmissionItemIDs.contains($0.id) }
             let readySubs = subscriptionsPerGroup.values.flatMap { $0 }
-                .filter { $0.attributes.state == "READY_TO_SUBMIT" && !attachedIAPIds.contains($0.id) }
+                .filter { $0.attributes.state == "READY_TO_SUBMIT" && !attachedSubmissionItemIDs.contains($0.id) }
             let readyCount = readyIAPs.count + readySubs.count
             if readyCount > 0 {
                 let names = (readyIAPs.map { $0.attributes.name ?? $0.attributes.productId ?? $0.id }
@@ -231,7 +232,8 @@ final class ASCManager {
                     hint: "\(readyCount) item(s) in Ready to Submit state (\(names)) must be attached to this version before submission. "
                         + "Use the asc-iap-attach skill to attach them via the iris API (asc web session). "
                         + "The public API does not support first-time IAP/subscription attachment — "
-                        + "run: asc web auth login, then POST to /iris/v1/subscriptionSubmissions with submitWithNextAppStoreVersion:true for each item."
+                        + "run: asc web auth login, then POST to /iris/v1/subscriptionSubmissions or /iris/v1/inAppPurchaseSubmissions "
+                        + "with submitWithNextAppStoreVersion:true for each item."
                 ))
             }
         }
@@ -339,6 +341,7 @@ final class ASCManager {
         writeError = nil
         appIconStatus = nil
         monetizationStatus = nil
+        attachedSubmissionItemIDs = []
         isLoadingTab = [:]
         tabError = [:]
         loadedTabs = []
@@ -350,6 +353,7 @@ final class ASCManager {
         cachedFeedback = nil
         isLoadingIrisFeedback = false
         irisFeedbackError = nil
+        cancelPendingWebAuth()
     }
 
     // MARK: - Iris Session (Apple ID auth for rejection feedback)
@@ -391,9 +395,18 @@ final class ASCManager {
         irisLog("ASCManager.loadIrisSession: session valid, irisService created")
     }
 
-    func showWebAuthForMCP(completion: @escaping (IrisSession) -> Void) {
-        webAuthMCPCallback = completion
+    func requestWebAuthForMCP() async -> IrisSession? {
+        pendingWebAuthContinuation?.resume(returning: nil)
         showAppleIDLogin = true
+        return await withCheckedContinuation { continuation in
+            pendingWebAuthContinuation = continuation
+        }
+    }
+
+    func cancelPendingWebAuth() {
+        showAppleIDLogin = false
+        pendingWebAuthContinuation?.resume(returning: nil)
+        pendingWebAuthContinuation = nil
     }
 
     func setIrisSession(_ session: IrisSession) {
@@ -404,17 +417,21 @@ final class ASCManager {
         } catch {
             irisLog("ASCManager.setIrisSession: save FAILED: \(error)")
             irisFeedbackError = "Failed to save session: \(error.localizedDescription)"
+            showAppleIDLogin = false
+            pendingWebAuthContinuation?.resume(returning: nil)
+            pendingWebAuthContinuation = nil
             return
         }
         irisSession = session
         irisService = IrisService(session: session)
         irisSessionState = .valid
         irisLog("ASCManager.setIrisSession: state set to .valid")
+        showAppleIDLogin = false
 
         // Notify MCP tool if it triggered this login
-        if let callback = webAuthMCPCallback {
-            webAuthMCPCallback = nil
-            callback(session)
+        if let continuation = pendingWebAuthContinuation {
+            pendingWebAuthContinuation = nil
+            continuation.resume(returning: session)
         }
     }
 
@@ -607,6 +624,11 @@ final class ASCManager {
         }
     }
 
+    func refreshSubmissionReadinessData() async {
+        await refreshMonetization()
+        await refreshAttachedSubmissionItemIDs()
+    }
+
     private func loadData(for tab: AppTab, service: AppStoreConnectService) async throws {
         guard let appId = app?.id else {
             throw ASCError.notFound("App — check your bundle ID in project settings")
@@ -650,19 +672,7 @@ final class ASCManager {
                 monetizationStatus = hasPricing ? "Configured" : nil
             }
 
-            // Fetch IAP/subscription data for submission readiness check
-            // (needed to detect first-time IAPs/subs that must be attached to the version)
-            if inAppPurchases.isEmpty {
-                inAppPurchases = (try? await service.fetchInAppPurchases(appId: appId)) ?? []
-            }
-            if subscriptionGroups.isEmpty {
-                subscriptionGroups = (try? await service.fetchSubscriptionGroups(appId: appId)) ?? []
-                for group in subscriptionGroups {
-                    if subscriptionsPerGroup[group.id] == nil {
-                        subscriptionsPerGroup[group.id] = try? await service.fetchSubscriptionsInGroup(groupId: group.id)
-                    }
-                }
-            }
+            await refreshSubmissionReadinessData()
 
         case .storeListing:
             let versions = try await service.fetchAppStoreVersions(appId: appId)
@@ -1243,6 +1253,88 @@ final class ASCManager {
         }
     }
 
+    func refreshAttachedSubmissionItemIDs() async {
+        guard let appId = app?.id else {
+            attachedSubmissionItemIDs = []
+            return
+        }
+        guard let cookieHeader = ascWebSessionCookieHeader() else {
+            attachedSubmissionItemIDs = []
+            return
+        }
+
+        let subscriptionURL = "https://appstoreconnect.apple.com/iris/v1/apps/\(appId)/subscriptionGroups?include=subscriptions&limit=300&fields%5Bsubscriptions%5D=productId,name,state,submitWithNextAppStoreVersion"
+        let iapURL = "https://appstoreconnect.apple.com/iris/v1/apps/\(appId)/inAppPurchasesV2?limit=300&fields%5BinAppPurchases%5D=productId,name,state,submitWithNextAppStoreVersion"
+
+        let attachedSubscriptions = await fetchAttachedSubmissionItemIDs(urlString: subscriptionURL, cookieHeader: cookieHeader)
+        let attachedIAPs = await fetchAttachedSubmissionItemIDs(urlString: iapURL, cookieHeader: cookieHeader)
+        attachedSubmissionItemIDs = attachedSubscriptions.union(attachedIAPs)
+    }
+
+    private func fetchAttachedSubmissionItemIDs(urlString: String, cookieHeader: String) async -> Set<String> {
+        guard let url = URL(string: urlString) else { return [] }
+
+        var request = URLRequest(url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
+        request.setValue("https://appstoreconnect.apple.com", forHTTPHeaderField: "Origin")
+        request.setValue("https://appstoreconnect.apple.com/", forHTTPHeaderField: "Referer")
+        request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+        request.timeoutInterval = 10
+
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return []
+        }
+
+        let resources = (json["data"] as? [[String: Any]] ?? [])
+            + (json["included"] as? [[String: Any]] ?? [])
+
+        return Set(resources.compactMap { item in
+            guard let attrs = item["attributes"] as? [String: Any],
+                  let id = item["id"] as? String,
+                  let submitWithNext = attrs["submitWithNextAppStoreVersion"] as? Bool,
+                  submitWithNext else { return nil }
+            return id
+        })
+    }
+
+    private func ascWebSessionCookieHeader() -> String? {
+        guard let storeData = readKeychainItem(service: "asc-web-session", account: "asc:web-session:store"),
+              let store = try? JSONSerialization.jsonObject(with: storeData) as? [String: Any],
+              let lastKey = store["last_key"] as? String,
+              let sessions = store["sessions"] as? [String: Any],
+              let sessionDict = sessions[lastKey] as? [String: Any],
+              let cookies = sessionDict["cookies"] as? [String: [[String: Any]]] else {
+            return nil
+        }
+
+        let cookieHeader = cookies.values.flatMap { $0 }.compactMap { cookie -> String? in
+            guard let name = cookie["name"] as? String,
+                  let value = cookie["value"] as? String,
+                  !name.isEmpty else { return nil }
+            return name.hasPrefix("DES") ? "\(name)=\"\(value)\"" : "\(name)=\(value)"
+        }.joined(separator: "; ")
+
+        return cookieHeader.isEmpty ? nil : cookieHeader
+    }
+
+    private func readKeychainItem(service: String, account: String) -> Data? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess else { return nil }
+        return result as? Data
+    }
+
     func setPriceFree() async {
         guard let service else { return }
         guard let appId = app?.id else { return }
@@ -1411,8 +1503,9 @@ final class ASCManager {
     static func validateDimensions(width: Int, height: Int, displayType: String) -> String? {
         switch displayType {
         case "APP_IPHONE_67":
-            if width == 1290 && height == 2796 { return nil }
-            return "\(width)\u{00d7}\(height) — need 1290\u{00d7}2796 for iPhone"
+            let validSizes: Set<String> = ["1290x2796", "1284x2778", "1242x2688", "1260x2736"]
+            if validSizes.contains("\(width)x\(height)") { return nil }
+            return "\(width)\u{00d7}\(height) — need 1290\u{00d7}2796, 1284\u{00d7}2778, 1242\u{00d7}2688, or 1260\u{00d7}2736 for iPhone"
         case "APP_IPAD_PRO_3GEN_129":
             if width == 2048 && height == 2732 { return nil }
             return "\(width)\u{00d7}\(height) — need 2048\u{00d7}2732 for iPad"
