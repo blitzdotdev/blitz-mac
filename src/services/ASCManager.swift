@@ -178,12 +178,21 @@ final class ASCManager {
 
         fields.append(.init(label: "App Icon", value: appIconStatus))
 
+        // Count only non-failed screenshots for readiness
+        func validCount(for set: ASCScreenshotSet?) -> Int {
+            guard let set else { return 0 }
+            if let shots = screenshots[set.id] {
+                return shots.filter { !$0.hasError }.count
+            }
+            return set.attributes.screenshotCount ?? 0
+        }
+
         if isMacApp {
-            let macCount = macScreenshots.map { screenshots[$0.id]?.count ?? $0.attributes.screenshotCount ?? 0 } ?? 0
+            let macCount = validCount(for: macScreenshots)
             fields.append(.init(label: "Mac Screenshots", value: macCount > 0 ? "\(macCount) screenshot(s)" : nil))
         } else {
-            let iphoneCount = iphoneScreenshots.map { screenshots[$0.id]?.count ?? $0.attributes.screenshotCount ?? 0 } ?? 0
-            let ipadCount = ipadScreenshots.map { screenshots[$0.id]?.count ?? $0.attributes.screenshotCount ?? 0 } ?? 0
+            let iphoneCount = validCount(for: iphoneScreenshots)
+            let ipadCount = validCount(for: ipadScreenshots)
             fields.append(.init(label: "iPhone Screenshots", value: iphoneCount > 0 ? "\(iphoneCount) screenshot(s)" : nil))
             fields.append(.init(label: "iPad Screenshots", value: ipadCount > 0 ? "\(ipadCount) screenshot(s)" : nil))
         }
