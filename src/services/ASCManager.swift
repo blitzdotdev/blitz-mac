@@ -1411,8 +1411,8 @@ final class ASCManager {
     static func validateDimensions(width: Int, height: Int, displayType: String) -> String? {
         switch displayType {
         case "APP_IPHONE_67":
-            if width == 1242 && height == 2688 { return nil }
-            return "\(width)\u{00d7}\(height) — need 1242\u{00d7}2688 for iPhone"
+            if width == 1290 && height == 2796 { return nil }
+            return "\(width)\u{00d7}\(height) — need 1290\u{00d7}2796 for iPhone"
         case "APP_IPAD_PRO_3GEN_129":
             if width == 2048 && height == 2732 { return nil }
             return "\(width)\u{00d7}\(height) — need 2048\u{00d7}2732 for iPad"
