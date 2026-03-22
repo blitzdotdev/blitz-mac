@@ -334,13 +334,15 @@ struct SubmissionReadiness {
         let value: String?
         let required: Bool
         let actionUrl: String?  // If set, shows an "Open in ASC" button
+        let hint: String?       // Agent-visible guidance for resolving this field
 
-        init(label: String, value: String?, required: Bool = true, actionUrl: String? = nil) {
+        init(label: String, value: String?, required: Bool = true, actionUrl: String? = nil, hint: String? = nil) {
             self.id = label
             self.label = label
             self.value = value
             self.required = required
             self.actionUrl = actionUrl
+            self.hint = hint
         }
     }
 

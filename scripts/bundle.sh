@@ -64,6 +64,7 @@ done
 SKILLS_SRC="$ROOT_DIR/.claude/skills"
 SKILLS_DST="$BUNDLE_DIR/Contents/Resources/claude-skills"
 if [ -d "$SKILLS_SRC" ]; then
+    rm -rf "$SKILLS_DST"
     cp -R "$SKILLS_SRC" "$SKILLS_DST"
     echo "Embedded Claude skills in .app bundle"
 fi
