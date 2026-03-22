@@ -1,10 +1,10 @@
 # Changelog
 
 ## 1.0.27
-- Codex support, fewer manual steps, faster shipping
-- Set a default terminal + agent
-- Fix missing steps with agents
-- Automate ASC API key creation
+- Faster App Store Connect setup with improved onboarding, credential entry, and bundle ID guidance
+- Better review workflows with rejection feedback in Overview and Review, plus a submission history timeline
+- More reliable ASC automation: pricing fixes, auth/session handling, screenshot support, and terminal fallbacks
+- Release pipeline improvements including Intel builds, leaner packaging, and better Codex/MCP project setup
 
 ## 1.0.26
 - ASC CLI skills: auto-provision 21 App Store Connect skills into each project's .claude/skills/
