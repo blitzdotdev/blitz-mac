@@ -331,6 +331,16 @@ struct ASCOverview: View {
                 .font(.body.weight(.medium))
                 .frame(width: 80, alignment: .leading)
             stateBadge(version.attributes.appStoreState ?? "Unknown")
+            if version.attributes.appStoreState != "REJECTED",
+               wasVersionPreviouslyRejected(version) {
+                Text("Previously Rejected")
+                    .font(.caption2.weight(.medium))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.red.opacity(0.1))
+                    .foregroundStyle(.red)
+                    .clipShape(Capsule())
+            }
             Spacer()
             if let date = version.attributes.createdDate {
                 Text(ascShortDate(date))
@@ -340,6 +350,16 @@ struct ASCOverview: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+    }
+
+    private func wasVersionPreviouslyRejected(_ version: ASCAppStoreVersion) -> Bool {
+        if asc.latestSubmissionItems.contains(where: { $0.attributes.state == "REJECTED" }) {
+            return true
+        }
+        if let cached = asc.cachedFeedback, cached.versionString == version.attributes.versionString {
+            return true
+        }
+        return false
     }
 
     private func stateBadge(_ state: String) -> some View {

@@ -5,7 +5,6 @@ struct ReviewView: View {
 
     private var asc: ASCManager { appState.ascManager }
 
-    @State private var showAppleIDLogin = false
     @State private var ageRatingExpanded = false
     @State private var contactExpanded = true
     @State private var isSavingAgeRating = false
@@ -70,16 +69,16 @@ struct ReviewView: View {
             }
         }
         .task { await asc.fetchTabData(.review) }
-        .sheet(isPresented: $showAppleIDLogin) {
-            AppleIDLoginSheet { session in
-                asc.setIrisSession(session)
-                Task { await asc.fetchRejectionFeedback() }
-            }
-        }
-        .onChange(of: asc.showAppleIDLogin) { _, newValue in
-            if newValue {
-                showAppleIDLogin = true
-                asc.showAppleIDLogin = false
+        .onChange(of: asc.appStoreVersions.map(\.id)) { _, _ in
+            guard let appId = asc.app?.id else { return }
+            // Load cached rejection feedback for the pending version
+            let pendingVersion = asc.appStoreVersions.first(where: {
+                let s = $0.attributes.appStoreState ?? ""
+                return s != "READY_FOR_SALE" && s != "REMOVED_FROM_SALE"
+                    && s != "DEVELOPER_REMOVED_FROM_SALE" && !s.isEmpty
+            })
+            if let version = pendingVersion {
+                asc.loadCachedFeedback(appId: appId, versionString: version.attributes.versionString)
             }
         }
     }
@@ -109,8 +108,11 @@ struct ReviewView: View {
                     .background(.background.secondary)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
 
-                    // Rejection detail — shown when the version was rejected
-                    if version.attributes.appStoreState == "REJECTED" {
+                    // Rejection detail — shown when rejected, or when cached feedback persists after re-submission
+                    if version.attributes.appStoreState == "REJECTED"
+                        || asc.cachedFeedback != nil
+                        || !asc.rejectionReasons.isEmpty
+                        || asc.latestSubmissionItems.contains(where: { $0.attributes.state == "REJECTED" }) {
                         rejectionDetail(version: version)
                     }
                 }
@@ -224,6 +226,16 @@ struct ReviewView: View {
                                     .font(.body.weight(.medium))
                                     .frame(width: 80, alignment: .leading)
                                 stateBadge(version.attributes.appStoreState ?? "Unknown")
+                                if version.attributes.appStoreState != "REJECTED",
+                                   wasVersionPreviouslyRejected(version) {
+                                    Text("Previously Rejected")
+                                        .font(.caption2.weight(.medium))
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.red.opacity(0.1))
+                                        .foregroundStyle(.red)
+                                        .clipShape(Capsule())
+                                }
                                 Spacer()
                                 if let date = version.attributes.createdDate {
                                     Text(ascShortDate(date))
@@ -590,6 +602,19 @@ struct ReviewView: View {
         }
     }
 
+    /// Check if a version was previously rejected (has rejected submission items or cached feedback)
+    private func wasVersionPreviouslyRejected(_ version: ASCAppStoreVersion) -> Bool {
+        // If we have rejected submission items, the latest review was a rejection
+        if asc.latestSubmissionItems.contains(where: { $0.attributes.state == "REJECTED" }) {
+            return true
+        }
+        // If we have cached rejection feedback for this version
+        if let cached = asc.cachedFeedback, cached.versionString == version.attributes.versionString {
+            return true
+        }
+        return false
+    }
+
     // MARK: - Rejection Detail
 
     @ViewBuilder
@@ -741,7 +766,7 @@ struct ReviewView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("Sign In") { showAppleIDLogin = true }
+                Button("Sign In") { asc.showAppleIDLogin = true }
                     .buttonStyle(.bordered)
             }
             .padding(10)
@@ -756,7 +781,7 @@ struct ReviewView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("Sign In Again") { showAppleIDLogin = true }
+                Button("Sign In Again") { asc.showAppleIDLogin = true }
                     .buttonStyle(.bordered)
             }
             .padding(10)
