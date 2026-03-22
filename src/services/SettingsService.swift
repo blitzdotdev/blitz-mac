@@ -21,6 +21,13 @@ final class SettingsService {
     // Auto-navigate to tab on MCP tool call
     var autoNavEnabled: Bool = true
 
+    // Onboarding
+    var hasCompletedOnboarding: Bool = false
+    var defaultTerminal: String = "terminal"   // "terminal", "ghostty", "iterm", or custom path
+    var defaultAgentCLI: String = AIAgent.claudeCode.rawValue
+    var sendDefaultPrompt: Bool = true
+    var skipAgentPermissions: Bool = false
+
     init() {
         self.settingsURL = BlitzPaths.settings
     }
@@ -34,7 +41,11 @@ final class SettingsService {
         if let udid = json["defaultSimulatorUDID"] as? String { defaultSimulatorUDID = udid }
         if let toggles = json["permissionToggles"] as? [String: Bool] { permissionToggles = toggles }
         if let autoNav = json["autoNavEnabled"] as? Bool { autoNavEnabled = autoNav }
-
+        if let onboarded = json["hasCompletedOnboarding"] as? Bool { hasCompletedOnboarding = onboarded }
+        if let term = json["defaultTerminal"] as? String { defaultTerminal = term }
+        if let agent = json["defaultAgentCLI"] as? String { defaultAgentCLI = agent }
+        if let sendPrompt = json["sendDefaultPrompt"] as? Bool { sendDefaultPrompt = sendPrompt }
+        if let skipPerms = json["skipAgentPermissions"] as? Bool { skipAgentPermissions = skipPerms }
     }
 
     func save() {
@@ -42,6 +53,11 @@ final class SettingsService {
             "showCursor": showCursor,
             "cursorSize": cursorSize,
             "autoNavEnabled": autoNavEnabled,
+            "hasCompletedOnboarding": hasCompletedOnboarding,
+            "defaultTerminal": defaultTerminal,
+            "defaultAgentCLI": defaultAgentCLI,
+            "sendDefaultPrompt": sendDefaultPrompt,
+            "skipAgentPermissions": skipAgentPermissions,
         ]
         if let udid = defaultSimulatorUDID {
             json["defaultSimulatorUDID"] = udid

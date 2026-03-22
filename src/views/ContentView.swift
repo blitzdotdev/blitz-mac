@@ -50,12 +50,27 @@ struct ContentView: View {
         .navigationSplitViewStyle(.balanced)
         .toolbar {
             ToolbarItem(placement: .navigation) {
-                Button(action: { showConnectAI.toggle() }) {
+                Button(action: {
+                    // Try to auto-launch terminal with agent CLI
+                    let launched = TerminalLauncher.launchFromSettings(
+                        projectPath: appState.activeProject?.path,
+                        activeTab: appState.activeTab
+                    )
+                    if !launched {
+                        // Fallback: show the popover
+                        showConnectAI = true
+                    }
+                }) {
                     Label("Connect AI", systemImage: "sparkles")
                 }
                 .help("Connect AI agent")
                 .popover(isPresented: $showConnectAI, arrowEdge: .bottom) {
                     ConnectAIPopover(projectPath: appState.activeProject?.path, activeTab: appState.activeTab)
+                }
+                .contextMenu {
+                    Button("Show Connect AI Panel") {
+                        showConnectAI = true
+                    }
                 }
             }
         }

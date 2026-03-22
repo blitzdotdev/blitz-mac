@@ -26,13 +26,11 @@ struct BundleIDSetupView: View {
     @State private var showAdditional = false
 
     // Auto-create via AI agent
-    @AppStorage("selectedAIAgent") private var selectedAgentRaw: String = AIAgent.claudeCode.rawValue
     @State private var showAppleIDLogin = false
 
-    private var selectedAgent: AIAgent {
-        AIAgent(rawValue: selectedAgentRaw) ?? .claudeCode
+    private var selectedAgentName: String {
+        (AIAgent(rawValue: SettingsService.shared.defaultAgentCLI) ?? .claudeCode).displayName
     }
-    private var selectedAgentName: String { selectedAgent.displayName }
 
     // Capabilities supported by the ASC API (can be enabled automatically)
     private static let capabilities: [(type: String, name: String)] = [
@@ -606,34 +604,15 @@ struct BundleIDSetupView: View {
         }
         prompt += ". Ask the user what primary language they want (e.g. en-US for English), then use the /asc-app-create-ui skill."
 
-        // Escape for shell single-quote context: replace ' with '\''
-        let escapedPrompt = prompt.replacingOccurrences(of: "'", with: "'\\''")
-
-        // Resolve the project directory so Claude discovers .claude/skills/
-        var cdCommand = ""
+        var projectPath: String? = nil
         if let projectId = asc.loadedProjectId {
-            let projectDir = ProjectStorage().baseDirectory.appendingPathComponent(projectId)
-            let escaped = projectDir.path.replacingOccurrences(of: "'", with: "'\\''")
-            cdCommand = "cd '\(escaped)' && "
+            projectPath = ProjectStorage().baseDirectory.appendingPathComponent(projectId).path
         }
 
-        // Escape for AppleScript double-quote context: escape \ and "
-        let asBody = "\(cdCommand)\(selectedAgent.cliCommand) '\(escapedPrompt)'"
-        let escapedAS = asBody
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-
-        // Use osascript via Process — more reliable than NSAppleScript in sandboxed apps
-        let script = """
-        tell application "Terminal"
-            do script "\(escapedAS)"
-            activate
-        end tell
-        """
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", script]
-        try? process.run()
+        let settings = SettingsService.shared
+        let agent = AIAgent(rawValue: settings.defaultAgentCLI) ?? .claudeCode
+        let terminal = TerminalApp.from(settings.defaultTerminal)
+        TerminalLauncher.launch(projectPath: projectPath, agent: agent, terminal: terminal, prompt: prompt)
     }
 
     // MARK: - Helpers

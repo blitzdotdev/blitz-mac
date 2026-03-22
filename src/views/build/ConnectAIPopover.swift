@@ -20,6 +20,45 @@ enum AIAgent: String, CaseIterable {
         case .opencode: return "opencode"
         }
     }
+
+    /// Flag to skip interactive permission prompts, or nil if not supported.
+    var skipPermissionsFlag: String? {
+        switch self {
+        case .claudeCode: return "--dangerously-skip-permissions"
+        case .codex: return "--dangerously-bypass-approvals-and-sandbox"
+        case .opencode: return nil
+        }
+    }
+
+    /// Resource name for the agent's icon PNG (bundled in src/resources/).
+    var iconResourceName: String {
+        switch self {
+        case .claudeCode: return "claude-code-icon"
+        case .codex: return "codex-icon"
+        case .opencode: return "opencode-icon"
+        }
+    }
+
+    /// Load the agent's icon from the app bundle resources, with iOS-style rounded corners.
+    /// Corner radius uses the standard iOS ratio (~0.158 of the icon size).
+    func icon(size: CGFloat) -> NSImage {
+        guard let src = Bundle.appResources.image(forResource: iconResourceName) else {
+            return NSImage(systemSymbolName: "terminal", accessibilityDescription: nil)
+                ?? NSImage()
+        }
+        let s = NSSize(width: size, height: size)
+        let radius = size * (9.0 / 57.0) // iOS icon corner radius ratio
+        let result = NSImage(size: s)
+        result.lockFocus()
+        let path = NSBezierPath(roundedRect: NSRect(origin: .zero, size: s), xRadius: radius, yRadius: radius)
+        path.addClip()
+        src.draw(in: NSRect(origin: .zero, size: s),
+                 from: NSRect(origin: .zero, size: src.size),
+                 operation: .copy, fraction: 1)
+        result.unlockFocus()
+        result.isTemplate = false
+        return result
+    }
 }
 
 struct ConnectAIPopover: View {
@@ -41,7 +80,12 @@ struct ConnectAIPopover: View {
     }
 
     private var tabPrompt: String? {
-        switch activeTab {
+        Self.prompt(for: activeTab)
+    }
+
+    /// Tab-specific default prompt, shared with TerminalLauncher.
+    static func prompt(for tab: AppTab) -> String? {
+        switch tab {
         case .simulator:
             return "Build and launch my app on the simulator, then describe what's on screen."
         case .database:

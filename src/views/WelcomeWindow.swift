@@ -4,12 +4,21 @@ struct WelcomeWindow: View {
     @Bindable var appState: AppState
     @Environment(\.openWindow) private var openWindow
     @State private var welcomeWindow: NSWindow?
+    @State private var showOnboarding: Bool = false
 
     var body: some View {
         ZStack {
-            HStack(spacing: 0) {
-                leftPanel
-                rightPanel
+            if showOnboarding {
+                OnboardingView(appState: appState) {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        showOnboarding = false
+                    }
+                }
+            } else {
+                HStack(spacing: 0) {
+                    leftPanel
+                    rightPanel
+                }
             }
 
             if appState.autoUpdate.showsFullScreenOverlay {
@@ -20,6 +29,13 @@ struct WelcomeWindow: View {
         .background(WindowFinder { window in
             welcomeWindow = window
         })
+        .task {
+            // Show onboarding on first launch
+            // TODO: remove `true ||` before release
+            if true || !appState.settingsStore.hasCompletedOnboarding {
+                showOnboarding = true
+            }
+        }
         .task {
             if appState.projectManager.projects.isEmpty {
                 await appState.projectManager.loadProjects()
@@ -71,29 +87,19 @@ struct WelcomeWindow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-
             Spacer()
-
             VStack(spacing: 8) {
                 welcomeButton(
                     title: "Create a New Project...",
                     icon: "plus.square",
                     action: { appState.showNewProjectSheet = true }
                 )
-
-                welcomeButton(
-                    title: "Open a Project...",
-                    icon: "folder",
-                    action: openProject
-                )
-
                 welcomeButton(
                     title: "Import a Project...",
                     icon: "square.and.arrow.down",
                     action: { appState.showImportProjectSheet = true }
                 )
             }
-
             Spacer()
         }
         .padding(.horizontal, 24)
