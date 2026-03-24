@@ -1,6 +1,8 @@
 name: Release Smoke Test
 
 on:
+  pull_request:
+    branches: [master, main]
   workflow_dispatch:
     inputs:
       notarize_pkg:
