@@ -89,6 +89,20 @@ struct ContentView: View {
         )
     }
 
+    private func refreshProjectFiles(projectId: String, projectType: ProjectType) {
+        let whitelistBlitzMCP = appState.settingsStore.whitelistBlitzMCPTools
+        Task.detached(priority: .utility) {
+            let storage = ProjectStorage()
+            storage.ensureMCPConfig(projectId: projectId)
+            storage.ensureTeenybaseBackend(projectId: projectId, projectType: projectType)
+            storage.ensureClaudeFiles(
+                projectId: projectId,
+                projectType: projectType,
+                whitelistBlitzMCP: whitelistBlitzMCP
+            )
+        }
+    }
+
     var body: some View {
         NavigationSplitView {
             SidebarView(appState: appState)
@@ -156,16 +170,11 @@ struct ContentView: View {
                 mainWindow?.close()
             } else {
                 // Project switched → ensure config files, run pending setup, reload ASC credentials
+                if let newId = newValue, let projectType = appState.activeProject?.type {
+                    refreshProjectFiles(projectId: newId, projectType: projectType)
+                }
+
                 Task {
-                    if let newId = newValue, let project = appState.activeProject {
-                        // Ensure config files are up to date on every open.
-                        // Handles Tauri migration, first-open of imported projects,
-                        // and ensures Teenybase backend files are scaffolded.
-                        let storage = ProjectStorage()
-                        storage.ensureMCPConfig(projectId: newId)
-                        storage.ensureTeenybaseBackend(projectId: newId, projectType: project.type)
-                        storage.ensureClaudeFiles(projectId: newId, projectType: project.type, whitelistBlitzMCP: appState.settingsStore.whitelistBlitzMCPTools)
-                    }
                     await startPendingSetupIfNeeded()
                     appState.ascManager.clearForProjectSwitch()
                     if let newId = newValue, let project = appState.activeProject {

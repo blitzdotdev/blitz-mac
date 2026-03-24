@@ -88,8 +88,15 @@ struct DashboardView: View {
         let isSelected = project.id == appState.activeProjectId
 
         return VStack(spacing: 8) {
-            appIconView(project: project)
-                .frame(width: 56, height: 56)
+            ProjectAppIconView(project: project, size: 56, cornerRadius: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(projectColor(project).opacity(0.15))
+                    Image(systemName: projectIcon(project))
+                        .font(.system(size: 24))
+                        .foregroundStyle(projectColor(project))
+                }
+            }
 
             Text(project.name)
                 .font(.callout.weight(.medium))
@@ -111,31 +118,14 @@ struct DashboardView: View {
         .contentShape(Rectangle())
     }
 
-    private func appIconView(project: Project) -> some View {
-        Group {
-            if let icon = Self.loadAppIcon(projectId: project.id) {
-                Image(nsImage: icon)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-            } else {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(projectColor(project).opacity(0.15))
-                    Image(systemName: projectIcon(project))
-                        .font(.system(size: 24))
-                        .foregroundStyle(projectColor(project))
-                }
-            }
-        }
-    }
-
     // MARK: - Actions
 
     private func selectProject(_ project: Project) {
-        let storage = ProjectStorage()
-        storage.updateLastOpened(projectId: project.id)
         appState.activeProjectId = project.id
+        let projectId = project.id
+        Task.detached(priority: .utility) {
+            ProjectStorage().updateLastOpened(projectId: projectId)
+        }
     }
 
     // MARK: - Stats (placeholder counts from project metadata)
@@ -170,29 +160,5 @@ struct DashboardView: View {
         case .swift: return .orange
         case .flutter: return .blue
         }
-    }
-
-    static func loadAppIcon(projectId: String) -> NSImage? {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let blitzPath = "\(home)/.blitz/projects/\(projectId)/assets/AppIcon/icon_1024.png"
-        if let image = NSImage(contentsOfFile: blitzPath) { return image }
-
-        let projectDir = "\(home)/.blitz/projects/\(projectId)"
-        let fm = FileManager.default
-        guard let enumerator = fm.enumerator(atPath: projectDir) else { return nil }
-        while let file = enumerator.nextObject() as? String {
-            guard file.hasSuffix("AppIcon.appiconset/Contents.json") else { continue }
-            let contentsPath = "\(projectDir)/\(file)"
-            guard let data = fm.contents(atPath: contentsPath),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let images = json["images"] as? [[String: Any]] else { continue }
-            for entry in images {
-                if let filename = entry["filename"] as? String {
-                    let iconDir = (contentsPath as NSString).deletingLastPathComponent
-                    if let image = NSImage(contentsOfFile: "\(iconDir)/\(filename)") { return image }
-                }
-            }
-        }
-        return nil
     }
 }
