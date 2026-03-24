@@ -86,6 +86,17 @@ struct AppCommands: Commands {
             .keyboardShortcut("3", modifiers: .command)
         }
 
+        // View > Terminal toggle
+        CommandGroup(after: .sidebar) {
+            Button(appState.showTerminal ? "Hide Terminal" : "Show Terminal") {
+                appState.showTerminal.toggle()
+                if appState.showTerminal && appState.terminalManager.sessions.isEmpty {
+                    appState.terminalManager.createSession(projectPath: appState.activeProject?.path)
+                }
+            }
+            .keyboardShortcut("`", modifiers: .command)
+        }
+
         // Build menu
         CommandMenu("Build") {
             Button("Run") {

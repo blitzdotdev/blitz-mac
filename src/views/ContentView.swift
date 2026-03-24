@@ -52,7 +52,27 @@ struct ContentView: View {
             SidebarView(appState: appState)
                 .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 250)
         } detail: {
-            DetailView(appState: appState)
+            if appState.settingsStore.terminalPosition == "right" {
+                HSplitView {
+                    DetailView(appState: appState)
+                        .frame(minWidth: 300)
+
+                    if appState.showTerminal {
+                        TerminalPanelView(appState: appState)
+                            .frame(minWidth: 250, idealWidth: 400)
+                    }
+                }
+            } else {
+                VSplitView {
+                    DetailView(appState: appState)
+                        .frame(minHeight: 200)
+
+                    if appState.showTerminal {
+                        TerminalPanelView(appState: appState)
+                            .frame(minHeight: 120, idealHeight: 250)
+                    }
+                }
+            }
         }
         .navigationSplitViewStyle(.balanced)
         .toolbar {
@@ -79,6 +99,18 @@ struct ContentView: View {
                         showConnectAI = true
                     }
                 }
+            }
+            ToolbarItem(placement: .navigation) {
+                Button {
+                    appState.showTerminal.toggle()
+                    // Auto-create first session when opening the panel
+                    if appState.showTerminal && appState.terminalManager.sessions.isEmpty {
+                        appState.terminalManager.createSession(projectPath: appState.activeProject?.path)
+                    }
+                } label: {
+                    Label("Terminal", systemImage: "terminal")
+                }
+                .help(appState.showTerminal ? "Hide terminal" : "Show terminal")
             }
         }
         .background(HostingWindowFinder { window in

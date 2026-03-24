@@ -10,9 +10,13 @@ let package = Package(
     products: [
         .executable(name: "Blitz", targets: ["Blitz"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", from: "1.2.0"),
+    ],
     targets: [
         .executableTarget(
             name: "Blitz",
+            dependencies: ["SwiftTerm"],
             path: "src",
             exclude: ["metal"],
             resources: [.process("resources"), .copy("templates")],

@@ -32,6 +32,7 @@ final class SettingsService {
     var defaultAgentCLI: String = AIAgent.claudeCode.rawValue
     var sendDefaultPrompt: Bool = true
     var skipAgentPermissions: Bool = false
+    var terminalPosition: String = "bottom"  // "bottom" or "right"
 
     init() {
         self.settingsURL = BlitzPaths.settings
@@ -52,6 +53,7 @@ final class SettingsService {
         if let agent = json["defaultAgentCLI"] as? String { defaultAgentCLI = agent }
         if let sendPrompt = json["sendDefaultPrompt"] as? Bool { sendDefaultPrompt = sendPrompt }
         if let skipPerms = json["skipAgentPermissions"] as? Bool { skipAgentPermissions = skipPerms }
+        if let termPos = json["terminalPosition"] as? String { terminalPosition = termPos }
     }
 
     func save() {
@@ -64,6 +66,7 @@ final class SettingsService {
             "defaultAgentCLI": defaultAgentCLI,
             "sendDefaultPrompt": sendDefaultPrompt,
             "skipAgentPermissions": skipAgentPermissions,
+            "terminalPosition": terminalPosition,
         ]
         if let udid = defaultSimulatorUDID {
             json["defaultSimulatorUDID"] = udid
