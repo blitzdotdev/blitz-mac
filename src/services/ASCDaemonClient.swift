@@ -252,7 +252,7 @@ actor ASCDaemonClient {
             await logger.error("ascd executable not found. searched=\(searched)")
         }
         throw Error.helperNotFound(
-            "ascd not found. Set BLITZ_ASCD_PATH, install ascd on PATH, or use a bundled helper. Searched: \(searched)"
+            "ascd not found. Bundle the signed helper at Contents/Helpers/ascd or set BLITZ_ASCD_PATH to the forked helper binary. Searched: \(searched)"
         )
     }
 
@@ -279,26 +279,13 @@ actor ASCDaemonClient {
 
         appendCandidate(ProcessInfo.processInfo.environment["BLITZ_ASCD_PATH"])
         appendCandidate(Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/ascd").path)
-        appendCandidate(Bundle.main.bundleURL.appendingPathComponent("ascd").path)
-        appendCandidate(Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("ascd").path)
-        appendCandidate(Bundle.main.resourceURL?.appendingPathComponent("ascd").path)
-        appendCandidate(fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".blitz/ascd").path)
-        appendCandidate(fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin/ascd").path)
-        appendCandidate("/opt/homebrew/bin/ascd")
-        appendCandidate("/usr/local/bin/ascd")
-        appendCandidate("/opt/local/bin/ascd")
-
-        let pathEntries = (ProcessInfo.processInfo.environment["PATH"] ?? "")
-            .split(separator: ":")
-            .map(String.init)
-        for entry in pathEntries {
-            appendCandidate(URL(fileURLWithPath: entry).appendingPathComponent("ascd").path)
-        }
-
         appendCandidate(
-            fileManager.homeDirectoryForCurrentUser
-                .appendingPathComponent("superapp/asc-cli/forks/App-Store-Connect-CLI-helper/build/ascd").path
+            Bundle.main.executableURL?
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Helpers/ascd").path
         )
+        appendCandidate(Bundle.main.privateFrameworksURL?.deletingLastPathComponent().appendingPathComponent("Helpers/ascd").path)
 
         return candidates
     }
@@ -312,7 +299,7 @@ actor ASCDaemonClient {
         environment["ASC_PRIVATE_KEY_B64"] = nil
         environment["ASC_BYPASS_KEYCHAIN"] = "1"
         if environment["ASC_DEBUG"]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true {
-            environment["ASC_DEBUG"] = "api"
+            environment["ASC_DEBUG"] = nil
         }
 
         let isolatedConfigPath = fileManager.temporaryDirectory

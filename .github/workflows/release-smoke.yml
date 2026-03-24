@@ -1,0 +1,203 @@
+name: Release Smoke Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      notarize_pkg:
+        description: "Notarize the arm64 pkg when Apple notary secrets are available"
+        required: false
+        default: true
+        type: boolean
+
+run-name: "Release Smoke Test (${{ github.ref_name }}) #${{ github.run_number }}"
+
+jobs:
+  smoke_arm64:
+    runs-on: macos-15
+    permissions:
+      contents: read
+    env:
+      APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
+      APPLE_INSTALLER_IDENTITY: ${{ secrets.APPLE_INSTALLER_IDENTITY || '' }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: deps/App-Store-Connect-CLI-helper/go.mod
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Import signing certificate
+        if: ${{ env.APPLE_CERTIFICATE_BASE64 != '' }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          CERT_PATH=$RUNNER_TEMP/certificate.p12
+          echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode > "$CERT_PATH"
+          security import "$CERT_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: \
+            -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+
+      - name: Get version
+        id: version
+        run: echo "version=$(node -e 'process.stdout.write(require(\"./package.json\").version)')" >> "$GITHUB_OUTPUT"
+
+      - name: Build release .app
+        run: |
+          swift build -c release
+          bash scripts/bundle.sh release
+
+      - name: Build .pkg
+        run: bash scripts/build-pkg.sh
+
+      - name: Notarize .pkg
+        if: ${{ inputs.notarize_pkg && env.APPLE_API_KEY != '' }}
+        env:
+          APPLE_API_KEY_PATH: ${{ runner.temp }}/AuthKey.p8
+        run: |
+          echo "$APPLE_API_KEY_BASE64" | base64 --decode > "$APPLE_API_KEY_PATH"
+          VERSION="${{ steps.version.outputs.version }}"
+          xcrun notarytool submit "build/Blitz-$VERSION.pkg" \
+            --key "$APPLE_API_KEY_PATH" \
+            --key-id "$APPLE_API_KEY" \
+            --issuer "$APPLE_API_ISSUER" \
+            --wait
+          xcrun stapler staple "build/Blitz-$VERSION.pkg"
+
+      - name: Create smoke artifacts
+        run: |
+          cd .build
+          ditto -c -k --sequesterRsrc --keepParent Blitz.app Blitz.app.zip
+          shasum -a 256 Blitz.app.zip > SHA256SUMS.txt
+          find Blitz.app/Contents/MacOS -type f -perm +111 -exec shasum -a 256 {} + >> SHA256SUMS.txt
+          PKG_PATH="../build/Blitz-${{ steps.version.outputs.version }}.pkg"
+          if [ -f "$PKG_PATH" ]; then
+            shasum -a 256 "$PKG_PATH" >> SHA256SUMS.txt
+          fi
+          cat SHA256SUMS.txt
+
+      - name: Upload arm64 smoke artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Blitz-smoke-arm64-${{ steps.version.outputs.version }}-${{ github.run_number }}
+          path: |
+            .build/Blitz.app.zip
+            .build/SHA256SUMS.txt
+            build/Blitz-${{ steps.version.outputs.version }}.pkg
+          retention-days: 14
+
+      - name: Write summary
+        run: |
+          {
+            echo "## arm64 smoke artifacts"
+            echo ""
+            echo "- Version: ${{ steps.version.outputs.version }}"
+            echo "- Bundled app zip: .build/Blitz.app.zip"
+            echo "- Pkg: build/Blitz-${{ steps.version.outputs.version }}.pkg"
+            echo "- Checksums: .build/SHA256SUMS.txt"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup keychain
+        if: always()
+        run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db 2>/dev/null || true
+
+  smoke_x86_64:
+    runs-on: macos-15-intel
+    permissions:
+      contents: read
+    env:
+      APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: deps/App-Store-Connect-CLI-helper/go.mod
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Import signing certificate
+        if: ${{ env.APPLE_CERTIFICATE_BASE64 != '' }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          CERT_PATH=$RUNNER_TEMP/certificate.p12
+          echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode > "$CERT_PATH"
+          security import "$CERT_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: \
+            -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+
+      - name: Get version
+        id: version
+        run: echo "version=$(node -e 'process.stdout.write(require(\"./package.json\").version)')" >> "$GITHUB_OUTPUT"
+
+      - name: Build x86_64 .app artifact
+        run: |
+          swift build -c release
+          bash scripts/bundle.sh release
+          mkdir -p build
+          ditto -c -k --sequesterRsrc --keepParent .build/Blitz.app "build/Blitz-${{ steps.version.outputs.version }}-x86_64.app.zip"
+          shasum -a 256 "build/Blitz-${{ steps.version.outputs.version }}-x86_64.app.zip" > "build/Blitz-${{ steps.version.outputs.version }}-x86_64.app.zip.sha256"
+
+      - name: Upload x86_64 smoke artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Blitz-smoke-x86_64-${{ steps.version.outputs.version }}-${{ github.run_number }}
+          path: |
+            build/Blitz-${{ steps.version.outputs.version }}-x86_64.app.zip
+            build/Blitz-${{ steps.version.outputs.version }}-x86_64.app.zip.sha256
+          retention-days: 14
+
+      - name: Write summary
+        run: |
+          {
+            echo "## x86_64 smoke artifacts"
+            echo ""
+            echo "- Version: ${{ steps.version.outputs.version }}"
+            echo "- App zip: build/Blitz-${{ steps.version.outputs.version }}-x86_64.app.zip"
+            echo "- Checksum: build/Blitz-${{ steps.version.outputs.version }}-x86_64.app.zip.sha256"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup keychain
+        if: always()
+        run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db 2>/dev/null || true

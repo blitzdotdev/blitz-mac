@@ -11,6 +11,9 @@ swift build
 # Release build
 swift build -c release
 
+# Fetch pinned helper dependency
+git submodule update --init --recursive
+
 # Bundle as macOS .app (signs with Developer ID)
 bash scripts/bundle.sh release
 
@@ -29,7 +32,7 @@ bash scripts/build-pkg.sh
 
 ## Architecture
 
-**Blitz** is a native macOS SwiftUI app (requires macOS 14+) for iOS development. It provides simulator management, screen capture, database browsing, App Store Connect integration, and an MCP server for Claude Code integration. Built with Swift Package Manager (no Xcode project).
+**Blitz** is a native macOS SwiftUI app (requires macOS 14+) for iOS development. It provides simulator management, screen capture, database browsing, App Store Connect integration, and an MCP server for Claude Code integration. Built with Swift Package Manager (no Xcode project). Source bundling also depends on the pinned ASC helper submodule in `deps/App-Store-Connect-CLI-helper` and a local Go toolchain.
 
 ### Single-target structure
 

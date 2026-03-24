@@ -16,33 +16,65 @@ ENTITLEMENTS="$ROOT_DIR/scripts/Entitlements.plist"
 TIMESTAMP_MODE="${CODESIGN_TIMESTAMP:-auto}"
 
 resolve_ascd_path() {
+    local candidate="${BLITZ_ASCD_PATH:-}"
+    [ -n "$candidate" ] || return 1
+    [ -x "$candidate" ] || return 1
+    printf '%s\n' "$candidate"
+}
+
+resolve_ascd_source_dir() {
     local candidates=()
 
-    if [ -n "${BLITZ_ASCD_PATH:-}" ]; then
-        candidates+=("$BLITZ_ASCD_PATH")
-    fi
-
-    if command -v ascd >/dev/null 2>&1; then
-        candidates+=("$(command -v ascd)")
+    if [ -n "${BLITZ_ASCD_SOURCE_DIR:-}" ]; then
+        candidates+=("$BLITZ_ASCD_SOURCE_DIR")
     fi
 
     candidates+=(
-        "$HOME/.blitz/ascd"
-        "$HOME/.local/bin/ascd"
-        "/opt/homebrew/bin/ascd"
-        "/usr/local/bin/ascd"
-        "/opt/local/bin/ascd"
-        "$HOME/superapp/asc-cli/forks/App-Store-Connect-CLI-helper/build/ascd"
+        "$ROOT_DIR/deps/App-Store-Connect-CLI-helper"
     )
 
     local candidate
     for candidate in "${candidates[@]}"; do
         [ -n "$candidate" ] || continue
-        if [ -x "$candidate" ]; then
+        if [ -f "$candidate/cmd/ascd/main.go" ]; then
             printf '%s\n' "$candidate"
             return 0
         fi
     done
+
+    return 1
+}
+
+build_ascd_helper() {
+    local source_dir="$1"
+    local output_dir="$ROOT_DIR/.build/ascd-helper"
+    local output_path="$output_dir/ascd"
+
+    if ! command -v go >/dev/null 2>&1; then
+        echo "ERROR: Go is required to build the bundled ascd helper." >&2
+        echo "       Install Go, or set BLITZ_ASCD_PATH to a prebuilt compatible helper binary." >&2
+        return 1
+    fi
+
+    mkdir -p "$output_dir"
+    echo "Building ascd helper from $source_dir" >&2
+    (
+        cd "$source_dir"
+        go build -o "$output_path" ./cmd/ascd
+    )
+    printf '%s\n' "$output_path"
+}
+
+verify_ascd_helper() {
+    local helper_path="$1"
+    local response
+
+    response="$(printf '{"id":"bundle-check","method":"ping"}\n' | "$helper_path" 2>/dev/null | head -1 || true)"
+    case "$response" in
+        *'"id":"bundle-check"'*'"result"'*)
+            return 0
+            ;;
+    esac
 
     return 1
 }
@@ -67,6 +99,7 @@ swift build -c "$CONFIG" --product Blitz
 swift build -c "$CONFIG" --product blitz-macos-mcp
 
 # Create .app structure
+rm -rf "$BUNDLE_DIR"
 mkdir -p "$BUNDLE_DIR/Contents/MacOS"
 mkdir -p "$BUNDLE_DIR/Contents/Resources"
 mkdir -p "$BUNDLE_DIR/Contents/Helpers"
@@ -85,14 +118,31 @@ else
 fi
 
 ASC_HELPER_BINARY="$(resolve_ascd_path || true)"
+if [ -z "$ASC_HELPER_BINARY" ]; then
+    ASC_HELPER_SOURCE_DIR="$(resolve_ascd_source_dir || true)"
+    if [ -n "$ASC_HELPER_SOURCE_DIR" ]; then
+        ASC_HELPER_BINARY="$(build_ascd_helper "$ASC_HELPER_SOURCE_DIR")"
+    fi
+fi
+
 if [ -n "$ASC_HELPER_BINARY" ]; then
+    if ! verify_ascd_helper "$ASC_HELPER_BINARY"; then
+        echo "ERROR: ascd helper is not compatible with Blitz:"
+        echo "       $ASC_HELPER_BINARY"
+        echo "       Expected the forked helper binary with the JSON-line long-lived protocol."
+        exit 1
+    fi
     cp "$ASC_HELPER_BINARY" "$BUNDLE_DIR/Contents/Helpers/ascd"
     chmod 755 "$BUNDLE_DIR/Contents/Helpers/ascd"
     echo "Copied ascd helper into app bundle from $ASC_HELPER_BINARY"
 else
     echo "ERROR: ascd helper not found."
-    echo "       Set BLITZ_ASCD_PATH, install ascd on PATH, or build it at:"
-    echo "       $HOME/superapp/asc-cli/forks/App-Store-Connect-CLI-helper/build/ascd"
+    echo "       Set BLITZ_ASCD_PATH to a built forked helper binary, or"
+    echo "       set BLITZ_ASCD_SOURCE_DIR to the App-Store-Connect-CLI-helper fork checkout."
+    echo "       Source builds can also place the fork at:"
+    echo "       $ROOT_DIR/deps/App-Store-Connect-CLI-helper"
+    echo "       If you cloned Blitz from git, run:"
+    echo "       git submodule update --init --recursive"
     exit 1
 fi
 

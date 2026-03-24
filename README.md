@@ -31,6 +31,7 @@ https://github.com/user-attachments/assets/07364d9f-f6a7-4375-acc8-b7ab46dcc60e
 - macOS 14+ (Sonoma)
 - Xcode 16+ (Swift 5.10+)
 - Node.js 18+ (for build scripts and sidecar)
+- Go 1.26+ (for source builds that bundle the pinned `ascd` helper)
 
 ## Download
 
@@ -42,6 +43,9 @@ https://github.com/user-attachments/assets/07364d9f-f6a7-4375-acc8-b7ab46dcc60e
 # Clone
 git clone https://github.com/blitzdotdev/blitz-mac.git
 cd blitz-mac
+
+# Fetch the pinned App Store Connect helper fork
+git submodule update --init --recursive
 
 # Debug build
 swift build
@@ -61,6 +65,8 @@ For signed builds, copy `.env.example` to `.env` and fill in your Apple Develope
 ```bash
 bash scripts/bundle.sh release
 ```
+
+The ASC helper binary bundled into the app is built from the pinned submodule at `deps/App-Store-Connect-CLI-helper`. If you need to override that source during development or CI, set `BLITZ_ASCD_SOURCE_DIR` or point `BLITZ_ASCD_PATH` at a prebuilt compatible helper binary.
 
 ## Verify a release binary
 
