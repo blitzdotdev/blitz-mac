@@ -280,7 +280,22 @@ struct ASCOverview: View {
         let settings = SettingsService.shared
         let agent = AIAgent(rawValue: settings.defaultAgentCLI) ?? .claudeCode
         let terminal = settings.resolveDefaultTerminal().terminal
-        TerminalLauncher.launch(projectPath: projectPath, agent: agent, terminal: terminal, prompt: prompt, skipPermissions: settings.skipAgentPermissions)
+
+        if terminal.isBuiltIn {
+            appState.showTerminal = true
+            let session = appState.terminalManager.createSession(projectPath: projectPath)
+            var command = agent.cliCommand
+            if settings.skipAgentPermissions, let flag = agent.skipPermissionsFlag {
+                command += " \(flag)"
+            }
+            let escaped = prompt.replacingOccurrences(of: "'", with: "'\\''")
+            command += " '\(escaped)'"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                session.sendCommand(command)
+            }
+        } else {
+            TerminalLauncher.launch(projectPath: projectPath, agent: agent, terminal: terminal, prompt: prompt, skipPermissions: settings.skipAgentPermissions)
+        }
     }
 
     private var buildProgress: Double {

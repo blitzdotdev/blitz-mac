@@ -33,6 +33,18 @@ enum TerminalApp: Hashable {
         }
     }
 
+    /// Name without the "(external)" suffix — used in onboarding disclosure.
+    var shortDisplayName: String {
+        switch self {
+        case .builtIn: return "Built-in Terminal"
+        case .terminal: return "Terminal"
+        case .ghostty: return "Ghostty"
+        case .iterm: return "iTerm"
+        case .custom(let path):
+            return URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
+        }
+    }
+
     var iconName: String {
         switch self {
         case .builtIn: return "terminal"
@@ -97,6 +109,7 @@ struct OnboardingView: View {
     @State private var selectedAgent: AIAgent = .claudeCode
     @State private var detectedTerminals: [TerminalApp] = []
     @State private var showCustomPicker = false
+    @State private var showExternalTerminals = false
     @State private var skipAgentPermissions: Bool
 
     init(appState: AppState, onComplete: @escaping () -> Void) {
@@ -239,40 +252,9 @@ struct OnboardingView: View {
             // Right: configuration options
             ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 12) {
-                // Terminal selection
+                // Agent CLI selection (first — most users care about this)
                 VStack(alignment: .leading, spacing: 6) {
-                    Label("Default Terminal", systemImage: "terminal")
-                        .font(.headline)
-
-                    VStack(spacing: 2) {
-                        ForEach(detectedTerminals, id: \.self) { terminal in
-                            terminalRow(terminal)
-                        }
-
-                        // Custom picker button
-                        Button {
-                            showCustomPicker = true
-                        } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: "folder")
-                                    .frame(width: 20)
-                                Text("Choose Custom...")
-                                Spacer()
-                            }
-                            .padding(.vertical, 4)
-                            .padding(.horizontal, 10)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                    }
-                }
-
-                Divider()
-
-                // Agent CLI selection
-                VStack(alignment: .leading, spacing: 6) {
-                    Label("Default AI Agent", systemImage: "cpu")
+                    Text("Default AI Agent")
                         .font(.headline)
 
                     VStack(spacing: 2) {
@@ -284,8 +266,6 @@ struct OnboardingView: View {
 
                 // Skip permissions toggle (only if agent supports it)
                 if selectedAgent.skipPermissionsFlag != nil {
-                    Divider()
-
                     Toggle(isOn: $skipAgentPermissions) {
                         VStack(alignment: .leading, spacing: 1) {
                             Text("Skip agent permissions")
@@ -299,6 +279,60 @@ struct OnboardingView: View {
                     .controlSize(.small)
                 }
 
+                Divider()
+
+                // Terminal selection
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Terminal")
+                        .font(.headline)
+
+                    // Built-in (recommended) — always shown
+                    terminalRow(.builtIn, label: "Built-in Terminal (recommended)")
+
+                    // External terminals — collapsed under clickable header
+                    VStack(alignment: .leading, spacing: 2) {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showExternalTerminals.toggle()
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "chevron.right")
+                                    .font(.caption2.weight(.semibold))
+                                    .rotationEffect(.degrees(showExternalTerminals ? 90 : 0))
+                                Text("Use external terminal")
+                                    .font(.callout)
+                            }
+                            .foregroundStyle(.secondary)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.leading, 10)
+                        .padding(.vertical, 4)
+
+                        if showExternalTerminals {
+                            ForEach(externalTerminals, id: \.self) { terminal in
+                                terminalRow(terminal, label: terminal.shortDisplayName)
+                            }
+
+                            Button {
+                                showCustomPicker = true
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "folder")
+                                        .frame(width: 20)
+                                    Text("Choose Custom...")
+                                    Spacer()
+                                }
+                                .padding(.vertical, 4)
+                                .padding(.horizontal, 10)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.secondary)
+                        }
+                    }
+                }
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 10)
@@ -319,7 +353,11 @@ struct OnboardingView: View {
         }
     }
 
-    private func terminalRow(_ terminal: TerminalApp) -> some View {
+    private var externalTerminals: [TerminalApp] {
+        detectedTerminals.filter { !$0.isBuiltIn }
+    }
+
+    private func terminalRow(_ terminal: TerminalApp, label: String? = nil) -> some View {
         let isSelected = selectedTerminal == terminal
         return Button {
             selectedTerminal = terminal
@@ -327,7 +365,7 @@ struct OnboardingView: View {
             HStack(spacing: 10) {
                 terminalIcon(for: terminal)
                     .frame(width: 20, height: 20)
-                Text(terminal.displayName)
+                Text(label ?? terminal.displayName)
                     .font(.body)
                 Spacer()
                 if isSelected {

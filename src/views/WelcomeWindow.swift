@@ -31,9 +31,8 @@ struct WelcomeWindow: View {
         })
         .task {
             // Show onboarding on first launch
-            if !appState.settingsStore.hasCompletedOnboarding {
-                showOnboarding = true
-            }
+            // TODO: revert — temporarily always show onboarding for testing
+            showOnboarding = true
         }
         .task {
             if appState.projectManager.projects.isEmpty {
