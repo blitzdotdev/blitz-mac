@@ -28,17 +28,23 @@ struct LocalScreenshotAsset: Identifiable {
 @MainActor
 @Observable
 final class ASCManager {
-    private struct OverviewSnapshot {
+    private struct ProjectSnapshot {
         let projectId: String
         let app: ASCApp?
         let appStoreVersions: [ASCAppStoreVersion]
         let localizations: [ASCVersionLocalization]
         let screenshotSets: [ASCScreenshotSet]
         let screenshots: [String: [ASCScreenshot]]
+        let customerReviews: [ASCCustomerReview]
         let builds: [ASCBuild]
+        let betaGroups: [ASCBetaGroup]
+        let betaLocalizations: [ASCBetaLocalization]
+        let betaFeedback: [String: [ASCBetaFeedback]]
+        let selectedBuildId: String?
         let inAppPurchases: [ASCInAppPurchase]
         let subscriptionGroups: [ASCSubscriptionGroup]
         let subscriptionsPerGroup: [String: [ASCSubscription]]
+        let appPricePoints: [ASCPricePoint]
         let currentAppPricePointId: String?
         let scheduledAppPricePointId: String?
         let scheduledAppPriceEffectiveDate: String?
@@ -55,6 +61,9 @@ final class ASCManager {
         let rejectionMessages: [IrisResolutionCenterMessage]
         let rejectionReasons: [IrisReviewRejection]
         let cachedFeedback: IrisFeedbackCache?
+        let trackSlots: [String: [TrackSlot?]]
+        let savedTrackState: [String: [TrackSlot?]]
+        let localScreenshotAssets: [LocalScreenshotAsset]
         let appIconStatus: String?
         let monetizationStatus: String?
         let loadedTabs: Set<AppTab>
@@ -68,10 +77,16 @@ final class ASCManager {
             localizations = manager.localizations
             screenshotSets = manager.screenshotSets
             screenshots = manager.screenshots
+            customerReviews = manager.customerReviews
             builds = manager.builds
+            betaGroups = manager.betaGroups
+            betaLocalizations = manager.betaLocalizations
+            betaFeedback = manager.betaFeedback
+            selectedBuildId = manager.selectedBuildId
             inAppPurchases = manager.inAppPurchases
             subscriptionGroups = manager.subscriptionGroups
             subscriptionsPerGroup = manager.subscriptionsPerGroup
+            appPricePoints = manager.appPricePoints
             currentAppPricePointId = manager.currentAppPricePointId
             scheduledAppPricePointId = manager.scheduledAppPricePointId
             scheduledAppPriceEffectiveDate = manager.scheduledAppPriceEffectiveDate
@@ -88,9 +103,12 @@ final class ASCManager {
             rejectionMessages = manager.rejectionMessages
             rejectionReasons = manager.rejectionReasons
             cachedFeedback = manager.cachedFeedback
+            trackSlots = manager.trackSlots
+            savedTrackState = manager.savedTrackState
+            localScreenshotAssets = manager.localScreenshotAssets
             appIconStatus = manager.appIconStatus
             monetizationStatus = manager.monetizationStatus
-            let cachedLoadedTabs = manager.loadedTabs.intersection([.app])
+            let cachedLoadedTabs = manager.loadedTabs.intersection(ASCManager.cachedProjectTabs)
             loadedTabs = cachedLoadedTabs
             tabLoadedAt = manager.tabLoadedAt.filter { cachedLoadedTabs.contains($0.key) }
         }
@@ -102,10 +120,16 @@ final class ASCManager {
             manager.localizations = localizations
             manager.screenshotSets = screenshotSets
             manager.screenshots = screenshots
+            manager.customerReviews = customerReviews
             manager.builds = builds
+            manager.betaGroups = betaGroups
+            manager.betaLocalizations = betaLocalizations
+            manager.betaFeedback = betaFeedback
+            manager.selectedBuildId = selectedBuildId
             manager.inAppPurchases = inAppPurchases
             manager.subscriptionGroups = subscriptionGroups
             manager.subscriptionsPerGroup = subscriptionsPerGroup
+            manager.appPricePoints = appPricePoints
             manager.currentAppPricePointId = currentAppPricePointId
             manager.scheduledAppPricePointId = scheduledAppPricePointId
             manager.scheduledAppPriceEffectiveDate = scheduledAppPriceEffectiveDate
@@ -122,6 +146,9 @@ final class ASCManager {
             manager.rejectionMessages = rejectionMessages
             manager.rejectionReasons = rejectionReasons
             manager.cachedFeedback = cachedFeedback
+            manager.trackSlots = trackSlots
+            manager.savedTrackState = savedTrackState
+            manager.localScreenshotAssets = localScreenshotAssets
             manager.appIconStatus = appIconStatus
             manager.monetizationStatus = monetizationStatus
             manager.loadedTabs = loadedTabs
@@ -131,6 +158,7 @@ final class ASCManager {
             manager.isLoadingTab = [:]
             manager.isLoadingApp = false
             manager.isLoadingIrisFeedback = false
+            manager.loadingFeedbackBuildIds = []
             manager.irisFeedbackError = nil
             manager.writeError = nil
             manager.submissionError = nil
@@ -138,7 +166,21 @@ final class ASCManager {
         }
     }
 
-    private static let overviewCacheFreshness: TimeInterval = 120
+    private static let projectCacheFreshness: TimeInterval = 120
+    private static let cachedProjectTabs: Set<AppTab> = [
+        .app,
+        .storeListing,
+        .screenshots,
+        .appDetails,
+        .monetization,
+        .review,
+        .analytics,
+        .reviews,
+        .builds,
+        .groups,
+        .betaInfo,
+        .feedback,
+    ]
     private static let overviewLocalizationFieldLabels: Set<String> = [
         "App Name",
         "Description",
@@ -412,9 +454,10 @@ final class ASCManager {
     var tabError: [AppTab: String] = [:]
     private var loadedTabs: Set<AppTab> = []
     private var tabLoadedAt: [AppTab: Date] = [:]
-    private var overviewSnapshots: [String: OverviewSnapshot] = [:]
-    private var overviewHydrationTask: Task<Void, Never>?
+    private var projectSnapshots: [String: ProjectSnapshot] = [:]
+    private var tabHydrationTasks: [AppTab: Task<Void, Never>] = [:]
     private var overviewReadinessLoadingFields: Set<String> = []
+    private var loadingFeedbackBuildIds: Set<String> = []
 
     var loadedProjectId: String?
 
@@ -461,10 +504,29 @@ final class ASCManager {
         checkAppIcon(projectId: projectId)
     }
 
+    private func cancelBackgroundHydration(for tab: AppTab) {
+        tabHydrationTasks[tab]?.cancel()
+        tabHydrationTasks.removeValue(forKey: tab)
+    }
+
+    private func cancelBackgroundHydrationTasks() {
+        for task in tabHydrationTasks.values {
+            task.cancel()
+        }
+        tabHydrationTasks.removeAll()
+    }
+
+    private func startBackgroundHydration(for tab: AppTab, operation: @escaping @MainActor () async -> Void) {
+        cancelBackgroundHydration(for: tab)
+        tabHydrationTasks[tab] = Task {
+            await operation()
+        }
+    }
+
     private func resetProjectData(preserveCredentials: Bool) {
-        overviewHydrationTask?.cancel()
-        overviewHydrationTask = nil
+        cancelBackgroundHydrationTasks()
         overviewReadinessLoadingFields = []
+        loadingFeedbackBuildIds = []
 
         if !preserveCredentials {
             credentials = nil
@@ -525,10 +587,10 @@ final class ASCManager {
         cancelPendingWebAuth()
     }
 
-    private func cacheCurrentOverviewSnapshot() {
+    private func cacheCurrentProjectSnapshot() {
         guard let projectId = loadedProjectId else { return }
-        guard app != nil || !appStoreVersions.isEmpty || loadedTabs.contains(.app) else { return }
-        overviewSnapshots[projectId] = OverviewSnapshot(manager: self, projectId: projectId)
+        guard app != nil || !loadedTabs.isEmpty else { return }
+        projectSnapshots[projectId] = ProjectSnapshot(manager: self, projectId: projectId)
     }
 
     private func startOverviewReadinessLoading(_ fields: Set<String>) {
@@ -539,10 +601,10 @@ final class ASCManager {
         overviewReadinessLoadingFields.subtract(fields)
     }
 
-    private func shouldRefreshOverviewCache() -> Bool {
-        guard loadedTabs.contains(.app) else { return true }
-        guard let loadedAt = tabLoadedAt[.app] else { return true }
-        return Date().timeIntervalSince(loadedAt) > Self.overviewCacheFreshness
+    private func shouldRefreshTabCache(_ tab: AppTab) -> Bool {
+        guard loadedTabs.contains(tab) else { return true }
+        guard let loadedAt = tabLoadedAt[tab] else { return true }
+        return Date().timeIntervalSince(loadedAt) > Self.projectCacheFreshness
     }
 
     private func isCurrentProject(_ projectId: String?) -> Bool {
@@ -551,10 +613,10 @@ final class ASCManager {
     }
 
     func prepareForProjectSwitch(to projectId: String) {
-        cacheCurrentOverviewSnapshot()
+        cacheCurrentProjectSnapshot()
         resetProjectData(preserveCredentials: true)
 
-        if let snapshot = overviewSnapshots[projectId] {
+        if let snapshot = projectSnapshots[projectId] {
             snapshot.apply(to: self)
         } else {
             loadedProjectId = projectId
@@ -565,13 +627,28 @@ final class ASCManager {
         guard credentials != nil else { return }
 
         if loadedTabs.contains(tab) {
-            if tab == .app && shouldRefreshOverviewCache() {
+            if shouldRefreshTabCache(tab) {
                 await refreshTabData(tab)
             }
             return
         }
 
         await fetchTabData(tab)
+    }
+
+    func hasLoadedTabData(_ tab: AppTab) -> Bool {
+        loadedTabs.contains(tab)
+    }
+
+    func isTabLoading(_ tab: AppTab) -> Bool {
+        isLoadingTab[tab] == true || isLoadingApp
+    }
+
+    func isFeedbackLoading(for buildId: String?) -> Bool {
+        guard let buildId, !buildId.isEmpty else {
+            return isLoadingTab[.feedback] == true
+        }
+        return loadingFeedbackBuildIds.contains(buildId)
     }
 
     // MARK: - Project Lifecycle
@@ -1170,7 +1247,12 @@ final class ASCManager {
         credentials = creds
         service = AppStoreConnectService(credentials: creds)
         credentialsError = nil
+        cancelBackgroundHydrationTasks()
         loadedTabs = []  // force re-fetch after new credentials
+        tabLoadedAt = [:]
+        tabError = [:]
+        isLoadingTab = [:]
+        loadingFeedbackBuildIds = []
 
         if let bundleId, !bundleId.isEmpty {
             await fetchApp(bundleId: bundleId)
@@ -1212,6 +1294,7 @@ final class ASCManager {
         guard !loadedTabs.contains(tab) else { return }
         guard isLoadingTab[tab] != true else { return }
 
+        cancelBackgroundHydration(for: tab)
         isLoadingTab[tab] = true
         tabError.removeValue(forKey: tab)
 
@@ -1229,16 +1312,19 @@ final class ASCManager {
     /// Called after bundle ID setup completes and the app is confirmed in ASC.
     /// Clears all tab errors and forces data to be re-fetched.
     func resetTabState() {
+        cancelBackgroundHydrationTasks()
         tabError.removeAll()
         loadedTabs.removeAll()
         tabLoadedAt.removeAll()
+        loadingFeedbackBuildIds = []
     }
 
     func refreshTabData(_ tab: AppTab) async {
         guard let service else { return }
         guard credentials != nil else { return }
 
-        loadedTabs.remove(tab)
+        let hadLoadedData = loadedTabs.contains(tab)
+        cancelBackgroundHydration(for: tab)
         isLoadingTab[tab] = true
         tabError.removeValue(forKey: tab)
 
@@ -1249,6 +1335,10 @@ final class ASCManager {
             tabLoadedAt[tab] = Date()
         } catch {
             isLoadingTab[tab] = false
+            if !hadLoadedData {
+                loadedTabs.remove(tab)
+                tabLoadedAt.removeValue(forKey: tab)
+            }
             tabError[tab] = error.localizedDescription
         }
     }
@@ -1256,6 +1346,21 @@ final class ASCManager {
     func refreshSubmissionReadinessData() async {
         await refreshMonetization()
         await refreshAttachedSubmissionItemIDs()
+    }
+
+    func refreshBetaFeedback(buildId: String) async {
+        guard let service else { return }
+        guard !buildId.isEmpty else { return }
+
+        loadingFeedbackBuildIds.insert(buildId)
+        defer { loadingFeedbackBuildIds.remove(buildId) }
+
+        do {
+            betaFeedback[buildId] = try await service.fetchBetaFeedback(buildId: buildId)
+        } catch {
+            // Feedback may not be available for all apps; non-fatal.
+            betaFeedback[buildId] = []
+        }
     }
 
     private func hydrateOverviewSecondaryData(
@@ -1329,6 +1434,114 @@ final class ASCManager {
         finishOverviewReadinessLoading(Self.overviewPricingFieldLabels)
     }
 
+    private func hydrateScreenshotsSecondaryData(
+        projectId: String?,
+        localizationId: String,
+        service: AppStoreConnectService
+    ) async {
+        do {
+            let fetchedSets = try await service.fetchScreenshotSets(localizationId: localizationId)
+            guard !Task.isCancelled, isCurrentProject(projectId) else { return }
+            screenshotSets = fetchedSets
+
+            let fetchedScreenshots = try await withThrowingTaskGroup(of: (String, [ASCScreenshot]).self) { group in
+                for set in fetchedSets {
+                    group.addTask {
+                        let screenshots = try await service.fetchScreenshots(setId: set.id)
+                        return (set.id, screenshots)
+                    }
+                }
+
+                var pairs: [(String, [ASCScreenshot])] = []
+                for try await pair in group {
+                    pairs.append(pair)
+                }
+                return pairs
+            }
+
+            guard !Task.isCancelled, isCurrentProject(projectId) else { return }
+            screenshots = Dictionary(uniqueKeysWithValues: fetchedScreenshots)
+        } catch {
+            print("Failed to hydrate screenshots: \(error)")
+        }
+    }
+
+    private func hydrateReviewSecondaryData(
+        projectId: String?,
+        appId: String,
+        appInfoId: String?,
+        service: AppStoreConnectService
+    ) async {
+        if let appInfoId {
+            let fetchedAgeRating = try? await service.fetchAgeRating(appInfoId: appInfoId)
+            guard !Task.isCancelled, isCurrentProject(projectId) else { return }
+            ageRatingDeclaration = fetchedAgeRating
+        } else {
+            ageRatingDeclaration = nil
+        }
+
+        guard !Task.isCancelled, isCurrentProject(projectId) else { return }
+        await refreshReviewSubmissionData(appId: appId, service: service)
+        guard !Task.isCancelled, isCurrentProject(projectId) else { return }
+        rebuildSubmissionHistory(appId: appId)
+        refreshSubmissionFeedbackIfNeeded()
+    }
+
+    private func hydrateMonetizationSecondaryData(
+        projectId: String?,
+        appId: String,
+        groups: [ASCSubscriptionGroup],
+        service: AppStoreConnectService
+    ) async {
+        do {
+            let fetchedSubscriptions = try await withThrowingTaskGroup(of: (String, [ASCSubscription]).self) { taskGroup in
+                for subscriptionGroup in groups {
+                    taskGroup.addTask {
+                        let subscriptions = try await service.fetchSubscriptionsInGroup(groupId: subscriptionGroup.id)
+                        return (subscriptionGroup.id, subscriptions)
+                    }
+                }
+
+                var pairs: [(String, [ASCSubscription])] = []
+                for try await pair in taskGroup {
+                    pairs.append(pair)
+                }
+                return pairs
+            }
+
+            guard !Task.isCancelled, isCurrentProject(projectId) else { return }
+            subscriptionsPerGroup = Dictionary(uniqueKeysWithValues: fetchedSubscriptions)
+        } catch {
+            print("Failed to hydrate monetization subscriptions: \(error)")
+        }
+
+        if currentAppPricePointId == nil && scheduledAppPricePointId == nil && monetizationStatus == nil {
+            let hasPricing = await service.fetchPricingConfigured(appId: appId)
+            guard !Task.isCancelled, isCurrentProject(projectId) else { return }
+            monetizationStatus = hasPricing ? "Configured" : nil
+        }
+    }
+
+    private func hydrateFeedbackSecondaryData(
+        projectId: String?,
+        buildId: String,
+        service: AppStoreConnectService
+    ) async {
+        guard isCurrentProject(projectId) else { return }
+        guard !Task.isCancelled else { return }
+        loadingFeedbackBuildIds.insert(buildId)
+        defer { loadingFeedbackBuildIds.remove(buildId) }
+
+        do {
+            let items = try await service.fetchBetaFeedback(buildId: buildId)
+            guard !Task.isCancelled, isCurrentProject(projectId) else { return }
+            betaFeedback[buildId] = items
+        } catch {
+            guard !Task.isCancelled, isCurrentProject(projectId) else { return }
+            betaFeedback[buildId] = []
+        }
+    }
+
     private func loadData(for tab: AppTab, service: AppStoreConnectService) async throws {
         guard let appId = app?.id else {
             throw ASCError.notFound("App — check your bundle ID in project settings")
@@ -1379,10 +1592,9 @@ final class ASCManager {
 
             refreshSubmissionFeedbackIfNeeded()
 
-            overviewHydrationTask?.cancel()
             let projectId = loadedProjectId
             let currentAppInfoId = appInfo?.id
-            overviewHydrationTask = Task {
+            startBackgroundHydration(for: .app) {
                 await self.hydrateOverviewSecondaryData(
                     projectId: projectId,
                     appId: appId,
@@ -1393,17 +1605,21 @@ final class ASCManager {
             }
 
         case .storeListing:
-            let versions = try await service.fetchAppStoreVersions(appId: appId)
+            async let versionsTask = service.fetchAppStoreVersions(appId: appId)
+            async let appInfoTask: ASCAppInfo? = try? await service.fetchAppInfo(appId: appId)
+
+            let versions = try await versionsTask
             appStoreVersions = versions
             if let latestId = versions.first?.id {
                 localizations = try await service.fetchLocalizations(versionId: latestId)
+            } else {
+                localizations = []
             }
-            // Also fetch appInfoLocalization for privacy policy URL
-            if appInfo == nil {
-                appInfo = try? await service.fetchAppInfo(appId: appId)
-            }
-            if let infoId = appInfo?.id, appInfoLocalization == nil {
+            appInfo = await appInfoTask
+            if let infoId = appInfo?.id {
                 appInfoLocalization = try? await service.fetchAppInfoLocalization(appInfoId: infoId)
+            } else {
+                appInfoLocalization = nil
             }
 
         case .screenshots:
@@ -1413,47 +1629,76 @@ final class ASCManager {
                 let locs = try await service.fetchLocalizations(versionId: latestId)
                 localizations = locs
                 if let firstLocId = locs.first?.id {
-                    let sets = try await service.fetchScreenshotSets(localizationId: firstLocId)
-                    screenshotSets = sets
-                    for set in sets {
-                        let shots = try await service.fetchScreenshots(setId: set.id)
-                        screenshots[set.id] = shots
+                    let projectId = loadedProjectId
+                    startBackgroundHydration(for: .screenshots) {
+                        await self.hydrateScreenshotsSecondaryData(
+                            projectId: projectId,
+                            localizationId: firstLocId,
+                            service: service
+                        )
                     }
+                } else {
+                    screenshotSets = []
+                    screenshots = [:]
                 }
+            } else {
+                localizations = []
+                screenshotSets = []
+                screenshots = [:]
             }
 
         case .appDetails:
-            let versions = try await service.fetchAppStoreVersions(appId: appId)
-            appStoreVersions = versions
-            appInfo = try? await service.fetchAppInfo(appId: appId)
+            async let versionsTask = service.fetchAppStoreVersions(appId: appId)
+            async let appInfoTask: ASCAppInfo? = try? await service.fetchAppInfo(appId: appId)
+
+            appStoreVersions = try await versionsTask
+            appInfo = await appInfoTask
 
         case .review:
-            let versions = try await service.fetchAppStoreVersions(appId: appId)
+            async let versionsTask = service.fetchAppStoreVersions(appId: appId)
+            async let appInfoTask: ASCAppInfo? = try? await service.fetchAppInfo(appId: appId)
+            async let buildsTask = service.fetchBuilds(appId: appId)
+
+            let versions = try await versionsTask
             appStoreVersions = versions
             if let latestId = versions.first?.id {
                 reviewDetail = try? await service.fetchReviewDetail(versionId: latestId)
+            } else {
+                reviewDetail = nil
             }
-            appInfo = try? await service.fetchAppInfo(appId: appId)
-            if let infoId = appInfo?.id {
-                ageRatingDeclaration = try? await service.fetchAgeRating(appInfoId: infoId)
+            appInfo = await appInfoTask
+            builds = try await buildsTask
+            let projectId = loadedProjectId
+            let currentAppInfoId = appInfo?.id
+            startBackgroundHydration(for: .review) {
+                await self.hydrateReviewSecondaryData(
+                    projectId: projectId,
+                    appId: appId,
+                    appInfoId: currentAppInfoId,
+                    service: service
+                )
             }
-            builds = try await service.fetchBuilds(appId: appId)
-            await refreshReviewSubmissionData(appId: appId, service: service)
-            rebuildSubmissionHistory(appId: appId)
 
         case .monetization:
-            appPricePoints = try await service.fetchAppPricePoints(appId: appId)
-            let pricingState = (try? await service.fetchAppPricingState(appId: appId))
+            async let pricePointsTask = service.fetchAppPricePoints(appId: appId)
+            async let pricingStateTask = (try? await service.fetchAppPricingState(appId: appId))
                 ?? ASCAppPricingState(currentPricePointId: nil, scheduledPricePointId: nil, scheduledEffectiveDate: nil)
-            applyAppPricingState(pricingState)
-            inAppPurchases = try await service.fetchInAppPurchases(appId: appId)
-            subscriptionGroups = try await service.fetchSubscriptionGroups(appId: appId)
-            for group in subscriptionGroups {
-                subscriptionsPerGroup[group.id] = try await service.fetchSubscriptionsInGroup(groupId: group.id)
-            }
-            if currentAppPricePointId == nil && scheduledAppPricePointId == nil && monetizationStatus == nil {
-                let hasPricing = await service.fetchPricingConfigured(appId: appId)
-                monetizationStatus = hasPricing ? "Configured" : nil
+            async let iapTask = service.fetchInAppPurchases(appId: appId)
+            async let groupsTask = service.fetchSubscriptionGroups(appId: appId)
+
+            appPricePoints = try await pricePointsTask
+            applyAppPricingState(await pricingStateTask)
+            inAppPurchases = try await iapTask
+            let groups = try await groupsTask
+            subscriptionGroups = groups
+            let projectId = loadedProjectId
+            startBackgroundHydration(for: .monetization) {
+                await self.hydrateMonetizationSecondaryData(
+                    projectId: projectId,
+                    appId: appId,
+                    groups: groups,
+                    service: service
+                )
             }
 
         case .analytics:
@@ -1474,14 +1719,25 @@ final class ASCManager {
         case .feedback:
             let fetched = try await service.fetchBuilds(appId: appId)
             builds = fetched
-            if let first = fetched.first {
-                selectedBuildId = first.id
-                do {
-                    betaFeedback[first.id] = try await service.fetchBetaFeedback(buildId: first.id)
-                } catch {
-                    // Feedback may not be available for all apps; non-fatal
-                    betaFeedback[first.id] = []
+            let resolvedBuildId: String?
+            if let currentSelectedBuildId = selectedBuildId,
+               fetched.contains(where: { $0.id == currentSelectedBuildId }) {
+                resolvedBuildId = currentSelectedBuildId
+            } else {
+                resolvedBuildId = fetched.first?.id
+            }
+            selectedBuildId = resolvedBuildId
+            if let resolvedBuildId {
+                let projectId = loadedProjectId
+                startBackgroundHydration(for: .feedback) {
+                    await self.hydrateFeedbackSecondaryData(
+                        projectId: projectId,
+                        buildId: resolvedBuildId,
+                        service: service
+                    )
                 }
+            } else {
+                betaFeedback = [:]
             }
 
         default:

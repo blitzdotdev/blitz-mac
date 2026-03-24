@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "app": "npm run build:app:debug",
+    "app": "sudo npm run build:app:debug",
     "build:app": "killall Blitz 2>/dev/null; BUILD_CONFIG=${BUILD_CONFIG:-release} CODESIGN_TIMESTAMP=${CODESIGN_TIMESTAMP:-auto} bash scripts/bundle.sh ${BUILD_CONFIG:-release} && open .build/Blitz.app",
     "build:app:debug": "killall Blitz 2>/dev/null; CODESIGN_TIMESTAMP=none bash scripts/bundle.sh debug && open .build/Blitz.app",
     "build:app:release": "killall Blitz 2>/dev/null; bash scripts/bundle.sh release && open .build/Blitz.app",

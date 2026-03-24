@@ -15,24 +15,44 @@ struct ReviewsView: View {
                 reviewsContent
             }
         }
-        .task { await asc.fetchTabData(.reviews) }
+        .task(id: appState.activeProjectId) { await asc.ensureTabData(.reviews) }
     }
 
     @ViewBuilder
     private var reviewsContent: some View {
-        if asc.customerReviews.isEmpty {
-            ContentUnavailableView(
-                "No Reviews",
-                systemImage: "bubble.left.and.bubble.right",
-                description: Text("No customer reviews found for this app.")
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            List(asc.customerReviews) { review in
-                reviewRow(review)
-                    .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+        VStack(spacing: 0) {
+            HStack {
+                Text("Reviews")
+                    .font(.title2.weight(.semibold))
+                Spacer()
+                ASCTabRefreshButton(asc: asc, tab: .reviews, helpText: "Refresh reviews")
             }
-            .listStyle(.plain)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+
+            Divider()
+
+            if asc.customerReviews.isEmpty {
+                if asc.isTabLoading(.reviews) {
+                    ASCTabLoadingPlaceholder(
+                        title: "Loading Reviews",
+                        message: "Fetching customer ratings and review text."
+                    )
+                } else {
+                    ContentUnavailableView(
+                        "No Reviews",
+                        systemImage: "bubble.left.and.bubble.right",
+                        description: Text("No customer reviews found for this app.")
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            } else {
+                List(asc.customerReviews) { review in
+                    reviewRow(review)
+                        .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+                }
+                .listStyle(.plain)
+            }
         }
     }
 

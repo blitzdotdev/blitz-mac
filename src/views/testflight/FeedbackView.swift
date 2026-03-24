@@ -16,16 +16,15 @@ struct FeedbackView: View {
                 feedbackContent
             }
         }
-        .task { await asc.fetchTabData(.feedback) }
+        .task(id: appState.activeProjectId) { await asc.ensureTabData(.feedback) }
     }
 
     @ViewBuilder
     private var feedbackContent: some View {
         let builds = asc.builds
-        let effectiveBuildId = localSelectedBuildId.isEmpty
-            ? (asc.selectedBuildId ?? builds.first?.id ?? "")
-            : localSelectedBuildId
+        let effectiveBuildId = resolvedBuildId(from: builds)
         let feedback = asc.betaFeedback[effectiveBuildId] ?? []
+        let isLoadingFeedback = asc.isFeedbackLoading(for: effectiveBuildId)
 
         VStack(spacing: 0) {
             // Build picker toolbar
@@ -49,20 +48,11 @@ struct FeedbackView: View {
                     }
                 }
                 Spacer()
-                Button {
-                    Task {
-                        guard let service = asc.service, !effectiveBuildId.isEmpty else { return }
-                        do {
-                            let items = try await service.fetchBetaFeedback(buildId: effectiveBuildId)
-                            asc.betaFeedback[effectiveBuildId] = items
-                        } catch {
-                            // Silently fail — feedback may be unavailable
-                        }
-                    }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
+                if isLoadingFeedback {
+                    ProgressView()
+                        .controlSize(.small)
                 }
-                .buttonStyle(.borderless)
+                ASCTabRefreshButton(asc: asc, tab: .feedback, helpText: "Refresh feedback tab")
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 10)
@@ -71,19 +61,33 @@ struct FeedbackView: View {
             Divider()
 
             if builds.isEmpty {
-                ContentUnavailableView(
-                    "No Builds",
-                    systemImage: "hammer",
-                    description: Text("Upload a TestFlight build to receive tester feedback.")
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if asc.isTabLoading(.feedback) {
+                    ASCTabLoadingPlaceholder(
+                        title: "Loading Feedback",
+                        message: "Fetching builds and the latest tester feedback."
+                    )
+                } else {
+                    ContentUnavailableView(
+                        "No Builds",
+                        systemImage: "hammer",
+                        description: Text("Upload a TestFlight build to receive tester feedback.")
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             } else if feedback.isEmpty {
-                ContentUnavailableView(
-                    "No Feedback",
-                    systemImage: "exclamationmark.bubble",
-                    description: Text("No tester feedback for this build yet.")
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if isLoadingFeedback {
+                    ASCTabLoadingPlaceholder(
+                        title: "Loading Feedback",
+                        message: "Fetching tester comments and screenshots for this build."
+                    )
+                } else {
+                    ContentUnavailableView(
+                        "No Feedback",
+                        systemImage: "exclamationmark.bubble",
+                        description: Text("No tester feedback for this build yet.")
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             } else {
                 List(feedback) { item in
                     feedbackRow(item)
@@ -91,6 +95,18 @@ struct FeedbackView: View {
                 }
                 .listStyle(.plain)
             }
+        }
+        .onChange(of: localSelectedBuildId) { _, newValue in
+            guard !newValue.isEmpty else { return }
+            asc.selectedBuildId = newValue
+            guard asc.betaFeedback[newValue] == nil else { return }
+            Task { await asc.refreshBetaFeedback(buildId: newValue) }
+        }
+        .onAppear {
+            syncSelectedBuild(with: builds)
+        }
+        .onChange(of: builds.map(\.id)) { _, _ in
+            syncSelectedBuild(with: builds)
         }
     }
 
@@ -154,5 +170,23 @@ struct FeedbackView: View {
                 }
             }
         }
+    }
+
+    private func resolvedBuildId(from builds: [ASCBuild]) -> String {
+        if !localSelectedBuildId.isEmpty,
+           builds.contains(where: { $0.id == localSelectedBuildId }) {
+            return localSelectedBuildId
+        }
+        if let selectedBuildId = asc.selectedBuildId,
+           builds.contains(where: { $0.id == selectedBuildId }) {
+            return selectedBuildId
+        }
+        return builds.first?.id ?? ""
+    }
+
+    private func syncSelectedBuild(with builds: [ASCBuild]) {
+        let effectiveBuildId = resolvedBuildId(from: builds)
+        localSelectedBuildId = effectiveBuildId
+        asc.selectedBuildId = effectiveBuildId.isEmpty ? nil : effectiveBuildId
     }
 }

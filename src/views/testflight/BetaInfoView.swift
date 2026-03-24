@@ -23,7 +23,7 @@ struct BetaInfoView: View {
                 betaInfoContent
             }
         }
-        .task { await asc.fetchTabData(.betaInfo) }
+        .task(id: appState.activeProjectId) { await asc.ensureTabData(.betaInfo) }
     }
 
     @ViewBuilder
@@ -83,6 +83,7 @@ struct BetaInfoView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isSaving || current == nil)
+                ASCTabRefreshButton(asc: asc, tab: .betaInfo, helpText: "Refresh beta info")
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 10)
@@ -93,11 +94,18 @@ struct BetaInfoView: View {
             if current == nil && !locs.isEmpty {
                 ContentUnavailableView("Select a locale", systemImage: "doc.text")
             } else if locs.isEmpty {
-                ContentUnavailableView(
-                    "No Localizations",
-                    systemImage: "doc.text",
-                    description: Text("No beta app localizations found.")
-                )
+                if asc.isTabLoading(.betaInfo) {
+                    ASCTabLoadingPlaceholder(
+                        title: "Loading Beta Info",
+                        message: "Fetching beta app localizations and tester-facing copy."
+                    )
+                } else {
+                    ContentUnavailableView(
+                        "No Localizations",
+                        systemImage: "doc.text",
+                        description: Text("No beta app localizations found.")
+                    )
+                }
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {

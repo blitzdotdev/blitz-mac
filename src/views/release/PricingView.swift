@@ -16,18 +16,19 @@ struct MonetizationView: View {
                 monetizationContent
             }
         }
-        .task { await asc.fetchTabData(.monetization) }
+        .task(id: appState.activeProjectId) { await asc.ensureTabData(.monetization) }
     }
 
     @ViewBuilder
     private var monetizationContent: some View {
+        let isLoading = asc.isTabLoading(.monetization)
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 HStack {
                     Text("Monetization")
                         .font(.title2.weight(.semibold))
                     Spacer()
-                    RefreshButton(asc: asc)
+                    ASCTabRefreshButton(asc: asc, tab: .monetization, helpText: "Refresh monetization data")
                 }
 
                 if let err = asc.writeError {
@@ -38,6 +39,18 @@ struct MonetizationView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(.red.opacity(0.1))
                         .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+
+                if isLoading
+                    && asc.appPricePoints.isEmpty
+                    && asc.inAppPurchases.isEmpty
+                    && asc.subscriptionGroups.isEmpty {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading pricing, products, and subscriptions…")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 AppPricingSection(asc: asc)
@@ -149,73 +162,83 @@ private struct AppPricingSection: View {
     @State private var scheduledPricePointId = ""
 
     var body: some View {
+        let isLoading = asc.isTabLoading(.monetization)
         SectionCard {
             Label("Pricing & Availability", systemImage: "dollarsign.circle")
                 .font(.headline)
 
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Free App").font(.body.weight(.medium))
-                    Text("Your app will be available for free on the App Store.")
-                        .font(.callout).foregroundStyle(.secondary)
+            if isLoading && asc.appPricePoints.isEmpty && asc.currentAppPricePointId == nil && asc.scheduledAppPricePointId == nil {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Loading pricing state…")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                 }
-                Spacer()
-                Toggle("", isOn: Binding(
-                    get: { isFree },
-                    set: { newValue in
-                        guard newValue != isFree else { return }
-                        isFree = newValue
-                        guard newValue else { return }
-                        isSaving = true
-                        selectedPricePointId = ""
-                        Task {
-                            await asc.setPriceFree()
-                            isSaving = false
-                        }
+            } else {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Free App").font(.body.weight(.medium))
+                        Text("Your app will be available for free on the App Store.")
+                            .font(.callout).foregroundStyle(.secondary)
                     }
-                ))
-                    .labelsHidden()
-            }
-
-            if !isFree {
-                PricePicker(pricePoints: asc.appPricePoints, selectedPointId: $selectedPricePointId)
-
-                if !selectedPricePointId.isEmpty {
-                    Button("Set Price") {
-                        isSaving = true
-                        Task {
-                            await asc.setAppPrice(pricePointId: selectedPricePointId)
-                            isSaving = false
-                        }
-                    }
-                    .buttonStyle(.borderedProminent).controlSize(.small)
-                }
-
-                Divider()
-
-                DisclosureGroup("Schedule Price Change", isExpanded: $showScheduled) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        DatePicker("Effective Date", selection: $scheduledDate, in: Date()..., displayedComponents: .date)
-                        PricePicker(pricePoints: asc.appPricePoints, selectedPointId: $scheduledPricePointId)
-
-                        if !scheduledPricePointId.isEmpty {
-                            Button("Create Price Change") {
-                                isSaving = true
-                                let currentId = selectedPricePointId.isEmpty ? freePointId : selectedPricePointId
-                                let dateStr = formatDate(scheduledDate)
-                                Task {
-                                    await asc.setScheduledAppPrice(
-                                        currentPricePointId: currentId,
-                                        futurePricePointId: scheduledPricePointId,
-                                        effectiveDate: dateStr
-                                    )
-                                    isSaving = false
-                                }
+                    Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { isFree },
+                        set: { newValue in
+                            guard newValue != isFree else { return }
+                            isFree = newValue
+                            guard newValue else { return }
+                            isSaving = true
+                            selectedPricePointId = ""
+                            Task {
+                                await asc.setPriceFree()
+                                isSaving = false
                             }
-                            .buttonStyle(.borderedProminent).controlSize(.small)
                         }
+                    ))
+                        .labelsHidden()
+                }
+
+                if !isFree {
+                    PricePicker(pricePoints: asc.appPricePoints, selectedPointId: $selectedPricePointId)
+
+                    if !selectedPricePointId.isEmpty {
+                        Button("Set Price") {
+                            isSaving = true
+                            Task {
+                                await asc.setAppPrice(pricePointId: selectedPricePointId)
+                                isSaving = false
+                            }
+                        }
+                        .buttonStyle(.borderedProminent).controlSize(.small)
                     }
-                    .padding(.top, 8)
+
+                    Divider()
+
+                    DisclosureGroup("Schedule Price Change", isExpanded: $showScheduled) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            DatePicker("Effective Date", selection: $scheduledDate, in: Date()..., displayedComponents: .date)
+                            PricePicker(pricePoints: asc.appPricePoints, selectedPointId: $scheduledPricePointId)
+
+                            if !scheduledPricePointId.isEmpty {
+                                Button("Create Price Change") {
+                                    isSaving = true
+                                    let currentId = selectedPricePointId.isEmpty ? freePointId : selectedPricePointId
+                                    let dateStr = formatDate(scheduledDate)
+                                    Task {
+                                        await asc.setScheduledAppPrice(
+                                            currentPricePointId: currentId,
+                                            futurePricePointId: scheduledPricePointId,
+                                            effectiveDate: dateStr
+                                        )
+                                        isSaving = false
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent).controlSize(.small)
+                            }
+                        }
+                        .padding(.top, 8)
+                    }
                 }
             }
 
@@ -306,6 +329,7 @@ private struct InAppPurchasesSection: View {
     }
 
     var body: some View {
+        let isLoading = asc.isTabLoading(.monetization)
         SectionCard {
             HStack {
                 Label("In-App Purchases", systemImage: "cart")
@@ -319,8 +343,17 @@ private struct InAppPurchasesSection: View {
             }
 
             if asc.inAppPurchases.isEmpty && !showCreateForm {
-                Text("No in-app purchases configured.")
-                    .font(.callout).foregroundStyle(.secondary)
+                if isLoading {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading in-app purchases…")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text("No in-app purchases configured.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
             } else {
                 ForEach(asc.inAppPurchases) { iap in
                     IAPDetailRow(
@@ -611,6 +644,7 @@ private struct SubscriptionsSection: View {
     }
 
     var body: some View {
+        let isLoading = asc.isTabLoading(.monetization)
         SectionCard {
             HStack {
                 Label("Subscriptions", systemImage: "arrow.triangle.2.circlepath")
@@ -624,8 +658,17 @@ private struct SubscriptionsSection: View {
             }
 
             if asc.subscriptionGroups.isEmpty && !showCreateForm {
-                Text("No subscriptions configured.")
-                    .font(.callout).foregroundStyle(.secondary)
+                if isLoading {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading subscriptions…")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text("No subscriptions configured.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
             } else {
                 ForEach(asc.subscriptionGroups) { group in
                     SubscriptionGroupRow(
@@ -798,8 +841,17 @@ private struct SubscriptionGroupRow: View {
 
             let subs = asc.subscriptionsPerGroup[group.id] ?? []
             if subs.isEmpty {
-                Text("No subscriptions in this group.")
-                    .font(.caption).foregroundStyle(.tertiary)
+                if asc.isTabLoading(.monetization) {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.mini)
+                        Text("Loading subscriptions in this group…")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                } else {
+                    Text("No subscriptions in this group.")
+                        .font(.caption).foregroundStyle(.tertiary)
+                }
             }
             ForEach(subs) { sub in
                 SubscriptionDetailRow(
@@ -939,32 +991,6 @@ private struct SubscriptionDetailRow: View {
         editReviewNote = sub.attributes.reviewNote ?? ""
         editDisplayName = ""
         editDescription = ""
-    }
-}
-
-// MARK: - Refresh Button
-
-private struct RefreshButton: View {
-    var asc: ASCManager
-    @State private var isRefreshing = false
-
-    var body: some View {
-        Button {
-            isRefreshing = true
-            Task {
-                await asc.refreshMonetization()
-                isRefreshing = false
-            }
-        } label: {
-            if isRefreshing {
-                ProgressView().controlSize(.small)
-            } else {
-                Image(systemName: "arrow.clockwise")
-            }
-        }
-        .buttonStyle(.borderless)
-        .disabled(isRefreshing)
-        .help("Refresh IAP & subscription states")
     }
 }
 

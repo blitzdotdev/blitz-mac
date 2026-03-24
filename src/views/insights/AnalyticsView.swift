@@ -23,7 +23,7 @@ struct AnalyticsView: View {
                 analyticsContent
             }
         }
-        .task { await asc.fetchTabData(.analytics) }
+        .task(id: appState.activeProjectId) { await asc.ensureTabData(.analytics) }
     }
 
     @ViewBuilder
@@ -43,6 +43,7 @@ struct AnalyticsView: View {
                     }
                     .pickerStyle(.segmented)
                     .frame(width: 240)
+                    ASCTabRefreshButton(asc: asc, tab: .analytics, helpText: "Refresh analytics tab")
                 }
 
                 if !hasVendor {

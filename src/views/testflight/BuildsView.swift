@@ -16,40 +16,62 @@ struct BuildsView: View {
                 buildsContent
             }
         }
-        .task { await asc.fetchTabData(.builds) }
+        .task(id: appState.activeProjectId) { await asc.ensureTabData(.builds) }
+        .onAppear { syncSelectedBuild() }
+        .onChange(of: asc.builds.map(\.id)) { _, _ in syncSelectedBuild() }
     }
 
     @ViewBuilder
     private var buildsContent: some View {
-        if asc.builds.isEmpty {
-            ContentUnavailableView(
-                "No Builds",
-                systemImage: "hammer",
-                description: Text("No TestFlight builds found. Upload a build from Xcode.")
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            HStack(spacing: 0) {
-                // Build list
-                List(selection: $selectedBuildId) {
-                    ForEach(asc.builds) { build in
-                        buildRow(build)
-                            .tag(build.id)
-                    }
-                }
-                .listStyle(.inset)
-                .frame(width: 300)
+        VStack(spacing: 0) {
+            HStack {
+                Text("Builds")
+                    .font(.title2.weight(.semibold))
+                Spacer()
+                ASCTabRefreshButton(asc: asc, tab: .builds, helpText: "Refresh builds")
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
 
-                Divider()
+            Divider()
 
-                // Detail panel
-                if let bid = selectedBuildId,
-                   let build = asc.builds.first(where: { $0.id == bid }) {
-                    buildDetail(build)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if asc.builds.isEmpty {
+                if asc.isTabLoading(.builds) {
+                    ASCTabLoadingPlaceholder(
+                        title: "Loading Builds",
+                        message: "Fetching TestFlight build metadata."
+                    )
                 } else {
-                    ContentUnavailableView("Select a Build", systemImage: "hammer")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    ContentUnavailableView(
+                        "No Builds",
+                        systemImage: "hammer",
+                        description: Text("No TestFlight builds found. Upload a build from Xcode.")
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            } else {
+                HStack(spacing: 0) {
+                    // Build list
+                    List(selection: $selectedBuildId) {
+                        ForEach(asc.builds) { build in
+                            buildRow(build)
+                                .tag(build.id)
+                        }
+                    }
+                    .listStyle(.inset)
+                    .frame(width: 300)
+
+                    Divider()
+
+                    // Detail panel
+                    if let bid = selectedBuildId,
+                       let build = asc.builds.first(where: { $0.id == bid }) {
+                        buildDetail(build)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        ContentUnavailableView("Select a Build", systemImage: "hammer")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 }
             }
         }
@@ -126,5 +148,13 @@ struct BuildsView: View {
             .background(color.opacity(0.15))
             .foregroundStyle(color)
             .clipShape(Capsule())
+    }
+
+    private func syncSelectedBuild() {
+        if let selectedBuildId,
+           asc.builds.contains(where: { $0.id == selectedBuildId }) {
+            return
+        }
+        selectedBuildId = asc.builds.first?.id
     }
 }

@@ -156,7 +156,7 @@ struct ContentView: View {
                     bundleId: project.metadata.bundleIdentifier
                 )
                 if appState.activeTab.isASCTab {
-                    await appState.ascManager.fetchTabData(appState.activeTab)
+                    await appState.ascManager.ensureTabData(appState.activeTab)
                 } else if appState.activeTab == .app && appState.activeAppSubTab == .overview {
                     await appState.ascManager.ensureTabData(.app)
                 }
@@ -186,7 +186,7 @@ struct ContentView: View {
                             bundleId: project.metadata.bundleIdentifier
                         )
                         if appState.activeTab.isASCTab {
-                            await appState.ascManager.fetchTabData(appState.activeTab)
+                            await appState.ascManager.ensureTabData(appState.activeTab)
                         } else if appState.activeTab == .app && appState.activeAppSubTab == .overview {
                             await appState.ascManager.ensureTabData(.app)
                         }
@@ -216,7 +216,7 @@ struct ContentView: View {
                 }
                 // Fetch ASC data when entering any ASC tab
                 if newTab.isASCTab {
-                    await appState.ascManager.fetchTabData(newTab)
+                    await appState.ascManager.ensureTabData(newTab)
                 }
             }
         }

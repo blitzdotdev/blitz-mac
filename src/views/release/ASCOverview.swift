@@ -34,6 +34,13 @@ struct ASCOverview: View {
     private var overviewContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Overview")
+                        .font(.title2.weight(.semibold))
+                    Spacer()
+                    ASCTabRefreshButton(asc: asc, tab: .app, helpText: "Refresh overview data")
+                }
+
                 if let app = asc.app {
                     HStack(spacing: 10) {
                         if let project = appState.activeProject {
@@ -117,14 +124,6 @@ struct ASCOverview: View {
                     HStack {
                         Text("Submission Readiness")
                             .font(.headline)
-
-                        Button {
-                            Task { await asc.refreshTabData(.app) }
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                        .buttonStyle(.borderless)
-                        .help("Refresh submission readiness")
 
                         Spacer()
                         let versionState = asc.appStoreVersions.first(where: {

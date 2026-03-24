@@ -62,6 +62,12 @@ if [ -n "$APP_SIGNING_IDENTITY" ]; then
             --entitlements "$ENTITLEMENTS" \
             "$f"
     done
+    if [ -f "$APP_PAYLOAD/Contents/Helpers/blitz-macos-mcp" ]; then
+        codesign --force --options runtime --timestamp \
+            --sign "$APP_SIGNING_IDENTITY" \
+            --entitlements "$ENTITLEMENTS" \
+            "$APP_PAYLOAD/Contents/Helpers/blitz-macos-mcp"
+    fi
 
     # Re-sign the main app bundle (must be last)
     codesign --force --options runtime --timestamp \
