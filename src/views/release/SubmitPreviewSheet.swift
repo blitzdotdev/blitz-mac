@@ -267,6 +267,7 @@ struct SubmitPreviewSheet: View {
         case "PENDING_DEVELOPER_RELEASE": return ("Pending Release", .green)
         case "READY_FOR_SALE": return ("Ready for Sale", .green)
         case "PREPARE_FOR_SUBMISSION": return ("Preparing", .orange)
+        case "INVALID_BINARY": return ("Submission Error", .red)
         case "REJECTED": return ("Rejected", .red)
         case "DEVELOPER_REJECTED": return ("Developer Rejected", .orange)
         default: return (state.replacingOccurrences(of: "_", with: " ").capitalized, .secondary)
@@ -279,7 +280,7 @@ struct SubmitPreviewSheet: View {
         case "IN_REVIEW": return "eye.fill"
         case "PENDING_DEVELOPER_RELEASE": return "checkmark.seal.fill"
         case "READY_FOR_SALE": return "checkmark.circle.fill"
-        case "REJECTED", "DEVELOPER_REJECTED": return "xmark.circle.fill"
+        case "INVALID_BINARY", "REJECTED", "DEVELOPER_REJECTED": return "xmark.circle.fill"
         default: return "info.circle.fill"
         }
     }

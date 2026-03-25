@@ -2,7 +2,6 @@ import Foundation
 import AppKit
 import ImageIO
 import Security
-import CryptoKit
 
 // MARK: - Screenshot Track Models
 
@@ -629,6 +628,7 @@ final class ASCManager {
     func loadStoredCredentialsIfNeeded() {
         guard credentials == nil || service == nil else { return }
         let creds = ASCCredentials.load()
+        try? ASCAuthBridge().syncCredentials(creds)
         credentials = creds
         if let creds {
             service = AppStoreConnectService(credentials: creds)
@@ -679,6 +679,7 @@ final class ASCManager {
         if needsCredentialReload {
             isLoadingCredentials = true
             let creds = ASCCredentials.load()
+            try? ASCAuthBridge().syncCredentials(creds)
             credentials = creds
             isLoadingCredentials = false
 
@@ -732,6 +733,11 @@ final class ASCManager {
         }
         // No time-based expiry — we trust the session until a 401 proves otherwise
         irisLog("ASCManager.loadIrisSession: loaded session with \(loaded.cookies.count) cookies, capturedAt=\(loaded.capturedAt)")
+        do {
+            try Self.storeWebSessionToKeychain(loaded)
+        } catch {
+            irisLog("ASCManager.loadIrisSession: asc-web-session backfill FAILED: \(error)")
+        }
         irisSession = loaded
         irisService = IrisService(session: loaded)
         irisSessionState = .valid
@@ -796,8 +802,9 @@ final class ASCManager {
 
     func clearIrisSession() {
         irisLog("ASCManager.clearIrisSession")
+        let currentSession = irisSession
         IrisSession.delete()
-        Self.deleteWebSessionFromKeychain()
+        Self.deleteWebSessionFromKeychain(email: currentSession?.email)
         irisSession = nil
         irisService = nil
         irisSessionState = .noSession
@@ -811,47 +818,19 @@ final class ASCManager {
 
     // MARK: - Unified Web Session Keychain (for CLI skill scripts)
 
-    private static let webSessionService = "asc-web-session"
-    private static let webSessionAccount = "asc:web-session:store"
+    private static let webSessionService = ASCWebSessionStore.keychainService
+    private static let webSessionAccount = ASCWebSessionStore.keychainAccount
 
     /// Write session cookies in the format expected by CLI skill scripts
     /// (readable via `security find-generic-password -s "asc-web-session" -w`).
     private static func storeWebSessionToKeychain(_ session: IrisSession) throws {
-        var cookiesByDomain: [String: [[String: Any]]] = [:]
-        for cookie in session.cookies {
-            let domainKey = cookie.domain.hasPrefix(".") ? String(cookie.domain.dropFirst()) : cookie.domain
-            cookiesByDomain[domainKey, default: []].append([
-                "name": cookie.name,
-                "value": cookie.value,
-                "domain": cookie.domain,
-                "path": cookie.path,
-                "secure": true,
-                "http_only": true,
-            ])
-        }
+        let existingData = readKeychainItem(service: webSessionService, account: webSessionAccount)
+        let data = try ASCWebSessionStore.mergedData(storing: session, into: existingData)
+        removeWebSessionKeychainItem()
+        try writeWebSessionToKeychain(data)
+    }
 
-        let normalizedEmail = (session.email ?? "unknown")
-            .lowercased()
-            .trimmingCharacters(in: .whitespaces)
-        let hashBytes = SHA256.hash(data: Data(normalizedEmail.utf8))
-        let hashString = hashBytes.map { String(format: "%02x", $0) }.joined()
-
-        let sessionEntry: [String: Any] = [
-            "version": 1,
-            "updated_at": ISO8601DateFormatter().string(from: Date()),
-            "cookies": cookiesByDomain,
-        ]
-
-        let store: [String: Any] = [
-            "version": 1,
-            "last_key": hashString,
-            "sessions": [hashString: sessionEntry],
-        ]
-
-        let data = try JSONSerialization.data(withJSONObject: store)
-
-        deleteWebSessionFromKeychain()
-
+    private static func writeWebSessionToKeychain(_ data: Data) throws {
         let addQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: webSessionService,
@@ -870,7 +849,35 @@ final class ASCManager {
         }
     }
 
-    private static func deleteWebSessionFromKeychain() {
+    private static func deleteWebSessionFromKeychain(email: String?) {
+        let existingData = readKeychainItem(service: webSessionService, account: webSessionAccount)
+        let updatedData: Data?
+        do {
+            updatedData = try ASCWebSessionStore.removingSession(email: email, from: existingData)
+        } catch {
+            return
+        }
+
+        if let updatedData = updatedData {
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: webSessionService,
+                kSecAttrAccount as String: webSessionAccount,
+            ]
+            let status = SecItemUpdate(
+                query as CFDictionary,
+                [kSecValueData as String: updatedData] as CFDictionary
+            )
+            if status == errSecItemNotFound {
+                try? writeWebSessionToKeychain(updatedData)
+            }
+            return
+        }
+
+        removeWebSessionKeychainItem()
+    }
+
+    private static func removeWebSessionKeychainItem() {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: webSessionService,
@@ -1021,26 +1028,7 @@ final class ASCManager {
     }
 
     private func historyEventType(forVersionState state: String) -> ASCSubmissionHistoryEventType? {
-        switch state {
-        case "WAITING_FOR_REVIEW":
-            return .submitted
-        case "IN_REVIEW":
-            return .inReview
-        case "PROCESSING":
-            return .processing
-        case "PENDING_DEVELOPER_RELEASE":
-            return .accepted
-        case "READY_FOR_SALE":
-            return .live
-        case "REJECTED":
-            return .rejected
-        case "DEVELOPER_REJECTED":
-            return .withdrawn
-        case "REMOVED_FROM_SALE", "DEVELOPER_REMOVED_FROM_SALE":
-            return .removed
-        default:
-            return nil
-        }
+        ASCReleaseStatus.submissionHistoryEventType(forVersionState: state)
     }
 
     private func historyCoverageKey(
@@ -1070,6 +1058,17 @@ final class ASCManager {
             return version.id
         }
         return versionSnapshots.values.first(where: { $0.versionString == versionString })?.versionId
+    }
+
+    private func versionState(
+        for versionId: String?,
+        versionSnapshots: [String: ASCSubmissionHistoryCache.VersionSnapshot]
+    ) -> String? {
+        guard let versionId else { return nil }
+        if let version = appStoreVersions.first(where: { $0.id == versionId }) {
+            return version.attributes.appStoreState
+        }
+        return versionSnapshots[versionId]?.lastKnownState
     }
 
     private func refreshSubmissionHistoryCache(appId: String) -> ASCSubmissionHistoryCache {
@@ -1129,12 +1128,14 @@ final class ASCManager {
                 .compactMap(\.appStoreVersionId)
                 .first
             let versionString = versionString(for: versionId, versionSnapshots: versionSnapshots) ?? "Unknown"
+            let versionState = versionState(for: versionId, versionSnapshots: versionSnapshots)
+            let eventType = ASCReleaseStatus.reviewSubmissionEventType(forVersionState: versionState)
             return ASCSubmissionHistoryEvent(
                 id: "submission:\(submission.id)",
                 versionId: versionId,
                 versionString: versionString,
-                eventType: .submitted,
-                appleState: "WAITING_FOR_REVIEW",
+                eventType: eventType,
+                appleState: versionState ?? "WAITING_FOR_REVIEW",
                 occurredAt: submittedAt,
                 source: .reviewSubmission,
                 accuracy: .exact,
@@ -2298,7 +2299,7 @@ final class ASCManager {
     }
 
     private func ascWebSessionCookieHeader() -> String? {
-        guard let storeData = readKeychainItem(service: "asc-web-session", account: "asc:web-session:store"),
+        guard let storeData = Self.readKeychainItem(service: "asc-web-session", account: "asc:web-session:store"),
               let store = try? JSONSerialization.jsonObject(with: storeData) as? [String: Any],
               let lastKey = store["last_key"] as? String,
               let sessions = store["sessions"] as? [String: Any],
@@ -2317,7 +2318,7 @@ final class ASCManager {
         return cookieHeader.isEmpty ? nil : cookieHeader
     }
 
-    private func readKeychainItem(service: String, account: String) -> Data? {
+    private static func readKeychainItem(service: String, account: String) -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

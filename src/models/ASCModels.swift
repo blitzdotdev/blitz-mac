@@ -20,11 +20,13 @@ struct ASCCredentials: Codable {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let data = try JSONEncoder().encode(self)
         try data.write(to: url, options: .atomic)
+        try ASCAuthBridge().syncCredentials(self)
     }
 
     static func delete() {
         try? FileManager.default.removeItem(at: credentialsURL())
         cleanupLegacyPrivateKeys()
+        ASCAuthBridge().cleanup()
     }
 
     static func credentialsURL() -> URL {
@@ -105,6 +107,7 @@ struct ASCAppStoreVersion: Decodable, Identifiable {
 
 enum ASCSubmissionHistoryEventType: String, Codable {
     case submitted
+    case submissionError
     case inReview
     case processing
     case accepted

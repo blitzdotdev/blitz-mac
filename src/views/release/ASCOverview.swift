@@ -290,12 +290,12 @@ struct ASCOverview: View {
         if terminal.isBuiltIn {
             appState.showTerminal = true
             let session = appState.terminalManager.createSession(projectPath: projectPath)
-            var command = agent.cliCommand
-            if settings.skipAgentPermissions, let flag = agent.skipPermissionsFlag {
-                command += " \(flag)"
-            }
-            let escaped = prompt.replacingOccurrences(of: "'", with: "'\\''")
-            command += " '\(escaped)'"
+            let command = TerminalLauncher.buildAgentCommand(
+                projectPath: projectPath,
+                agent: agent,
+                prompt: prompt,
+                skipPermissions: settings.skipAgentPermissions
+            )
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 session.sendCommand(command)
             }
@@ -367,6 +367,7 @@ struct ASCOverview: View {
         case "PENDING_DEVELOPER_RELEASE": return ("Pending Release", .yellow)
         case "IN_REVIEW": return ("In Review", .blue)
         case "WAITING_FOR_REVIEW": return ("Waiting", .blue)
+        case "INVALID_BINARY": return ("Submission Error", .red)
         case "REJECTED": return ("Rejected", .red)
         case "DEVELOPER_REJECTED": return ("Dev Rejected", .orange)
         case "DEVELOPER_REMOVED_FROM_SALE": return ("Removed", .secondary)
@@ -378,6 +379,8 @@ struct ASCOverview: View {
         switch eventType {
         case .submitted:
             return ("Submitted", .blue)
+        case .submissionError:
+            return ("Submission Error", .red)
         case .inReview:
             return ("In Review", .blue)
         case .processing:

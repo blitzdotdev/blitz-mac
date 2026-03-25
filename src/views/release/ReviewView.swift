@@ -646,6 +646,7 @@ struct ReviewView: View {
         case "PENDING_DEVELOPER_RELEASE": return ("Pending Release", .yellow)
         case "IN_REVIEW": return ("In Review", .blue)
         case "WAITING_FOR_REVIEW": return ("Waiting", .blue)
+        case "INVALID_BINARY": return ("Submission Error", .red)
         case "REJECTED": return ("Rejected", .red)
         case "DEVELOPER_REJECTED": return ("Dev Rejected", .orange)
         case "PREPARE_FOR_SUBMISSION": return ("Draft", .secondary)
