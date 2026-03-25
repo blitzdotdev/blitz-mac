@@ -18,13 +18,42 @@ struct TerminalPanelView: View {
     // MARK: - Tab Bar
 
     private var tabBar: some View {
-        HStack(spacing: 0) {
-            // Session tabs
-            ForEach(manager.sessions) { session in
-                sessionTab(session)
-            }
+        HStack(spacing: 8) {
+            sessionTabStrip
+            tabBarControls
+        }
+        .padding(.leading, 8)
+        .padding(.vertical, 2)
+        .background(.bar)
+    }
 
-            // New tab button
+    private var sessionTabStrip: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal) {
+                HStack(spacing: 0) {
+                    ForEach(manager.sessions) { session in
+                        sessionTab(session)
+                            .id(session.id)
+                    }
+                }
+                .padding(.trailing, 4)
+            }
+            .scrollIndicators(.hidden)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .onAppear {
+                scrollToActiveSession(using: proxy, animated: false)
+            }
+            .onChange(of: manager.activeSessionId) { _, _ in
+                scrollToActiveSession(using: proxy)
+            }
+            .onChange(of: manager.sessions.map(\.id)) { _, _ in
+                scrollToActiveSession(using: proxy)
+            }
+        }
+    }
+
+    private var tabBarControls: some View {
+        HStack(spacing: 0) {
             Button {
                 manager.createSession(projectPath: appState.activeProject?.path)
             } label: {
@@ -36,9 +65,6 @@ struct TerminalPanelView: View {
             .buttonStyle(.plain)
             .help("New terminal")
 
-            Spacer()
-
-            // Position toggle
             Button {
                 let settings = appState.settingsStore
                 settings.terminalPosition = isRight ? "bottom" : "right"
@@ -52,7 +78,6 @@ struct TerminalPanelView: View {
             .buttonStyle(.plain)
             .help(isRight ? "Move to bottom" : "Move to right")
 
-            // Hide panel button
             Button {
                 appState.showTerminal = false
             } label: {
@@ -65,9 +90,6 @@ struct TerminalPanelView: View {
             .help("Hide terminal panel")
             .padding(.trailing, 8)
         }
-        .padding(.leading, 8)
-        .padding(.vertical, 2)
-        .background(.bar)
     }
 
     private func sessionTab(_ session: TerminalSession) -> some View {
@@ -103,6 +125,20 @@ struct TerminalPanelView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             manager.activeSessionId = session.id
+        }
+    }
+
+    private func scrollToActiveSession(using proxy: ScrollViewProxy, animated: Bool = true) {
+        guard let activeSessionId = manager.activeSessionId else { return }
+
+        DispatchQueue.main.async {
+            if animated {
+                withAnimation(.easeOut(duration: 0.15)) {
+                    proxy.scrollTo(activeSessionId, anchor: .trailing)
+                }
+            } else {
+                proxy.scrollTo(activeSessionId, anchor: .trailing)
+            }
         }
     }
 
