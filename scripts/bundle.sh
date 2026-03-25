@@ -266,21 +266,19 @@ codesign_bundle_path() {
     fi
 }
 
-# Sign nested native binaries first (inside-out — required for notarization)
-if [ "$SIGNING_IDENTITY" != "-" ]; then
-    echo "Signing native dependencies..."
-    find "$BUNDLE_DIR/Contents/Resources" -type f \( -name "*.node" -o -name "*.dylib" \) 2>/dev/null | while read -r f; do
-        codesign_bundle_path "$f" 2>/dev/null || true
-        echo "  Signed: $f"
-    done
-    if [ -f "$BUNDLE_DIR/Contents/Helpers/blitz-macos-mcp" ]; then
-        codesign_bundle_path "$BUNDLE_DIR/Contents/Helpers/blitz-macos-mcp"
-        echo "  Signed: $BUNDLE_DIR/Contents/Helpers/blitz-macos-mcp"
-    fi
-    if [ -f "$BUNDLE_DIR/Contents/Helpers/ascd" ]; then
-        codesign_bundle_path "$BUNDLE_DIR/Contents/Helpers/ascd"
-        echo "  Signed: $BUNDLE_DIR/Contents/Helpers/ascd"
-    fi
+# Sign nested native binaries first (inside-out — also required for ad-hoc CI bundle verification)
+echo "Signing native dependencies..."
+find "$BUNDLE_DIR/Contents/Resources" -type f \( -name "*.node" -o -name "*.dylib" \) 2>/dev/null | while read -r f; do
+    codesign_bundle_path "$f" 2>/dev/null || true
+    echo "  Signed: $f"
+done
+if [ -f "$BUNDLE_DIR/Contents/Helpers/blitz-macos-mcp" ]; then
+    codesign_bundle_path "$BUNDLE_DIR/Contents/Helpers/blitz-macos-mcp"
+    echo "  Signed: $BUNDLE_DIR/Contents/Helpers/blitz-macos-mcp"
+fi
+if [ -f "$BUNDLE_DIR/Contents/Helpers/ascd" ]; then
+    codesign_bundle_path "$BUNDLE_DIR/Contents/Helpers/ascd"
+    echo "  Signed: $BUNDLE_DIR/Contents/Helpers/ascd"
 fi
 
 # Sign the .app bundle (must be after nested signing)
