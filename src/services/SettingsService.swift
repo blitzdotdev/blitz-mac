@@ -33,6 +33,7 @@ final class SettingsService {
     var sendDefaultPrompt: Bool = true
     var skipAgentPermissions: Bool = false
     var whitelistBlitzMCPTools: Bool = true
+    var enableASCShellIntegration: Bool = false
     var terminalPosition: String = "bottom"  // "bottom" or "right"
 
     init() {
@@ -55,6 +56,7 @@ final class SettingsService {
         if let sendPrompt = json["sendDefaultPrompt"] as? Bool { sendDefaultPrompt = sendPrompt }
         if let skipPerms = json["skipAgentPermissions"] as? Bool { skipAgentPermissions = skipPerms }
         if let whitelist = json["whitelistBlitzMCPTools"] as? Bool { whitelistBlitzMCPTools = whitelist }
+        if let shellIntegration = json["enableASCShellIntegration"] as? Bool { enableASCShellIntegration = shellIntegration }
         if let termPos = json["terminalPosition"] as? String { terminalPosition = termPos }
     }
 
@@ -69,6 +71,7 @@ final class SettingsService {
             "sendDefaultPrompt": sendDefaultPrompt,
             "skipAgentPermissions": skipAgentPermissions,
             "whitelistBlitzMCPTools": whitelistBlitzMCPTools,
+            "enableASCShellIntegration": enableASCShellIntegration,
             "terminalPosition": terminalPosition,
         ]
         if let udid = defaultSimulatorUDID {
@@ -103,5 +106,19 @@ final class SettingsService {
         defaultTerminal = resolved.settingsValue
         save()
         return ResolvedTerminalSelection(terminal: resolved, replacedMissingTerminal: configured)
+    }
+
+    func setASCShellIntegrationEnabled(_ enabled: Bool) throws {
+        let previousValue = enableASCShellIntegration
+        enableASCShellIntegration = enabled
+        save()
+
+        do {
+            try ShellIntegrationService().sync(enabled: enabled)
+        } catch {
+            enableASCShellIntegration = previousValue
+            save()
+            throw error
+        }
     }
 }

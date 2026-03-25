@@ -12,6 +12,7 @@ final class MCPBootstrap {
         started = true
 
         installMCPHelper()
+        installASCEnvironment(settings: appState.settingsStore)
         installClaudeSkills()
         updateIphoneMCP()
         ProjectStorage().ensureGlobalMCPConfigs(whitelistBlitzMCP: appState.settingsStore.whitelistBlitzMCPTools)
@@ -121,6 +122,11 @@ final class MCPBootstrap {
         """
         try? bridgeScript.write(to: BlitzPaths.mcpBridge, atomically: true, encoding: .utf8)
         try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: BlitzPaths.mcpBridge.path)
+    }
+
+    private func installASCEnvironment(settings: SettingsService) {
+        try? ASCAuthBridge().installCLIShims()
+        try? ShellIntegrationService().sync(enabled: settings.enableASCShellIntegration)
     }
 
     private func bundledMCPHelperURL() -> URL? {

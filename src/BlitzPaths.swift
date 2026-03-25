@@ -19,6 +19,15 @@ enum BlitzPaths {
     /// Settings file: ~/.blitz/settings.json
     static var settings: URL { root.appendingPathComponent("settings.json") }
 
+    /// User-facing Blitz bin directory: ~/.blitz/bin/
+    static var bin: URL { root.appendingPathComponent("bin") }
+
+    /// Shell integration directory: ~/.blitz/shell/
+    static var shell: URL { root.appendingPathComponent("shell") }
+
+    /// Shell integration entrypoint: ~/.blitz/shell/init.sh
+    static var shellInit: URL { shell.appendingPathComponent("init.sh") }
+
     /// MCP helper executable: ~/.blitz/blitz-macos-mcp
     static var mcpHelper: URL { BlitzMCPTransportPaths.helper }
 

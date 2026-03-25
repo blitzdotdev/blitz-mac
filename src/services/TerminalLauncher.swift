@@ -3,6 +3,30 @@ import CoreServices
 
 /// Launches the user's configured terminal with an AI agent CLI command.
 enum TerminalLauncher {
+    static func buildAgentCommand(
+        projectPath: String?,
+        agent: AIAgent,
+        prompt: String? = nil,
+        skipPermissions: Bool = false
+    ) -> String {
+        var segments = shellExportCommands(for: projectPath)
+
+        if let path = projectPath {
+            segments.append("cd \(shellQuote(path))")
+        }
+
+        var agentCommand = agent.cliCommand
+        if skipPermissions, let flag = agent.skipPermissionsFlag {
+            agentCommand += " \(flag)"
+        }
+        if let prompt, !prompt.isEmpty {
+            agentCommand += " \(shellQuote(prompt))"
+        }
+        segments.append(agentCommand)
+
+        return segments.joined(separator: " && ")
+    }
+
     /// Launch the default terminal with the default agent CLI, optionally with a prompt.
     /// Returns true if the launch was attempted, false if the terminal couldn't be resolved.
     @discardableResult
@@ -13,20 +37,12 @@ enum TerminalLauncher {
         prompt: String? = nil,
         skipPermissions: Bool = false
     ) -> Bool {
-        // Build the shell command: cd to project + agent cli + optional prompt
-        var shellCommand = ""
-        if let path = projectPath {
-            let escaped = path.replacingOccurrences(of: "'", with: "'\\''")
-            shellCommand = "cd '\(escaped)' && "
-        }
-        shellCommand += agent.cliCommand
-        if skipPermissions, let flag = agent.skipPermissionsFlag {
-            shellCommand += " \(flag)"
-        }
-        if let prompt, !prompt.isEmpty {
-            let escapedPrompt = prompt.replacingOccurrences(of: "'", with: "'\\''")
-            shellCommand += " '\(escapedPrompt)'"
-        }
+        let shellCommand = buildAgentCommand(
+            projectPath: projectPath,
+            agent: agent,
+            prompt: prompt,
+            skipPermissions: skipPermissions
+        )
 
         switch terminal.resolvedFallback {
         case .builtIn:
@@ -155,6 +171,14 @@ enum TerminalLauncher {
         command
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
+    private static func shellQuote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    private static func shellExportCommands(for projectPath: String?) -> [String] {
+        ASCAuthBridge().shellExportCommands(forLaunchPath: projectPath)
     }
 
     private static func runOsascript(_ script: String) -> Bool {

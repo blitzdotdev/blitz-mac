@@ -53,14 +53,13 @@ struct ContentView: View {
 
             // Build and send the agent CLI command
             let agent = AIAgent(rawValue: settings.defaultAgentCLI) ?? .claudeCode
-            var command = agent.cliCommand
-            if settings.skipAgentPermissions, let flag = agent.skipPermissionsFlag {
-                command += " \(flag)"
-            }
-            if settings.sendDefaultPrompt, let prompt = ConnectAIPopover.prompt(for: appState.activeTab) {
-                let escaped = prompt.replacingOccurrences(of: "'", with: "'\\''")
-                command += " '\(escaped)'"
-            }
+            let prompt = settings.sendDefaultPrompt ? ConnectAIPopover.prompt(for: appState.activeTab) : nil
+            let command = TerminalLauncher.buildAgentCommand(
+                projectPath: appState.activeProject?.path,
+                agent: agent,
+                prompt: prompt,
+                skipPermissions: settings.skipAgentPermissions
+            )
 
             // Small delay so the shell is ready to receive input
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {

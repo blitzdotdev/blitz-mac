@@ -377,8 +377,6 @@ struct ProjectStorage {
         // into supported local agent skill directories.
         ensureProjectSkills(projectDir: projectDir)
 
-        // 6. ASC CLI — headless install if not already present
-        ensureASCCLI()
     }
 
     /// Clone or update the app-store-review-agent repo and symlink the agent
@@ -731,39 +729,6 @@ struct ProjectStorage {
         - Use the self-contained python script — do NOT extract cookies separately.
         - If iris API returns 401, call `asc_web_auth` MCP tool and retry.
         """##
-    }
-
-    /// Install the `asc` CLI if not already present on the system.
-    /// Checks common install locations first; if missing, runs the headless installer.
-    /// Runs on a background queue so it never blocks the UI.
-    func ensureASCCLI() {
-        DispatchQueue.global(qos: .utility).async {
-            let fm = FileManager.default
-            let searchPaths = [
-                "/opt/homebrew/bin/asc",
-                "/usr/local/bin/asc",
-                NSHomeDirectory() + "/.local/bin/asc",
-            ]
-
-            for path in searchPaths {
-                if fm.isExecutableFile(atPath: path) { return }
-            }
-
-            // Not found — install headlessly
-            let install = Process()
-            install.executableURL = URL(fileURLWithPath: "/bin/bash")
-            install.arguments = ["-c", "curl -fsSL https://asccli.sh/install | bash"]
-            install.standardOutput = FileHandle.nullDevice
-            install.standardError = FileHandle.nullDevice
-            try? install.run()
-            install.waitUntilExit()
-
-            if install.terminationStatus == 0 {
-                print("[ProjectStorage] ASC CLI installed")
-            } else {
-                print("[ProjectStorage] Failed to install ASC CLI")
-            }
-        }
     }
 
     private static func claudeMdContent(projectType: ProjectType) -> String {

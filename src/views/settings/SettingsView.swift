@@ -10,6 +10,7 @@ struct SettingsView: View {
     @State private var showSkipPermsDetail = false
     @State private var showAskAIDetail = false
     @State private var terminalResetWarning: String?
+    @State private var shellIntegrationError: String?
 
     private let gateableCategories: [(ApprovalRequest.ToolCategory, String)] = [
         (.ascFormMutation, "ASC form editing"),
@@ -271,6 +272,39 @@ struct SettingsView: View {
                     learnMore(isExpanded: $showSkipPermsDetail) {
                         Text("Launches \(currentAgent.displayName) with \(currentAgent.skipPermissionsFlag ?? ""). The agent will not ask for confirmation before running tools.")
                     }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                let shellIntegration = ShellIntegrationService()
+
+                Toggle("Enable ASC shell integration", isOn: Binding(
+                    get: { settings.enableASCShellIntegration },
+                    set: { newValue in
+                        shellIntegrationError = nil
+                        do {
+                            try settings.setASCShellIntegrationEnabled(newValue)
+                        } catch {
+                            shellIntegrationError = error.localizedDescription
+                        }
+                    }
+                ))
+                .disabled(!shellIntegration.isSupported && !settings.enableASCShellIntegration)
+
+                if shellIntegration.isSupported {
+                    Text("Adds a managed Blitz block to \(shellIntegration.targetRCFileLabel) so manually opened shells can find `asc` on PATH.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Automatic shell integration only supports zsh and bash. Detected \(shellIntegration.shellKind.displayName).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let shellIntegrationError {
+                    Text(shellIntegrationError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
                 }
             }
         }

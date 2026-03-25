@@ -616,6 +616,10 @@ final class TerminalSession: Identifiable {
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         var env = ProcessInfo.processInfo.environment
         env["TERM"] = "xterm-256color"
+        let authEnvironment = ASCAuthBridge().environmentOverrides(forLaunchPath: projectPath)
+        for (key, value) in authEnvironment {
+            env[key] = value
+        }
         let envPairs = env.map { "\($0.key)=\($0.value)" }
 
         termView.startProcess(

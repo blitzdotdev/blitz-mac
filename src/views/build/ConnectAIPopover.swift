@@ -74,9 +74,10 @@ struct ConnectAIPopover: View {
     }
 
     private var command: String {
-        let cli = agent.cliCommand
-        guard let path = projectPath else { return cli }
-        return "cd \(path) && \(cli)"
+        TerminalLauncher.buildAgentCommand(
+            projectPath: projectPath,
+            agent: agent
+        )
     }
 
     private var tabPrompt: String? {

@@ -545,12 +545,12 @@ struct BundleIDSetupView: View {
         if terminal.isBuiltIn {
             appState.showTerminal = true
             let session = appState.terminalManager.createSession(projectPath: projectPath)
-            var command = agent.cliCommand
-            if settings.skipAgentPermissions, let flag = agent.skipPermissionsFlag {
-                command += " \(flag)"
-            }
-            let escaped = prompt.replacingOccurrences(of: "'", with: "'\\''")
-            command += " '\(escaped)'"
+            let command = TerminalLauncher.buildAgentCommand(
+                projectPath: projectPath,
+                agent: agent,
+                prompt: prompt,
+                skipPermissions: settings.skipAgentPermissions
+            )
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 session.sendCommand(command)
             }
