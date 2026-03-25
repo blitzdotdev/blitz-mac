@@ -154,7 +154,8 @@ struct ProjectStorage {
         ensureMCPConfig(
             in: mcpsDir,
             whitelistBlitzMCP: whitelistBlitzMCP,
-            allowASCCLICalls: allowASCCLICalls
+            allowASCCLICalls: allowASCCLICalls,
+            includeProjectDocFallback: false
         )
 
         // 2. .claude/settings.local.json
@@ -218,6 +219,26 @@ struct ProjectStorage {
         }
     }
 
+    /// Ensure agent MCP configs for every existing project under ~/.blitz/projects/.
+    /// This backfills new config fields for users with older project files.
+    func ensureAllProjectMCPConfigs(whitelistBlitzMCP: Bool = true, allowASCCLICalls: Bool = false) {
+        let fm = FileManager.default
+        guard let entries = try? fm.contentsOfDirectory(at: baseDirectory, includingPropertiesForKeys: [.isDirectoryKey]) else {
+            return
+        }
+
+        for entry in entries {
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: entry.path, isDirectory: &isDir), isDir.boolValue else { continue }
+            ensureMCPConfig(
+                in: entry,
+                whitelistBlitzMCP: whitelistBlitzMCP,
+                allowASCCLICalls: allowASCCLICalls,
+                includeProjectDocFallback: true
+            )
+        }
+    }
+
     /// Ensure .mcp.json contains blitz-macos and blitz-iphone MCP server entries.
     /// If the file exists, merges into the existing mcpServers key without overwriting other entries.
     /// If it doesn't exist, creates it.
@@ -231,7 +252,8 @@ struct ProjectStorage {
         ensureMCPConfig(
             in: projectDir,
             whitelistBlitzMCP: whitelistBlitzMCP,
-            allowASCCLICalls: allowASCCLICalls
+            allowASCCLICalls: allowASCCLICalls,
+            includeProjectDocFallback: true
         )
     }
 
@@ -239,7 +261,8 @@ struct ProjectStorage {
     func ensureMCPConfig(
         in directory: URL,
         whitelistBlitzMCP: Bool = true,
-        allowASCCLICalls: Bool = false
+        allowASCCLICalls: Bool = false,
+        includeProjectDocFallback: Bool = true
     ) {
         let mcpFile = directory.appendingPathComponent(".mcp.json")
         let helperPath = BlitzPaths.mcpHelper.path
@@ -294,7 +317,21 @@ struct ProjectStorage {
             .map { "\"\(Self.escapeTOMLString($0))\"" }
             .joined(separator: ", ")
         let codexIphonePathEnv = "\(nodeRuntimeBin):/usr/bin:/bin:/usr/sbin:/sbin"
+        let codexProjectDocFallbackLine: String
+        let codexProjectDocMaxBytesLine: String
+        if includeProjectDocFallback {
+            codexProjectDocFallbackLine = """
+            project_doc_fallback_filenames = [".claude/rules/blitz.md", ".claude/rules/teenybase.md"]
+            """
+            codexProjectDocMaxBytesLine = "project_doc_max_bytes = 65536"
+        } else {
+            codexProjectDocFallbackLine = ""
+            codexProjectDocMaxBytesLine = ""
+        }
         let toml = """
+        \(codexProjectDocFallbackLine)
+        \(codexProjectDocMaxBytesLine)
+
         [mcp_servers.blitz_macos]
         command = "\(Self.escapeTOMLString(helperPath))"
         cwd = "\(Self.escapeTOMLString(directory.path))"

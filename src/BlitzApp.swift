@@ -19,6 +19,14 @@ final class MCPBootstrap {
             whitelistBlitzMCP: appState.settingsStore.whitelistBlitzMCPTools,
             allowASCCLICalls: appState.settingsStore.allowASCCLICalls
         )
+        let whitelistBlitzMCP = appState.settingsStore.whitelistBlitzMCPTools
+        let allowASCCLICalls = appState.settingsStore.allowASCCLICalls
+        Task.detached(priority: .utility) {
+            ProjectStorage().ensureAllProjectMCPConfigs(
+                whitelistBlitzMCP: whitelistBlitzMCP,
+                allowASCCLICalls: allowASCCLICalls
+            )
+        }
 
         let server = MCPServerService(appState: appState)
         self.server = server

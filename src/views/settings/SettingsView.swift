@@ -359,6 +359,10 @@ struct SettingsView: View {
                 whitelistBlitzMCP: whitelistBlitzMCP,
                 allowASCCLICalls: allowASCCLICalls
             )
+            storage.ensureAllProjectMCPConfigs(
+                whitelistBlitzMCP: whitelistBlitzMCP,
+                allowASCCLICalls: allowASCCLICalls
+            )
 
             if let activeProjectId, let activeProjectType {
                 storage.ensureMCPConfig(
