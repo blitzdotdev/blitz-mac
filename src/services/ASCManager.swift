@@ -629,6 +629,7 @@ final class ASCManager {
         guard credentials == nil || service == nil else { return }
         let creds = ASCCredentials.load()
         try? ASCAuthBridge().syncCredentials(creds)
+        Self.syncWebSessionFileFromKeychain()
         credentials = creds
         if let creds {
             service = AppStoreConnectService(credentials: creds)
@@ -680,6 +681,7 @@ final class ASCManager {
             isLoadingCredentials = true
             let creds = ASCCredentials.load()
             try? ASCAuthBridge().syncCredentials(creds)
+            Self.syncWebSessionFileFromKeychain()
             credentials = creds
             isLoadingCredentials = false
 
@@ -773,7 +775,7 @@ final class ASCManager {
             return
         }
 
-        // Also write the asc-web-session keychain item used by CLI skill scripts.
+        // Also write the shared web session store (keychain + synced session file).
         // If that write fails during an MCP-triggered login, keep the native session
         // but fail the MCP request instead of reporting a false success.
         do {
@@ -816,18 +818,27 @@ final class ASCManager {
         }
     }
 
-    // MARK: - Unified Web Session Keychain (for CLI skill scripts)
+    // MARK: - Unified Web Session Store (for CLI skill scripts)
 
     private static let webSessionService = ASCWebSessionStore.keychainService
     private static let webSessionAccount = ASCWebSessionStore.keychainAccount
 
-    /// Write session cookies in the format expected by CLI skill scripts
-    /// (readable via `security find-generic-password -s "asc-web-session" -w`).
+    /// Write session cookies for CLI skill scripts.
+    /// Stored in Keychain (for Blitz) and synced to ~/.blitz/asc-agent/web-session.json (for CLI scripts).
     private static func storeWebSessionToKeychain(_ session: IrisSession) throws {
         let existingData = readKeychainItem(service: webSessionService, account: webSessionAccount)
         let data = try ASCWebSessionStore.mergedData(storing: session, into: existingData)
         removeWebSessionKeychainItem()
         try writeWebSessionToKeychain(data)
+        // Also write to file so CLI skill scripts can read without Keychain popups.
+        try ASCAuthBridge().syncWebSession(data)
+    }
+
+    private static func syncWebSessionFileFromKeychain() {
+        guard let data = readKeychainItem(service: webSessionService, account: webSessionAccount) else {
+            return
+        }
+        try? ASCAuthBridge().syncWebSession(data)
     }
 
     private static func writeWebSessionToKeychain(_ data: Data) throws {
@@ -871,6 +882,12 @@ final class ASCManager {
             if status == errSecItemNotFound {
                 try? writeWebSessionToKeychain(updatedData)
             }
+            // Keep file in sync with keychain
+            do {
+                try ASCAuthBridge().syncWebSession(updatedData)
+            } catch {
+                ASCAuthBridge().removeWebSession()
+            }
             return
         }
 
@@ -884,6 +901,7 @@ final class ASCManager {
             kSecAttrAccount as String: webSessionAccount,
         ]
         SecItemDelete(query as CFDictionary)
+        ASCAuthBridge().removeWebSession()
     }
 
     /// Loads cached feedback from disk for the given rejected version. No auth needed.
@@ -1027,6 +1045,14 @@ final class ASCManager {
         return f1.date(from: iso) ?? f2.date(from: iso) ?? .distantPast
     }
 
+    private func closestVersion(before dateString: String) -> ASCAppStoreVersion? {
+        let submittedDate = historyDate(dateString)
+        return appStoreVersions
+            .filter { historyDate($0.attributes.createdDate) <= submittedDate }
+            .max { historyDate($0.attributes.createdDate) < historyDate($1.attributes.createdDate) }
+            ?? ASCReleaseStatus.sortedVersionsByRecency(appStoreVersions).first
+    }
+
     private func historyEventType(forVersionState state: String) -> ASCSubmissionHistoryEventType? {
         ASCReleaseStatus.submissionHistoryEventType(forVersionState: state)
     }
@@ -1127,6 +1153,7 @@ final class ASCManager {
             let versionId = reviewSubmissionItemsBySubmissionId[submission.id]?
                 .compactMap(\.appStoreVersionId)
                 .first
+                ?? closestVersion(before: submittedAt)?.id
             let versionString = versionString(for: versionId, versionSnapshots: versionSnapshots) ?? "Unknown"
             let versionState = versionState(for: versionId, versionSnapshots: versionSnapshots)
             let eventType = ASCReleaseStatus.reviewSubmissionEventType(forVersionState: versionState)

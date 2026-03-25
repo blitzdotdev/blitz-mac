@@ -112,12 +112,14 @@ struct OnboardingView: View {
     @State private var showExternalTerminals = false
     @State private var skipAgentPermissions: Bool
     @State private var whitelistBlitzMCPTools: Bool
+    @State private var allowASCCLICalls: Bool
 
     init(appState: AppState, onComplete: @escaping () -> Void) {
         self.appState = appState
         self.onComplete = onComplete
         _skipAgentPermissions = State(initialValue: appState.settingsStore.skipAgentPermissions)
         _whitelistBlitzMCPTools = State(initialValue: appState.settingsStore.whitelistBlitzMCPTools)
+        _allowASCCLICalls = State(initialValue: appState.settingsStore.allowASCCLICalls)
     }
 
     // ASC setup state
@@ -288,6 +290,19 @@ struct OnboardingView: View {
                         Text("Allow all Blitz MCP tool calls")
                             .font(.callout)
                         Text("AI agents run Blitz tools without asking. Blitz still shows its own approval for destructive actions.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .toggleStyle(.switch)
+                .controlSize(.small)
+
+                Toggle(isOn: $allowASCCLICalls) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Allow all ASC CLI calls")
+                            .font(.callout)
+                        Text("Whitelists shell commands starting with `asc` for agents.")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -935,8 +950,18 @@ struct OnboardingView: View {
         settings.defaultAgentCLI = selectedAgent.rawValue
         settings.skipAgentPermissions = skipAgentPermissions
         settings.whitelistBlitzMCPTools = whitelistBlitzMCPTools
+        settings.allowASCCLICalls = allowASCCLICalls
         settings.hasCompletedOnboarding = true
         settings.save()
+
+        let whitelistBlitzMCP = whitelistBlitzMCPTools
+        let allowASCCLI = allowASCCLICalls
+        Task.detached(priority: .utility) {
+            ProjectStorage().ensureGlobalMCPConfigs(
+                whitelistBlitzMCP: whitelistBlitzMCP,
+                allowASCCLICalls: allowASCCLI
+            )
+        }
 
         // Also persist agent selection to AppStorage for ConnectAIPopover
         UserDefaults.standard.set(selectedAgent.rawValue, forKey: "selectedAIAgent")

@@ -240,6 +240,16 @@ struct SettingsView: View {
                 set: { newValue in
                     settings.whitelistBlitzMCPTools = newValue
                     settings.save()
+                    refreshAgentPermissionFiles()
+                }
+            ))
+
+            Toggle("Allow all ASC CLI calls", isOn: Binding(
+                get: { settings.allowASCCLICalls },
+                set: { newValue in
+                    settings.allowASCCLICalls = newValue
+                    settings.save()
+                    refreshAgentPermissionFiles()
                 }
             ))
 
@@ -333,6 +343,35 @@ struct SettingsView: View {
                 content()
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func refreshAgentPermissionFiles() {
+        let whitelistBlitzMCP = settings.whitelistBlitzMCPTools
+        let allowASCCLICalls = settings.allowASCCLICalls
+        let activeProjectId = appState.activeProjectId
+        let activeProjectType = appState.activeProject?.type
+
+        Task.detached(priority: .utility) {
+            let storage = ProjectStorage()
+            storage.ensureGlobalMCPConfigs(
+                whitelistBlitzMCP: whitelistBlitzMCP,
+                allowASCCLICalls: allowASCCLICalls
+            )
+
+            if let activeProjectId, let activeProjectType {
+                storage.ensureMCPConfig(
+                    projectId: activeProjectId,
+                    whitelistBlitzMCP: whitelistBlitzMCP,
+                    allowASCCLICalls: allowASCCLICalls
+                )
+                storage.ensureClaudeFiles(
+                    projectId: activeProjectId,
+                    projectType: activeProjectType,
+                    whitelistBlitzMCP: whitelistBlitzMCP,
+                    allowASCCLICalls: allowASCCLICalls
+                )
             }
         }
     }

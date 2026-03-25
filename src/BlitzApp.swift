@@ -15,7 +15,10 @@ final class MCPBootstrap {
         installASCEnvironment(settings: appState.settingsStore)
         installClaudeSkills()
         updateIphoneMCP()
-        ProjectStorage().ensureGlobalMCPConfigs(whitelistBlitzMCP: appState.settingsStore.whitelistBlitzMCPTools)
+        ProjectStorage().ensureGlobalMCPConfigs(
+            whitelistBlitzMCP: appState.settingsStore.whitelistBlitzMCPTools,
+            allowASCCLICalls: appState.settingsStore.allowASCCLICalls
+        )
 
         let server = MCPServerService(appState: appState)
         self.server = server

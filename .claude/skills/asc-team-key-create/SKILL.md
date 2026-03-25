@@ -15,17 +15,17 @@ Use this skill to create a new App Store Connect API Key with Admin permissions 
 
 ## Preconditions
 
-- Web session cached in macOS Keychain. If no session exists or it has expired (401), call the `asc_web_auth` MCP tool first — this opens the Apple ID login window in Blitz and captures the session automatically.
+- Web session file available at `~/.blitz/asc-agent/web-session.json`. If no session exists or it has expired (401), call the `asc_web_auth` MCP tool first — this opens the Apple ID login window in Blitz and captures the session automatically.
 - The authenticated Apple ID must have Account Holder or Admin role.
 
 ## Workflow
 
 ### 1. Check for an existing web session
 
-Before anything else, check if a web session already exists in the macOS Keychain:
+Before anything else, check if a web session file already exists:
 
 ```bash
-security find-generic-password -s "asc-web-session" -a "asc:web-session:store" -w > /dev/null 2>&1 && echo "SESSION_EXISTS" || echo "NO_SESSION"
+test -f ~/.blitz/asc-agent/web-session.json && echo "SESSION_EXISTS" || echo "NO_SESSION"
 ```
 
 - If `NO_SESSION`: call the `asc_web_auth` MCP tool first to open the Apple ID login window in Blitz. Wait for it to complete before proceeding.
@@ -41,22 +41,17 @@ Use the following self-contained script. Replace `KEY_NAME` with the user's chos
 
 ```bash
 python3 -c "
-import json, subprocess, urllib.request, base64, os, sys, time
+import json, urllib.request, base64, os, sys, time
 
 KEY_NAME = 'KEY_NAME_HERE'
 
-# Extract cookies from keychain (silent — never print these)
-try:
-    raw = subprocess.check_output([
-        'security', 'find-generic-password',
-        '-s', 'asc-web-session',
-        '-a', 'asc:web-session:store',
-        '-w'
-    ], stderr=subprocess.DEVNULL).decode()
-except subprocess.CalledProcessError:
-    print('ERROR: No web session found. User must authenticate first.')
-    print('Run: asc web auth login --apple-id EMAIL')
+# Read web session file (silent — never print these)
+session_path = os.path.expanduser('~/.blitz/asc-agent/web-session.json')
+if not os.path.isfile(session_path):
+    print('ERROR: No web session found. Call asc_web_auth MCP tool first.')
     sys.exit(1)
+with open(session_path) as f:
+    raw = f.read()
 
 store = json.loads(raw)
 session = store['sessions'][store['last_key']]
@@ -191,7 +186,7 @@ After the script runs, report:
 ## Common Errors
 
 ### 401 Not Authorized
-The web session has expired or doesn't exist. Call the `asc_web_auth` MCP tool — this opens the Apple ID login window in Blitz and captures the session to the macOS Keychain automatically. Then retry the key creation script.
+The web session has expired or doesn't exist. Call the `asc_web_auth` MCP tool — this opens the Apple ID login window in Blitz and refreshes `~/.blitz/asc-agent/web-session.json` automatically. Then retry the key creation script.
 
 ### 409 Conflict
 A key with the same name may already exist, or another conflict occurred. Try a different name.

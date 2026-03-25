@@ -33,6 +33,7 @@ final class SettingsService {
     var sendDefaultPrompt: Bool = true
     var skipAgentPermissions: Bool = false
     var whitelistBlitzMCPTools: Bool = true
+    var allowASCCLICalls: Bool = false
     var enableASCShellIntegration: Bool = false
     var terminalPosition: String = "bottom"  // "bottom" or "right"
 
@@ -56,6 +57,7 @@ final class SettingsService {
         if let sendPrompt = json["sendDefaultPrompt"] as? Bool { sendDefaultPrompt = sendPrompt }
         if let skipPerms = json["skipAgentPermissions"] as? Bool { skipAgentPermissions = skipPerms }
         if let whitelist = json["whitelistBlitzMCPTools"] as? Bool { whitelistBlitzMCPTools = whitelist }
+        if let allowASCCLI = json["allowASCCLICalls"] as? Bool { allowASCCLICalls = allowASCCLI }
         if let shellIntegration = json["enableASCShellIntegration"] as? Bool { enableASCShellIntegration = shellIntegration }
         if let termPos = json["terminalPosition"] as? String { terminalPosition = termPos }
     }
@@ -71,6 +73,7 @@ final class SettingsService {
             "sendDefaultPrompt": sendDefaultPrompt,
             "skipAgentPermissions": skipAgentPermissions,
             "whitelistBlitzMCPTools": whitelistBlitzMCPTools,
+            "allowASCCLICalls": allowASCCLICalls,
             "enableASCShellIntegration": enableASCShellIntegration,
             "terminalPosition": terminalPosition,
         ]

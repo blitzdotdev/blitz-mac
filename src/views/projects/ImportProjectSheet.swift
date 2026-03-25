@@ -166,9 +166,18 @@ struct ImportProjectSheet: View {
             // This ensures all Blitz files land in the actual project, not a detached directory.
             try storage.writeMetadataToDirectory(url, metadata: metadata)
             let projectId = try storage.openProject(at: url)
-            storage.ensureMCPConfig(projectId: projectId)
+            storage.ensureMCPConfig(
+                projectId: projectId,
+                whitelistBlitzMCP: appState.settingsStore.whitelistBlitzMCPTools,
+                allowASCCLICalls: appState.settingsStore.allowASCCLICalls
+            )
             storage.ensureTeenybaseBackend(projectId: projectId, projectType: projectType)
-            storage.ensureClaudeFiles(projectId: projectId, projectType: projectType, whitelistBlitzMCP: appState.settingsStore.whitelistBlitzMCPTools)
+            storage.ensureClaudeFiles(
+                projectId: projectId,
+                projectType: projectType,
+                whitelistBlitzMCP: appState.settingsStore.whitelistBlitzMCPTools,
+                allowASCCLICalls: appState.settingsStore.allowASCCLICalls
+            )
             await appState.projectManager.loadProjects()
             appState.activeProjectId = projectId
             isPresented = false

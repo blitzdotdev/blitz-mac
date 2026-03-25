@@ -10,9 +10,9 @@ Two MCP servers are active in `.mcp.json`:
 
 Additionally, the **`asc`** CLI (a bundled Go binary for App Store Connect) is available at `~/.blitz/bin/asc`. It shares credentials with Blitz MCP tools automatically via an auth bridge — no separate login required.
 
-## When to use Blitz MCP tools vs `asc` CLI
+## When to use Blitz MCP tools vs `asc` CLI vs direct API calls
 
-**Default to MCP tools.** They are opinionated, safe, and designed for common workflows with built-in approval prompts for mutating operations. Use `asc` CLI for edge cases, bulk operations, or anything MCP tools don't cover.
+**Default to MCP tools.** They are opinionated, safe, and designed for common workflows with built-in approval prompts for mutating operations. **When MCP tools don't cover an operation, use `asc` CLI** — it has 60+ subcommands covering nearly every App Store Connect API endpoint. **Direct API calls (python scripts, curl to api.appstoreconnect.apple.com, urllib, etc.) should be an absolute last resort** — only when both MCP tools AND `asc` CLI genuinely cannot accomplish the task. The `asc` CLI already handles JWT auth, pagination, error handling, and retries; writing raw API scripts bypasses all of that and is fragile.
 
 ### Use MCP tools when:
 - **Filling ASC forms** — `asc_fill_form` handles store listing, app details, monetization, age rating, review contact with validation and auto-navigation
@@ -31,11 +31,20 @@ Additionally, the **`asc`** CLI (a bundled Go binary for App Store Connect) is a
 - **TestFlight management** — `asc testflight` for beta group management, tester invitations, build distribution beyond what MCP exposes
 - **Analytics/finance** — `asc analytics`, `asc finance` for pulling reports
 - **Release management** — `asc releases`, `asc versions` for version-level operations (phased release, platform-specific versioning)
+- **Submission management** — `asc submit create`, `asc submit cancel` for creating/cancelling review submissions
 - **Custom product pages** — `asc product-pages` for A/B testing store listings
 - **Xcode Cloud** — `asc xcode-cloud` for CI/CD workflow management
 - **Game Center** — `asc game-center` for leaderboards and achievements
 - **Offer codes** — `asc offer-codes` for subscription promotional codes
-- **Any operation not covered by an MCP tool**
+- **Any operation not covered by an MCP tool** — check `asc --help` and `asc <command> --help` before resorting to other approaches
+
+### Direct API calls (last resort only):
+Writing raw Python/curl/urllib scripts against `api.appstoreconnect.apple.com` should only happen when you have confirmed that **both** MCP tools and `asc` CLI cannot do what's needed. Before writing a script, always:
+1. Check if there's an MCP tool for it
+2. Run `asc --help` and `asc <command> --help` to see if `asc` covers it
+3. Only then consider a direct API call
+
+The `asc` CLI covers 60+ command groups — it almost certainly has what you need. Even for uncommon operations like cancelling a stuck review submission or creating API keys, try `asc` first.
 
 ### Examples: MCP vs CLI side-by-side
 

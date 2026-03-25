@@ -90,14 +90,20 @@ struct ContentView: View {
 
     private func refreshProjectFiles(projectId: String, projectType: ProjectType) {
         let whitelistBlitzMCP = appState.settingsStore.whitelistBlitzMCPTools
+        let allowASCCLICalls = appState.settingsStore.allowASCCLICalls
         Task.detached(priority: .utility) {
             let storage = ProjectStorage()
-            storage.ensureMCPConfig(projectId: projectId)
+            storage.ensureMCPConfig(
+                projectId: projectId,
+                whitelistBlitzMCP: whitelistBlitzMCP,
+                allowASCCLICalls: allowASCCLICalls
+            )
             storage.ensureTeenybaseBackend(projectId: projectId, projectType: projectType)
             storage.ensureClaudeFiles(
                 projectId: projectId,
                 projectType: projectType,
-                whitelistBlitzMCP: whitelistBlitzMCP
+                whitelistBlitzMCP: whitelistBlitzMCP,
+                allowASCCLICalls: allowASCCLICalls
             )
         }
     }
@@ -135,6 +141,10 @@ struct ContentView: View {
         })
         .task {
             await appState.projectManager.loadProjects()
+            if let projectId = appState.activeProjectId,
+               let projectType = appState.activeProject?.type {
+                refreshProjectFiles(projectId: projectId, projectType: projectType)
+            }
 
             // If a project was just created (e.g. from WelcomeWindow), run setup
             await startPendingSetupIfNeeded()

@@ -12,19 +12,22 @@ Two MCP servers are configured in `.mcp.json`:
 - **`blitz-iphone`** — Controls the iOS device/simulator: tap, swipe, type, screenshots, UI hierarchy. See [iPhone MCP docs](https://github.com/blitzdotdev/iPhone-mcp).
 - **`asc` CLI** — A bundled Go binary at `~/.blitz/bin/asc` for direct App Store Connect API access. Shares credentials with Blitz MCP tools automatically (no separate login needed).
 
-### MCP Tools vs `asc` CLI: When to Use Which
+### MCP Tools vs `asc` CLI vs Direct API Calls
 
-**Default to MCP tools** for common workflows — they are opinionated, safe, and integrate with Blitz's UI (approval prompts, progress tracking, form validation). **Fall back to `asc` CLI** for edge cases, bulk operations, or capabilities MCP tools don't expose.
+**Priority order: MCP tools → `asc` CLI → direct API calls (last resort).**
+
+**Default to MCP tools** for common workflows — they are opinionated, safe, and integrate with Blitz's UI (approval prompts, progress tracking, form validation). **When MCP tools don't cover an operation, use `asc` CLI** — it has 60+ subcommands covering nearly every ASC API endpoint and handles JWT auth, pagination, and retries. **Direct API calls (python scripts, curl to api.appstoreconnect.apple.com, urllib) should be an absolute last resort** — only when both MCP tools AND `asc` CLI genuinely cannot accomplish the task. Before writing any script, run `asc --help` and `asc <command> --help` to confirm the CLI doesn't already support it.
 
 **Use MCP tools for:** filling ASC forms (`asc_fill_form`), reading tab/app state (`get_tab_state`), the build pipeline (`app_store_setup_signing` → `app_store_build` → `app_store_upload`), creating IAPs/subscriptions, setting prices, managing screenshots, and submitting for review.
 
-**Use `asc` CLI for:** listing builds (`asc builds list`), TestFlight beta management (`asc testflight`), certificate/profile inspection (`asc certificates list`, `asc profiles list`), analytics & finance reports (`asc analytics`, `asc finance`), release management (`asc releases`), custom product pages (`asc product-pages`), Xcode Cloud (`asc xcode-cloud`), Game Center, offer codes, bulk localization updates, and any ASC operation without a dedicated MCP tool.
+**Use `asc` CLI for:** listing builds (`asc builds list`), TestFlight beta management (`asc testflight`), certificate/profile inspection (`asc certificates list`, `asc profiles list`), analytics & finance reports (`asc analytics`, `asc finance`), release management (`asc releases`), submission management (`asc submit create`, `asc submit cancel`), custom product pages (`asc product-pages`), Xcode Cloud (`asc xcode-cloud`), Game Center, offer codes, bulk localization updates, and any ASC operation without a dedicated MCP tool.
 
 | Task | MCP (preferred) | `asc` CLI (fallback) |
 |---|---|---|
 | Set store listing metadata | `asc_fill_form` tab="storeListing" | `asc metadata update --locale en-US ...` |
 | Check submission readiness | `get_tab_state` tab="ascOverview" | `asc versions list` + manual checks |
 | Create subscription | `asc_create_subscription` (one call) | `asc subscriptions create` + localization + pricing (3 steps) |
+| Cancel stuck submission | N/A | `asc submit cancel --id "..."` |
 | List all builds | N/A | `asc builds list` |
 | Add beta testers | N/A | `asc testflight add-tester --email ...` |
 | Upload IPA | `app_store_upload` (with polling) | `asc builds upload --path ./app.ipa` |

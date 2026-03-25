@@ -450,7 +450,17 @@ actor MCPToolExecutor {
             lastOpenedAt: Date()
         )
         try storage.writeMetadata(projectId: projectId, metadata: metadata)
-        storage.ensureMCPConfig(projectId: projectId)
+        let (whitelistBlitzMCP, allowASCCLICalls) = await MainActor.run {
+            (
+                SettingsService.shared.whitelistBlitzMCPTools,
+                SettingsService.shared.allowASCCLICalls
+            )
+        }
+        storage.ensureMCPConfig(
+            projectId: projectId,
+            whitelistBlitzMCP: whitelistBlitzMCP,
+            allowASCCLICalls: allowASCCLICalls
+        )
         await appState.projectManager.loadProjects()
 
         // Set pending setup so ContentView triggers template scaffolding
@@ -500,7 +510,17 @@ actor MCPToolExecutor {
         let url = URL(fileURLWithPath: path)
         let storage = ProjectStorage()
         let projectId = try storage.openProject(at: url)
-        storage.ensureMCPConfig(projectId: projectId)
+        let (whitelistBlitzMCP, allowASCCLICalls) = await MainActor.run {
+            (
+                SettingsService.shared.whitelistBlitzMCPTools,
+                SettingsService.shared.allowASCCLICalls
+            )
+        }
+        storage.ensureMCPConfig(
+            projectId: projectId,
+            whitelistBlitzMCP: whitelistBlitzMCP,
+            allowASCCLICalls: allowASCCLICalls
+        )
         await appState.projectManager.loadProjects()
         await MainActor.run { appState.activeProjectId = projectId }
 
@@ -986,13 +1006,13 @@ actor MCPToolExecutor {
             ])
         }
 
-        // setIrisSession (called by the login sheet callback) already saves to
-        // both keychain stores (native + asc-web-session), so no extra work needed.
+        // setIrisSession (called by the login sheet callback) already saves the
+        // native keychain session and syncs ~/.blitz/asc-agent/web-session.json.
         let email = session.email ?? "unknown"
         return mcpJSON([
             "success": true,
             "email": email,
-            "message": "Web session authenticated and saved to keychain. The asc-iap-attach skill can now use the iris API."
+            "message": "Web session authenticated and synced to ~/.blitz/asc-agent/web-session.json. The asc-iap-attach skill can now use the iris API."
         ])
     }
 

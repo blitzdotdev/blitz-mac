@@ -22,7 +22,7 @@ This skill uses Apple's internal iris API (`/iris/v1/subscriptionSubmissions`) v
 
 ## Preconditions
 
-- Web session cached in macOS Keychain. If no session exists or it has expired (401), call the `asc_web_auth` MCP tool first — this opens the Apple ID login window in Blitz and captures the session automatically.
+- Web session file available at `~/.blitz/asc-agent/web-session.json`. If no session exists or it has expired (401), call the `asc_web_auth` MCP tool first — this opens the Apple ID login window in Blitz and captures the session automatically.
 - Know your app ID.
 - IAPs and/or subscriptions already exist and are in **Ready to Submit** state.
 - A build is uploaded and attached to the current app version.
@@ -32,7 +32,7 @@ This skill uses Apple's internal iris API (`/iris/v1/subscriptionSubmissions`) v
 ### 1. Check for an existing web session
 
 ```bash
-security find-generic-password -s "asc-web-session" -a "asc:web-session:store" -w > /dev/null 2>&1 && echo "SESSION_EXISTS" || echo "NO_SESSION"
+test -f ~/.blitz/asc-agent/web-session.json && echo "SESSION_EXISTS" || echo "NO_SESSION"
 ```
 
 - If `NO_SESSION`: call the `asc_web_auth` MCP tool first. Wait for it to complete before proceeding.
@@ -44,20 +44,16 @@ Use the iris API to list subscription groups (with subscriptions) and in-app pur
 
 ```bash
 python3 -c "
-import json, subprocess, urllib.request, sys
+import json, os, urllib.request, sys
 
 APP_ID = 'APP_ID_HERE'
 
-try:
-    raw = subprocess.check_output([
-        'security', 'find-generic-password',
-        '-s', 'asc-web-session',
-        '-a', 'asc:web-session:store',
-        '-w'
-    ], stderr=subprocess.DEVNULL).decode()
-except subprocess.CalledProcessError:
+session_path = os.path.expanduser('~/.blitz/asc-agent/web-session.json')
+if not os.path.isfile(session_path):
     print('ERROR: No web session found. Call asc_web_auth MCP tool first.')
     sys.exit(1)
+with open(session_path) as f:
+    raw = f.read()
 
 store = json.loads(raw)
 session = store['sessions'][store['last_key']]
@@ -118,18 +114,14 @@ Use the following script to attach subscriptions. **Do not print or log the cook
 
 ```bash
 python3 -c "
-import json, subprocess, urllib.request, sys
+import json, os, urllib.request, sys
 
-try:
-    raw = subprocess.check_output([
-        'security', 'find-generic-password',
-        '-s', 'asc-web-session',
-        '-a', 'asc:web-session:store',
-        '-w'
-    ], stderr=subprocess.DEVNULL).decode()
-except subprocess.CalledProcessError:
+session_path = os.path.expanduser('~/.blitz/asc-agent/web-session.json')
+if not os.path.isfile(session_path):
     print('ERROR: No web session found. Call asc_web_auth MCP tool first.')
     sys.exit(1)
+with open(session_path) as f:
+    raw = f.read()
 
 store = json.loads(raw)
 session = store['sessions'][store['last_key']]
@@ -178,18 +170,14 @@ For in-app purchases (non-subscription), change the type and relationship:
 
 ```bash
 python3 -c "
-import json, subprocess, urllib.request, sys
+import json, os, urllib.request, sys
 
-try:
-    raw = subprocess.check_output([
-        'security', 'find-generic-password',
-        '-s', 'asc-web-session',
-        '-a', 'asc:web-session:store',
-        '-w'
-    ], stderr=subprocess.DEVNULL).decode()
-except subprocess.CalledProcessError:
+session_path = os.path.expanduser('~/.blitz/asc-agent/web-session.json')
+if not os.path.isfile(session_path):
     print('ERROR: No web session found. Call asc_web_auth MCP tool first.')
     sys.exit(1)
+with open(session_path) as f:
+    raw = f.read()
 
 store = json.loads(raw)
 session = store['sessions'][store['last_key']]
@@ -243,7 +231,7 @@ After attachment, call `get_tab_state` for `ascOverview` to refresh the submissi
 The subscription is already attached — this is safe to ignore. HTTP 409 with this message means the item was previously attached.
 
 ### 401 Not Authorized (iris API)
-The web session has expired. Call the `asc_web_auth` MCP tool to open the Apple ID login window in Blitz — this captures a fresh session and saves it to the keychain automatically. The user will need to complete Apple ID login + 2FA in the popup. After the tool returns success, retry the iris API calls.
+The web session has expired. Call the `asc_web_auth` MCP tool to open the Apple ID login window in Blitz — this captures a fresh session and refreshes `~/.blitz/asc-agent/web-session.json` automatically. The user will need to complete Apple ID login + 2FA in the popup. After the tool returns success, retry the iris API calls.
 
 ## Agent Behavior
 

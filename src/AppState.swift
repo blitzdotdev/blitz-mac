@@ -393,8 +393,17 @@ final class ProjectSetupManager {
             // Ensure .mcp.json, CLAUDE.md, .claude/settings.local.json exist
             // (setup recreates the project dir, so these must be written after)
             let storage = ProjectStorage()
-            storage.ensureMCPConfig(projectId: projectId)
-            storage.ensureClaudeFiles(projectId: projectId, projectType: projectType, whitelistBlitzMCP: SettingsService.shared.whitelistBlitzMCPTools)
+            storage.ensureMCPConfig(
+                projectId: projectId,
+                whitelistBlitzMCP: SettingsService.shared.whitelistBlitzMCPTools,
+                allowASCCLICalls: SettingsService.shared.allowASCCLICalls
+            )
+            storage.ensureClaudeFiles(
+                projectId: projectId,
+                projectType: projectType,
+                whitelistBlitzMCP: SettingsService.shared.whitelistBlitzMCPTools,
+                allowASCCLICalls: SettingsService.shared.allowASCCLICalls
+            )
             isSettingUp = false
         } catch {
             errorMessage = error.localizedDescription

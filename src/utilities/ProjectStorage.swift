@@ -144,14 +144,18 @@ struct ProjectStorage {
     /// Ensure ~/.blitz/mcps/ has MCP configs, CLAUDE.md, and skills so that
     /// agent sessions launched outside a project (e.g. onboarding ASC setup) can
     /// access Blitz MCP tools. Idempotent — safe to call on every launch.
-    func ensureGlobalMCPConfigs(whitelistBlitzMCP: Bool = true) {
+    func ensureGlobalMCPConfigs(whitelistBlitzMCP: Bool = true, allowASCCLICalls: Bool = false) {
         let fm = FileManager.default
         let mcpsDir = BlitzPaths.mcps
 
         try? fm.createDirectory(at: mcpsDir, withIntermediateDirectories: true)
 
-        // 1. .mcp.json + .codex/config.toml (reuse project-level logic)
-        ensureMCPConfig(in: mcpsDir)
+        // 1. .mcp.json + .codex/config.toml + opencode.json (reuse project-level logic)
+        ensureMCPConfig(
+            in: mcpsDir,
+            whitelistBlitzMCP: whitelistBlitzMCP,
+            allowASCCLICalls: allowASCCLICalls
+        )
 
         // 2. .claude/settings.local.json
         let claudeDir = mcpsDir.appendingPathComponent(".claude")
@@ -164,6 +168,9 @@ struct ProjectStorage {
         ]
         if whitelistBlitzMCP {
             allowList = Self.allBlitzMCPToolPermissions()
+        }
+        if allowASCCLICalls {
+            Self.ensureAllowPermission("Bash(asc:*)", in: &allowList)
         }
         let settings: [String: Any] = [
             "enabledMcpjsonServers": ["blitz-macos", "blitz-iphone"],
@@ -215,13 +222,25 @@ struct ProjectStorage {
     /// If the file exists, merges into the existing mcpServers key without overwriting other entries.
     /// If it doesn't exist, creates it.
     /// Also removes the deprecated blitz-ios entry if present.
-    func ensureMCPConfig(projectId: String) {
+    func ensureMCPConfig(
+        projectId: String,
+        whitelistBlitzMCP: Bool = true,
+        allowASCCLICalls: Bool = false
+    ) {
         let projectDir = baseDirectory.appendingPathComponent(projectId)
-        ensureMCPConfig(in: projectDir)
+        ensureMCPConfig(
+            in: projectDir,
+            whitelistBlitzMCP: whitelistBlitzMCP,
+            allowASCCLICalls: allowASCCLICalls
+        )
     }
 
-    /// Shared implementation: writes .mcp.json and .codex/config.toml into `directory`.
-    func ensureMCPConfig(in directory: URL) {
+    /// Shared implementation: writes .mcp.json, .codex/config.toml, and opencode.json into `directory`.
+    func ensureMCPConfig(
+        in directory: URL,
+        whitelistBlitzMCP: Bool = true,
+        allowASCCLICalls: Bool = false
+    ) {
         let mcpFile = directory.appendingPathComponent(".mcp.json")
         let helperPath = BlitzPaths.mcpHelper.path
 
@@ -263,14 +282,32 @@ struct ProjectStorage {
             print("[ProjectStorage] Failed to write .mcp.json: \(error)")
         }
 
-        // Codex config — only blitz_macos (Codex reads .mcp.json for blitz-iphone).
-        // Uses underscores to avoid Codex hyphenated-name bug.
+        // Codex config — explicit Blitz MCP servers and tool allowlists.
         let codexDir = directory.appendingPathComponent(".codex")
         let codexConfig = codexDir.appendingPathComponent("config.toml")
+        let codexMacEnabledTools = whitelistBlitzMCP ? Self.blitzMacosToolNames() : Self.minimalBlitzMacosToolNames()
+        let codexIphoneEnabledTools = whitelistBlitzMCP ? Self.blitzIphoneToolNames() : []
+        let codexMacEnabledToolsToml = codexMacEnabledTools
+            .map { "\"\(Self.escapeTOMLString($0))\"" }
+            .joined(separator: ", ")
+        let codexIphoneEnabledToolsToml = codexIphoneEnabledTools
+            .map { "\"\(Self.escapeTOMLString($0))\"" }
+            .joined(separator: ", ")
+        let codexIphonePathEnv = "\(nodeRuntimeBin):/usr/bin:/bin:/usr/sbin:/sbin"
         let toml = """
         [mcp_servers.blitz_macos]
-        command = "\(helperPath)"
-        cwd = "\(directory.path)"
+        command = "\(Self.escapeTOMLString(helperPath))"
+        cwd = "\(Self.escapeTOMLString(directory.path))"
+        enabled_tools = [\(codexMacEnabledToolsToml)]
+
+        [mcp_servers."blitz-iphone"]
+        command = "\(Self.escapeTOMLString(nodeRuntimeBin + "/npx"))"
+        args = ["-y", "@blitzdev/iphone-mcp"]
+        cwd = "\(Self.escapeTOMLString(directory.path))"
+        enabled_tools = [\(codexIphoneEnabledToolsToml)]
+
+        [mcp_servers."blitz-iphone".env]
+        PATH = "\(Self.escapeTOMLString(codexIphonePathEnv))"
         """
         do {
             try FileManager.default.createDirectory(at: codexDir, withIntermediateDirectories: true)
@@ -278,23 +315,163 @@ struct ProjectStorage {
         } catch {
             print("[ProjectStorage] Failed to write .codex/config.toml: \(error)")
         }
+
+        // Codex ASC bash allowlist — managed as a dedicated Blitz-owned rules file.
+        let codexRulesDir = codexDir.appendingPathComponent("rules")
+        let codexBlitzRulesFile = codexRulesDir.appendingPathComponent("blitz.rules")
+        if allowASCCLICalls {
+            let ascPath = BlitzPaths.bin.appendingPathComponent("asc").path
+            let rules = """
+            # Managed by Blitz. Allows ASC CLI commands without approval prompts.
+            prefix_rule(pattern=["asc"], decision="allow")
+            prefix_rule(pattern=["\(Self.escapeStarlarkString(ascPath))"], decision="allow")
+            """
+            do {
+                try FileManager.default.createDirectory(at: codexRulesDir, withIntermediateDirectories: true)
+                try rules.write(to: codexBlitzRulesFile, atomically: true, encoding: .utf8)
+            } catch {
+                print("[ProjectStorage] Failed to write .codex/rules/blitz.rules: \(error)")
+            }
+        } else if FileManager.default.fileExists(atPath: codexBlitzRulesFile.path) {
+            try? FileManager.default.removeItem(at: codexBlitzRulesFile)
+        }
+
+        // OpenCode config
+        let opencodeConfig = directory.appendingPathComponent("opencode.json")
+        var opencodeRoot: [String: Any] = [:]
+        if let data = try? Data(contentsOf: opencodeConfig),
+           let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            opencodeRoot = existing
+        }
+        if opencodeRoot["$schema"] == nil {
+            opencodeRoot["$schema"] = "https://opencode.ai/config.json"
+        }
+
+        var opencodeMcp = opencodeRoot["mcp"] as? [String: Any] ?? [:]
+        opencodeMcp["blitz-macos"] = [
+            "type": "local",
+            "command": [helperPath],
+            "enabled": true,
+        ]
+        opencodeMcp["blitz-iphone"] = [
+            "type": "local",
+            "command": [nodeRuntimeBin + "/npx", "-y", "@blitzdev/iphone-mcp"],
+            "enabled": true,
+            "environment": [
+                "PATH": "\(nodeRuntimeBin):/usr/bin:/bin:/usr/sbin:/sbin",
+            ],
+        ]
+        opencodeMcp.removeValue(forKey: "blitz-ios") // deprecated
+        opencodeRoot["mcp"] = opencodeMcp
+
+        var opencodePermission: [String: Any] = [:]
+        if let existingPermission = opencodeRoot["permission"] as? [String: Any] {
+            opencodePermission = existingPermission
+        } else if let existingPermissionString = opencodeRoot["permission"] as? String {
+            opencodePermission["*"] = existingPermissionString
+        }
+
+        let opencodeMCPPermissionKeys = Self.allOpenCodeBlitzMCPPermissionKeys()
+        if whitelistBlitzMCP {
+            for key in opencodeMCPPermissionKeys {
+                opencodePermission[key] = "allow"
+            }
+        } else {
+            for key in opencodeMCPPermissionKeys {
+                opencodePermission[key] = "ask"
+            }
+            opencodePermission["blitz-macos_asc_set_credentials"] = "allow"
+            opencodePermission["blitz-macos_asc_web_auth"] = "allow"
+        }
+
+        var opencodeBash: [String: Any] = [:]
+        if let existingBash = opencodePermission["bash"] as? [String: Any] {
+            opencodeBash = existingBash
+        } else if let existingBashString = opencodePermission["bash"] as? String {
+            opencodeBash["*"] = existingBashString
+        }
+        let ascPath = BlitzPaths.bin.appendingPathComponent("asc").path
+        let ascPatterns = [
+            "asc",
+            "asc *",
+            ascPath,
+            "\(ascPath) *",
+        ]
+        if allowASCCLICalls {
+            for pattern in ascPatterns {
+                opencodeBash[pattern] = "allow"
+            }
+        } else {
+            for pattern in ascPatterns {
+                opencodeBash.removeValue(forKey: pattern)
+            }
+        }
+        if opencodeBash.isEmpty {
+            opencodePermission.removeValue(forKey: "bash")
+        } else {
+            opencodePermission["bash"] = opencodeBash
+        }
+        opencodeRoot["permission"] = opencodePermission
+
+        if let data = try? JSONSerialization.data(withJSONObject: opencodeRoot, options: [.prettyPrinted, .sortedKeys]) {
+            do {
+                try data.write(to: opencodeConfig)
+            } catch {
+                print("[ProjectStorage] Failed to write opencode.json: \(error)")
+            }
+        }
     }
 
     /// All Blitz MCP tool permission strings for both blitz-macos and blitz-iphone servers.
     static func allBlitzMCPToolPermissions() -> [String] {
         // blitz-macos tools — from MCPToolRegistry
-        let macTools = MCPToolRegistry.allToolNames().map { "mcp__blitz-macos__\($0)" }
+        let macTools = blitzMacosToolNames().map { "mcp__blitz-macos__\($0)" }
         // blitz-iphone tools — from @blitzdev/iphone-mcp
-        let iphoneTools = [
-            "list_devices", "setup_device", "launch_app", "list_apps",
-            "get_screenshot", "scan_ui", "describe_screen", "device_action",
-            "device_actions", "get_execution_context",
-        ].map { "mcp__blitz-iphone__\($0)" }
+        let iphoneTools = blitzIphoneToolNames().map { "mcp__blitz-iphone__\($0)" }
         return macTools + iphoneTools
     }
 
+    private static func blitzMacosToolNames() -> [String] {
+        MCPToolRegistry.allToolNames()
+    }
+
+    private static func minimalBlitzMacosToolNames() -> [String] {
+        ["asc_set_credentials", "asc_web_auth"]
+    }
+
+    private static func blitzIphoneToolNames() -> [String] {
+        [
+            "list_devices", "setup_device", "launch_app", "list_apps",
+            "get_screenshot", "scan_ui", "describe_screen", "device_action",
+            "device_actions", "get_execution_context",
+        ]
+    }
+
+    private static func allOpenCodeBlitzMCPPermissionKeys() -> [String] {
+        let macTools = blitzMacosToolNames().map { "blitz-macos_\($0)" }
+        let iphoneTools = blitzIphoneToolNames().map { "blitz-iphone_\($0)" }
+        return macTools + iphoneTools
+    }
+
+    private static func escapeTOMLString(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
+    private static func escapeStarlarkString(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
     /// Ensure CLAUDE.md, .claude/settings.local.json, and .claude/rules/ exist for a project.
-    func ensureClaudeFiles(projectId: String, projectType: ProjectType, whitelistBlitzMCP: Bool = true) {
+    func ensureClaudeFiles(
+        projectId: String,
+        projectType: ProjectType,
+        whitelistBlitzMCP: Bool = true,
+        allowASCCLICalls: Bool = false
+    ) {
         let fm = FileManager.default
         let projectDir = baseDirectory.appendingPathComponent(projectId)
         let claudeDir = projectDir.appendingPathComponent(".claude")
@@ -321,6 +498,11 @@ struct ProjectStorage {
                         allow.append(tool)
                     }
                 }
+                if allowASCCLICalls {
+                    Self.ensureAllowPermission("Bash(asc:*)", in: &allow)
+                } else {
+                    allow.removeAll { $0 == "Bash(asc:*)" }
+                }
                 perms["allow"] = allow
                 existing["permissions"] = perms
             }
@@ -338,6 +520,9 @@ struct ProjectStorage {
                     "Bash(xcrun simctl terminate:*)",
                     "Bash(xcrun simctl launch:*)",
                 ]
+            }
+            if allowASCCLICalls {
+                Self.ensureAllowPermission("Bash(asc:*)", in: &defaultAllow)
             }
             settings = [
                 "permissions": [
@@ -443,19 +628,19 @@ struct ProjectStorage {
         let repoDir = claudeDir.appendingPathComponent("asc-skills")
         let skillDirectories = projectSkillDirectories(projectDir: projectDir)
 
+        for skillsDir in skillDirectories {
+            try? fm.createDirectory(at: skillsDir, withIntermediateDirectories: true)
+        }
+
+        if let bundledSkillsDir = Self.bundledProjectSkillsDirectory() {
+            Self.syncSkillDirectories(
+                from: bundledSkillsDir,
+                into: skillDirectories,
+                using: fm
+            )
+        }
+
         DispatchQueue.global(qos: .utility).async {
-            for skillsDir in skillDirectories {
-                try? fm.createDirectory(at: skillsDir, withIntermediateDirectories: true)
-            }
-
-            if let bundledSkillsDir = Self.bundledProjectSkillsDirectory() {
-                Self.syncSkillDirectories(
-                    from: bundledSkillsDir,
-                    into: skillDirectories,
-                    using: fm
-                )
-            }
-
             let repoURL = BlitzPaths.ascSkillsRepo
 
             if fm.fileExists(atPath: repoDir.appendingPathComponent(".git").path) {
@@ -484,6 +669,11 @@ struct ProjectStorage {
 
             let repoSkillsDir = repoDir.appendingPathComponent("skills")
             Self.syncSkillDirectories(from: repoSkillsDir, into: skillDirectories, using: fm)
+
+            // Ensure bundled Blitz skills always win over upstream repo copies.
+            if let bundledSkillsDir = Self.bundledProjectSkillsDirectory() {
+                Self.syncSkillDirectories(from: bundledSkillsDir, into: skillDirectories, using: fm)
+            }
 
             // Overwrite asc-app-create-ui/SKILL.md with Blitz's pre-cached-session version
             for skillsDir in skillDirectories {
@@ -553,8 +743,13 @@ struct ProjectStorage {
         }
     }
 
+    private static func ensureAllowPermission(_ permission: String, in allowList: inout [String]) {
+        guard !allowList.contains(permission) else { return }
+        allowList.append(permission)
+    }
+
     /// Content for the Blitz-specific asc-app-create-ui skill that uses
-    /// iris APIs via the web session cached in Keychain.
+    /// iris APIs via the web session file managed by Blitz.
     private static func ascAppCreateSkillContent() -> String {
         return ##"""
         ---
@@ -562,7 +757,7 @@ struct ProjectStorage {
         description: Create an App Store Connect app via iris API using web session from Blitz
         ---
 
-        Create an App Store Connect app using Apple's iris API. Authentication is handled via a web session stored in the macOS Keychain by Blitz.
+        Create an App Store Connect app using Apple's iris API. Authentication is handled via a web session file at `~/.blitz/asc-agent/web-session.json` managed by Blitz.
 
         Extract from the conversation context:
         - `bundleId` — the bundle identifier (e.g. `com.blitz.myapp`)
@@ -573,7 +768,7 @@ struct ProjectStorage {
         ### 1. Check for an existing web session
 
         ```bash
-        security find-generic-password -s "asc-web-session" -a "asc:web-session:store" -w > /dev/null 2>&1 && echo "SESSION_EXISTS" || echo "NO_SESSION"
+        test -f ~/.blitz/asc-agent/web-session.json && echo "SESSION_EXISTS" || echo "NO_SESSION"
         ```
 
         - If `NO_SESSION`: call the `asc_web_auth` MCP tool first. Wait for it to complete before proceeding.
@@ -600,24 +795,20 @@ struct ProjectStorage {
 
         ```bash
         python3 -c "
-        import json, subprocess, urllib.request, sys
+        import json, os, urllib.request, sys
 
         BUNDLE_ID = 'BUNDLE_ID_HERE'
         SKU = 'SKU_HERE'
         APP_NAME = 'APP_NAME_HERE'
         LOCALE = 'LOCALE_HERE'
 
-        # Extract cookies from keychain (silent)
-        try:
-            raw = subprocess.check_output([
-                'security', 'find-generic-password',
-                '-s', 'asc-web-session',
-                '-a', 'asc:web-session:store',
-                '-w'
-            ], stderr=subprocess.DEVNULL).decode()
-        except subprocess.CalledProcessError:
+        # Read web session from file (synced by Blitz auth bridge)
+        session_path = os.path.expanduser('~/.blitz/asc-agent/web-session.json')
+        if not os.path.isfile(session_path):
             print('ERROR: No web session found. Call asc_web_auth MCP tool first.')
             sys.exit(1)
+        with open(session_path) as f:
+            raw = f.read()
 
         store = json.loads(raw)
         session = store['sessions'][store['last_key']]
@@ -724,7 +915,7 @@ struct ProjectStorage {
 
         ## Agent Behavior
 
-        - **Do NOT ask for Apple ID email** — authentication is handled via Keychain session, not email.
+        - **Do NOT ask for Apple ID email** — authentication is handled via cached web session file, not email.
         - **NEVER print, log, or echo session cookies.**
         - Use the self-contained python script — do NOT extract cookies separately.
         - If iris API returns 401, call `asc_web_auth` MCP tool and retry.

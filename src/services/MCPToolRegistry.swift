@@ -276,7 +276,7 @@ enum MCPToolRegistry {
 
         tools.append(tool(
             name: "asc_web_auth",
-            description: "Open the Apple ID login window in Blitz to authenticate a web session for App Store Connect. Use when the iris API returns 401 (session expired). The login captures cookies and saves them to the macOS Keychain for the asc-iap-attach skill. Requires user interaction (Apple ID + 2FA).",
+            description: "Open the Apple ID login window in Blitz to authenticate a web session for App Store Connect. Use when the iris API returns 401 (session expired). The login captures cookies and syncs them to ~/.blitz/asc-agent/web-session.json for CLI skills. Requires user interaction (Apple ID + 2FA).",
             properties: [:],
             required: []
         ))

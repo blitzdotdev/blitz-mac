@@ -39,6 +39,10 @@ struct ASCAuthBridge {
         bridgeDirectory.appendingPathComponent("AuthKey_\(Self.managedProfileName).p8")
     }
 
+    var webSessionURL: URL {
+        bridgeDirectory.appendingPathComponent("web-session.json")
+    }
+
     var ascWrapperURL: URL {
         binDirectory.appendingPathComponent("asc")
     }
@@ -83,6 +87,17 @@ struct ASCAuthBridge {
         try ensureBridgeDirectory()
         try writePrivateKey(credentials.privateKey)
         try writeConfig(credentials: credentials)
+    }
+
+    /// Write web session data to a file so CLI scripts can read it without Keychain popups.
+    func syncWebSession(_ data: Data) throws {
+        try ensureBridgeDirectory()
+        try data.write(to: webSessionURL, options: .atomic)
+        try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: webSessionURL.path)
+    }
+
+    func removeWebSession() {
+        try? fileManager.removeItem(at: webSessionURL)
     }
 
     func cleanup() {
