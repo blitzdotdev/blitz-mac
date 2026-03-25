@@ -1,6 +1,65 @@
 import Foundation
 
+struct SequencedPipeBuffer {
+    private let newline: UInt8 = 0x0A
+    private var buffer = Data()
+    private var pendingChunks: [Int: Data] = [:]
+    private var nextSequence = 0
+
+    mutating func append(_ data: Data, sequence: Int) -> [Data] {
+        pendingChunks[sequence] = data
+
+        var lines: [Data] = []
+        while let nextChunk = pendingChunks.removeValue(forKey: nextSequence) {
+            nextSequence += 1
+
+            if nextChunk.isEmpty {
+                if !buffer.isEmpty {
+                    lines.append(buffer)
+                    buffer.removeAll(keepingCapacity: false)
+                }
+                continue
+            }
+
+            buffer.append(nextChunk)
+
+            while let newlineIndex = buffer.firstIndex(of: newline) {
+                let line = buffer.prefix(upTo: newlineIndex).filter { $0 != 0x0D }
+                buffer.removeSubrange(...newlineIndex)
+                lines.append(Data(line))
+            }
+        }
+
+        return lines
+    }
+
+    mutating func reset() {
+        buffer.removeAll(keepingCapacity: false)
+        pendingChunks.removeAll()
+        nextSequence = 0
+    }
+}
+
 actor ASCDaemonClient {
+    private final class SequenceCounter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = 0
+
+        func next() -> Int {
+            lock.lock()
+            defer { lock.unlock() }
+            let current = value
+            value += 1
+            return current
+        }
+
+        func reset() {
+            lock.lock()
+            value = 0
+            lock.unlock()
+        }
+    }
+
     private struct PendingRequest {
         let continuation: CheckedContinuation<Data, Swift.Error>
         let summary: String
@@ -87,12 +146,14 @@ actor ASCDaemonClient {
     private var waitTask: Task<Void, Never>?
     private var stdoutReadHandle: FileHandle?
     private var stderrReadHandle: FileHandle?
-    private var stdoutBuffer = Data()
-    private var stderrBuffer = Data()
+    private var stdoutBuffer = SequencedPipeBuffer()
+    private var stderrBuffer = SequencedPipeBuffer()
     private var pendingResponses: [String: PendingRequest] = [:]
     private var recentStderr: [String] = []
     private var requestCounter = 0
     private var sessionOpen = false
+    private let stdoutSequenceCounter = SequenceCounter()
+    private let stderrSequenceCounter = SequenceCounter()
 
     init(credentials: ASCCredentials) {
         self.credentials = credentials
@@ -204,24 +265,30 @@ actor ASCDaemonClient {
         self.stderrReadHandle = stderrPipe.fileHandleForReading
         self.sessionOpen = false
         self.recentStderr = []
-        self.stdoutBuffer = Data()
-        self.stderrBuffer = Data()
+        self.stdoutBuffer.reset()
+        self.stderrBuffer.reset()
+        self.stdoutSequenceCounter.reset()
+        self.stderrSequenceCounter.reset()
 
         Task {
             await logger.info("Started ascd pid=\(process.processIdentifier) path=\(executablePath)")
         }
 
-        stdoutPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+        let stdoutSequenceCounter = self.stdoutSequenceCounter
+        stdoutPipe.fileHandleForReading.readabilityHandler = { [weak self, stdoutSequenceCounter] handle in
             let data = handle.availableData
+            let sequence = stdoutSequenceCounter.next()
             Task {
-                await self?.handlePipeData(data, isStdout: true)
+                await self?.handlePipeData(data, isStdout: true, sequence: sequence)
             }
         }
 
-        stderrPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+        let stderrSequenceCounter = self.stderrSequenceCounter
+        stderrPipe.fileHandleForReading.readabilityHandler = { [weak self, stderrSequenceCounter] handle in
             let data = handle.availableData
+            let sequence = stderrSequenceCounter.next()
             Task {
-                await self?.handlePipeData(data, isStdout: false)
+                await self?.handlePipeData(data, isStdout: false, sequence: sequence)
             }
         }
 
@@ -317,74 +384,24 @@ actor ASCDaemonClient {
         return environment
     }
 
-    private func handlePipeData(_ data: Data, isStdout: Bool) async {
-        if data.isEmpty {
-            if isStdout {
-                await flushBufferedPipeLine(isStdout: true)
-            } else {
-                await flushBufferedPipeLine(isStdout: false)
-            }
-            return
-        }
-
-        if isStdout {
-            stdoutBuffer.append(data)
-            await drainBufferedPipeLines(isStdout: true)
+    private func handlePipeData(_ data: Data, isStdout: Bool, sequence: Int) async {
+        let lineData = if isStdout {
+            stdoutBuffer.append(data, sequence: sequence)
         } else {
-            stderrBuffer.append(data)
-            await drainBufferedPipeLines(isStdout: false)
+            stderrBuffer.append(data, sequence: sequence)
         }
-    }
 
-    private func drainBufferedPipeLines(isStdout: Bool) async {
-        while let lineData = nextBufferedPipeLine(isStdout: isStdout) {
-            if let line = String(data: lineData, encoding: .utf8) {
+        for entry in lineData {
+            if let line = String(data: entry, encoding: .utf8) {
                 if isStdout {
                     await handleStdoutLine(line)
                 } else {
                     await handleStderrLine(line)
                 }
             } else {
-                await logger.error("Received non-UTF8 pipe output: \(lineData.count) bytes")
+                await logger.error("Received non-UTF8 pipe output: \(entry.count) bytes")
             }
         }
-    }
-
-    private func flushBufferedPipeLine(isStdout: Bool) async {
-        let buffer = isStdout ? stdoutBuffer : stderrBuffer
-        guard !buffer.isEmpty else { return }
-
-        if isStdout {
-            stdoutBuffer.removeAll(keepingCapacity: false)
-        } else {
-            stderrBuffer.removeAll(keepingCapacity: false)
-        }
-
-        if let line = String(data: buffer, encoding: .utf8) {
-            if isStdout {
-                await handleStdoutLine(line)
-            } else {
-                await handleStderrLine(line)
-            }
-        } else {
-            await logger.error("Received trailing non-UTF8 pipe output: \(buffer.count) bytes")
-        }
-    }
-
-    private func nextBufferedPipeLine(isStdout: Bool) -> Data? {
-        let newline: UInt8 = 0x0A
-
-        if isStdout {
-            guard let newlineIndex = stdoutBuffer.firstIndex(of: newline) else { return nil }
-            let line = stdoutBuffer.prefix(upTo: newlineIndex).filter { $0 != 0x0D }
-            stdoutBuffer.removeSubrange(...newlineIndex)
-            return Data(line)
-        }
-
-        guard let newlineIndex = stderrBuffer.firstIndex(of: newline) else { return nil }
-        let line = stderrBuffer.prefix(upTo: newlineIndex).filter { $0 != 0x0D }
-        stderrBuffer.removeSubrange(...newlineIndex)
-        return Data(line)
     }
 
     private func handleStdoutLine(_ line: String) async {
@@ -437,8 +454,10 @@ actor ASCDaemonClient {
         waitTask?.cancel()
         stdoutReadHandle = nil
         stderrReadHandle = nil
-        stdoutBuffer = Data()
-        stderrBuffer = Data()
+        stdoutBuffer.reset()
+        stderrBuffer.reset()
+        stdoutSequenceCounter.reset()
+        stderrSequenceCounter.reset()
         waitTask = nil
     }
 
