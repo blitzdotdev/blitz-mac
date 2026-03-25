@@ -14,6 +14,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:-}"
 ENTITLEMENTS="$ROOT_DIR/scripts/Entitlements.plist"
 TIMESTAMP_MODE="${CODESIGN_TIMESTAMP:-auto}"
+REQUIRE_SIGNED_RELEASE="${BLITZ_REQUIRE_SIGNED_RELEASE:-0}"
 
 resolve_ascd_path() {
     local candidate="${BLITZ_ASCD_PATH:-}"
@@ -81,6 +82,11 @@ verify_ascd_helper() {
 
 if [ "$CONFIG" = "debug" ] && [ "$TIMESTAMP_MODE" = "auto" ]; then
     TIMESTAMP_MODE="none"
+fi
+
+if [ -z "$SIGNING_IDENTITY" ] && [ "$REQUIRE_SIGNED_RELEASE" = "1" ]; then
+    echo "ERROR: APPLE_SIGNING_IDENTITY is required for production release builds." >&2
+    exit 1
 fi
 
 if [ -z "$SIGNING_IDENTITY" ]; then

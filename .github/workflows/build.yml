@@ -140,21 +140,40 @@ jobs:
           # Add to search list
           security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
 
+      - name: Validate production signing inputs
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_INSTALLER_IDENTITY: ${{ secrets.APPLE_INSTALLER_IDENTITY }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+        run: |
+          [ -n "$APPLE_CERTIFICATE_BASE64" ] || { echo "Missing APPLE_CERTIFICATE_BASE64"; exit 1; }
+          [ -n "$APPLE_CERTIFICATE_PASSWORD" ] || { echo "Missing APPLE_CERTIFICATE_PASSWORD"; exit 1; }
+          [ -n "$APPLE_SIGNING_IDENTITY" ] || { echo "Missing APPLE_SIGNING_IDENTITY"; exit 1; }
+          [ -n "$APPLE_INSTALLER_IDENTITY" ] || { echo "Missing APPLE_INSTALLER_IDENTITY"; exit 1; }
+          [ -n "$APPLE_API_KEY" ] || { echo "Missing APPLE_API_KEY"; exit 1; }
+          [ -n "$APPLE_API_ISSUER" ] || { echo "Missing APPLE_API_ISSUER"; exit 1; }
+          [ -n "$APPLE_API_KEY_BASE64" ] || { echo "Missing APPLE_API_KEY_BASE64"; exit 1; }
+
       - name: Build release .app
         env:
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          BLITZ_REQUIRE_SIGNED_RELEASE: "1"
         run: |
           swift build -c release
           bash scripts/bundle.sh release
 
       - name: Build .pkg
         env:
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
-          APPLE_INSTALLER_IDENTITY: ${{ secrets.APPLE_INSTALLER_IDENTITY || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_INSTALLER_IDENTITY: ${{ secrets.APPLE_INSTALLER_IDENTITY }}
+          BLITZ_REQUIRE_SIGNED_RELEASE: "1"
         run: bash scripts/build-pkg.sh
 
       - name: Notarize .pkg
-        if: env.APPLE_API_KEY != ''
         env:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_PATH: ${{ runner.temp }}/AuthKey.p8
@@ -294,9 +313,20 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Validate x86_64 signing inputs
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          [ -n "$APPLE_CERTIFICATE_BASE64" ] || { echo "Missing APPLE_CERTIFICATE_BASE64"; exit 1; }
+          [ -n "$APPLE_CERTIFICATE_PASSWORD" ] || { echo "Missing APPLE_CERTIFICATE_PASSWORD"; exit 1; }
+          [ -n "$APPLE_SIGNING_IDENTITY" ] || { echo "Missing APPLE_SIGNING_IDENTITY"; exit 1; }
+
       - name: Build x86_64 .app artifact
         env:
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          BLITZ_REQUIRE_SIGNED_RELEASE: "1"
         run: |
           swift build -c release
           bash scripts/bundle.sh release

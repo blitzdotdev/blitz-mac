@@ -22,6 +22,19 @@ PKG_SCRIPTS="$ROOT_DIR/scripts/pkg-scripts"
 ENTITLEMENTS="$ROOT_DIR/scripts/Entitlements.plist"
 BUILD_DIR="$ROOT_DIR/build/pkg"
 OUTPUT_PKG="$ROOT_DIR/build/$APP_NAME-$VERSION.pkg"
+REQUIRE_SIGNED_RELEASE="${BLITZ_REQUIRE_SIGNED_RELEASE:-0}"
+
+# Require production signing inputs when strict mode is enabled.
+if [ "$REQUIRE_SIGNED_RELEASE" = "1" ]; then
+    [ -n "${APPLE_SIGNING_IDENTITY:-}" ] || {
+        echo "ERROR: APPLE_SIGNING_IDENTITY is required for production pkg builds." >&2
+        exit 1
+    }
+    [ -n "${APPLE_INSTALLER_IDENTITY:-}" ] || {
+        echo "ERROR: APPLE_INSTALLER_IDENTITY is required for production pkg builds." >&2
+        exit 1
+    }
+fi
 
 # Verify .app exists
 if [ ! -d "$SOURCE_APP" ]; then
