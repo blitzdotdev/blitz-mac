@@ -1,9 +1,10 @@
 # Changelog
 
 ## 1.0.30
-- New built-in terminal with tabs, split view, and better AI launch flow
-- New Dashboard and App navigation, plus faster project switching
-- Faster and more reliable App Store Connect workflows
+- New built-in terminal 
+- New Dashboard and App navigation
+- Project switching performance improvements
+- Share ASC auth between asc-cli and Blitz MCP tools  
 - Improved release/update reliability and simulator behavior
 
 ## 1.0.29
