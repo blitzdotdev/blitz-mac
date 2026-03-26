@@ -24,6 +24,11 @@ func withThrowingTimeout<T: Sendable>(
 /// Executes MCP tool calls against AppState.
 /// Holds pending approval continuations for destructive operations.
 actor MCPExecutor {
+    private struct NavigationState: Sendable {
+        let tab: AppTab
+        let appSubTab: AppSubTab
+    }
+
     let appState: AppState
     private var pendingContinuations: [String: CheckedContinuation<Bool, Never>] = [:]
 
@@ -36,11 +41,11 @@ actor MCPExecutor {
         let category = MCPRegistry.category(for: name)
 
         // Pre-navigate for ASC form tools so the user sees the target tab before approving.
-        var previousTab: AppTab?
+        var previousNavigation: NavigationState?
         if name == "asc_fill_form" || name == "asc_open_submit_preview"
             || name == "asc_create_iap" || name == "asc_create_subscription" || name == "asc_set_app_price"
             || name == "screenshots_add_asset" || name == "screenshots_set_track" || name == "screenshots_save" {
-            previousTab = await preNavigateASCTool(name: name, arguments: arguments)
+            previousNavigation = await preNavigateASCTool(name: name, arguments: arguments)
         }
 
         let request = ApprovalRequest(
@@ -54,8 +59,11 @@ actor MCPExecutor {
         if request.requiresApproval(permissionToggles: await SettingsService.shared.permissionToggles) {
             let approved = await requestApproval(request)
             guard approved else {
-                if let prev = previousTab {
-                    await MainActor.run { appState.activeTab = prev }
+                if let prev = previousNavigation {
+                    await MainActor.run {
+                        appState.activeTab = prev.tab
+                        appState.activeAppSubTab = prev.appSubTab
+                    }
                     _ = await MainActor.run { appState.ascManager.pendingFormValues.removeAll() }
                 }
                 return mcpText("Tool '\(name)' was denied by the user.")
@@ -66,11 +74,14 @@ actor MCPExecutor {
     }
 
     /// Navigate to the appropriate tab before approval, and set pending form values.
-    /// Returns the previous tab so we can navigate back if denied.
-    private func preNavigateASCTool(name: String, arguments: [String: Any]) async -> AppTab? {
-        let previousTab = await MainActor.run { appState.activeTab }
+    /// Returns the previous navigation state so we can navigate back if denied.
+    private func preNavigateASCTool(name: String, arguments: [String: Any]) async -> NavigationState {
+        let previousNavigation = await MainActor.run {
+            NavigationState(tab: appState.activeTab, appSubTab: appState.activeAppSubTab)
+        }
 
         let targetTab: AppTab?
+        let targetAppSubTab: AppSubTab?
         if name == "asc_fill_form" {
             let tab = arguments["tab"] as? String ?? ""
             switch tab {
@@ -87,22 +98,35 @@ actor MCPExecutor {
             default:
                 targetTab = nil
             }
+            targetAppSubTab = nil
         } else if name == "asc_open_submit_preview" {
             targetTab = .app
+            targetAppSubTab = .overview
         } else if name == "screenshots_add_asset"
                     || name == "screenshots_set_track" || name == "screenshots_save" {
             targetTab = .screenshots
+            targetAppSubTab = nil
         } else if name == "asc_set_app_price" {
             targetTab = .monetization
+            targetAppSubTab = nil
         } else if name == "asc_create_iap" || name == "asc_create_subscription" {
             targetTab = .monetization
+            targetAppSubTab = nil
         } else {
             targetTab = nil
+            targetAppSubTab = nil
         }
 
         if let targetTab {
-            await MainActor.run { appState.activeTab = targetTab }
-            if targetTab.isASCTab {
+            await MainActor.run {
+                appState.activeTab = targetTab
+                if let targetAppSubTab {
+                    appState.activeAppSubTab = targetAppSubTab
+                }
+            }
+            if targetTab == .app, targetAppSubTab == .overview {
+                await appState.ascManager.ensureTabData(.app)
+            } else if targetTab.isASCTab {
                 await appState.ascManager.fetchTabData(targetTab)
             }
         }
@@ -145,7 +169,7 @@ actor MCPExecutor {
             }
         }
 
-        return previousTab
+        return previousNavigation
     }
 
     /// Resume a pending approval.
