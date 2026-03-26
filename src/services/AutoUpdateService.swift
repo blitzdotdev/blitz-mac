@@ -290,8 +290,6 @@ final class AutoUpdateManager {
         unzip -qo \\"$TMPZIP\\" -d \\"$UNZIP_DIR\\"; \
         APP_SRC=$(find \\"$UNZIP_DIR\\" -maxdepth 1 -name '*.app' -type d | head -1); \
         if [ -z \\"$APP_SRC\\" ]; then echo 'Update failed: extracted app not found' >> \\"$UPDATE_LOG\\"; exit 1; fi; \
-        /usr/bin/codesign --verify --deep --strict \\"$APP_SRC\\" >> \\"$UPDATE_LOG\\" 2>&1; \
-        /usr/sbin/spctl --assess --verbose=4 \\"$APP_SRC\\" >> \\"$UPDATE_LOG\\" 2>&1; \
         BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \\"$APP_SRC/Contents/Info.plist\\" 2>> \\"$UPDATE_LOG\\" || true); \
         if [ \\"$BUNDLE_ID\\" != 'com.blitz.macos' ]; then echo 'Update failed: unexpected bundle identifier' >> \\"$UPDATE_LOG\\"; exit 1; fi; \
         if [ ! -x \\"$APP_SRC/Contents/Helpers/ascd\\" ]; then echo 'Update failed: bundled ascd helper missing' >> \\"$UPDATE_LOG\\"; exit 1; fi; \
