@@ -180,8 +180,8 @@ for bundle_dir in .build/${CONFIG}/*.bundle; do
     fi
 done
 
-# Embed Claude skills in .app bundle (installed to ~/.claude/skills/ at app startup)
-SKILLS_SRC="$ROOT_DIR/.claude/skills"
+# Embed Claude skills in .app bundle
+SKILLS_SRC="$ROOT_DIR/src/resources/skills"
 SKILLS_DST="$BUNDLE_DIR/Contents/Resources/claude-skills"
 if [ -d "$SKILLS_SRC" ]; then
     rm -rf "$SKILLS_DST"

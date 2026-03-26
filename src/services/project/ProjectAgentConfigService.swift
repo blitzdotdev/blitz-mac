@@ -545,8 +545,7 @@ struct ProjectAgentConfigService {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent(".claude/skills")
+            .appendingPathComponent("resources/skills")
         if fm.fileExists(atPath: repoSkills.path) {
             return repoSkills
         }
