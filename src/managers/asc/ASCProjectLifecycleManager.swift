@@ -32,9 +32,7 @@ extension ASCManager {
         let submissionHistoryEvents: [ASCSubmissionHistoryEvent]
         let attachedSubmissionItemIDs: Set<String>
         let resolutionCenterThreads: [IrisResolutionCenterThread]
-        let rejectionMessages: [IrisResolutionCenterMessage]
-        let rejectionReasons: [IrisReviewRejection]
-        let cachedFeedback: IrisFeedbackCache?
+        let irisFeedbackCycles: [IrisFeedbackCycle]
         let trackSlots: [String: [TrackSlot?]]
         let savedTrackState: [String: [TrackSlot?]]
         let localScreenshotAssets: [LocalScreenshotAsset]
@@ -75,9 +73,7 @@ extension ASCManager {
             submissionHistoryEvents = manager.submissionHistoryEvents
             attachedSubmissionItemIDs = manager.attachedSubmissionItemIDs
             resolutionCenterThreads = manager.resolutionCenterThreads
-            rejectionMessages = manager.rejectionMessages
-            rejectionReasons = manager.rejectionReasons
-            cachedFeedback = manager.cachedFeedback
+            irisFeedbackCycles = manager.irisFeedbackCycles
             trackSlots = manager.trackSlots
             savedTrackState = manager.savedTrackState
             localScreenshotAssets = manager.localScreenshotAssets
@@ -119,9 +115,7 @@ extension ASCManager {
             manager.submissionHistoryEvents = submissionHistoryEvents
             manager.attachedSubmissionItemIDs = attachedSubmissionItemIDs
             manager.resolutionCenterThreads = resolutionCenterThreads
-            manager.rejectionMessages = rejectionMessages
-            manager.rejectionReasons = rejectionReasons
-            manager.cachedFeedback = cachedFeedback
+            manager.irisFeedbackCycles = irisFeedbackCycles
             manager.trackSlots = trackSlots
             manager.savedTrackState = savedTrackState
             manager.localScreenshotAssets = localScreenshotAssets
@@ -356,9 +350,7 @@ extension ASCManager {
         }
 
         resolutionCenterThreads = []
-        rejectionMessages = []
-        rejectionReasons = []
-        cachedFeedback = nil
+        irisFeedbackCycles = []
         isLoadingIrisFeedback = false
         irisFeedbackError = nil
         cancelPendingWebAuth()

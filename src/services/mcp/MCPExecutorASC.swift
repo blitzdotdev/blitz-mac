@@ -817,29 +817,41 @@ extension MCPExecutor {
             if let requestedVersion {
                 version = requestedVersion
             } else if let rejected = asc.appStoreVersions.first(where: {
-                $0.attributes.appStoreState == "REJECTED"
+                let state = ($0.attributes.appStoreState ?? "").uppercased()
+                return state == "REJECTED" || state == "METADATA_REJECTED"
             }) {
                 version = rejected.attributes.versionString
             } else {
                 return ["error": "No rejected version found.", "appId": appId]
             }
 
-            if let cached = IrisFeedbackCache.load(appId: appId, versionString: version) {
-                let reasons = cached.reasons.map { reason in
-                    ["section": reason.section, "description": reason.description, "code": reason.code]
-                }
-                let messages = cached.messages.map { message -> [String: String] in
-                    var msg = ["body": message.body]
-                    if let date = message.date { msg["date"] = date }
-                    return msg
+            asc.loadCachedFeedback(appId: appId, versionString: version)
+            let cycles = asc.feedbackCycles(forVersionString: version)
+            if !cycles.isEmpty {
+                let payload = cycles.map { cycle -> [String: Any] in
+                    let reasons = cycle.reasons.map { reason in
+                        ["section": reason.section, "description": reason.description, "code": reason.code]
+                    }
+                    let messages = cycle.messages.map { message -> [String: String] in
+                        var msg = ["body": message.body]
+                        if let date = message.createdAt { msg["date"] = date }
+                        return msg
+                    }
+                    return [
+                        "id": cycle.id,
+                        "version": cycle.versionString ?? version,
+                        "submissionId": cycle.submissionId ?? "",
+                        "occurredAt": cycle.occurredAt,
+                        "source": cycle.source,
+                        "reasons": reasons,
+                        "messages": messages
+                    ]
                 }
                 return [
                     "appId": appId,
                     "version": version,
-                    "fetchedAt": ISO8601DateFormatter().string(from: cached.fetchedAt),
-                    "reasons": reasons,
-                    "messages": messages,
-                    "source": "cache"
+                    "cycles": payload,
+                    "source": "archive"
                 ]
             }
 

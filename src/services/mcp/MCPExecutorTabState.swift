@@ -115,11 +115,12 @@ extension MCPExecutor {
         if let error = asc.submissionError {
             result["submissionError"] = error
         }
-        if let cached = asc.cachedFeedback {
+        if let cycle = asc.latestFeedbackCycle(forVersionString: nil) {
             result["rejectionFeedback"] = [
-                "version": cached.versionString,
-                "reasonCount": cached.reasons.count,
-                "messageCount": cached.messages.count,
+                "version": cycle.versionString ?? "",
+                "reasonCount": cycle.reasons.count,
+                "messageCount": cycle.messages.count,
+                "cycleCount": asc.irisFeedbackCycles.count,
                 "hint": "Use get_rejection_feedback tool for full details"
             ]
         }

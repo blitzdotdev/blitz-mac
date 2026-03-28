@@ -1,26 +1,5 @@
 import Foundation
 
-private let irisLogPath = FileManager.default.homeDirectoryForCurrentUser
-    .appendingPathComponent(".blitz/iris-debug.log")
-
-private func irisLog(_ msg: String) {
-    let ts = ISO8601DateFormatter().string(from: Date())
-    let line = "[\(ts)] \(msg)\n"
-    if let data = line.data(using: .utf8) {
-        if FileManager.default.fileExists(atPath: irisLogPath.path) {
-            if let handle = try? FileHandle(forWritingTo: irisLogPath) {
-                handle.seekToEndOfFile()
-                handle.write(data)
-                handle.closeFile()
-            }
-        } else {
-            let dir = irisLogPath.deletingLastPathComponent()
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            try? data.write(to: irisLogPath)
-        }
-    }
-}
-
 enum IrisError: Error, LocalizedError {
     case sessionExpired
     case noSession
@@ -39,6 +18,11 @@ enum IrisError: Error, LocalizedError {
 struct IrisMessagesResult {
     let messages: [IrisResolutionCenterMessage]
     let rejections: [IrisReviewRejection]
+}
+
+struct IrisRawPage {
+    let url: String
+    let data: Data
 }
 
 /// Client for Apple's internal iris API (appstoreconnect.apple.com/iris/v1).
@@ -65,49 +49,79 @@ actor IrisService {
 
     // MARK: - Public API
 
-    func fetchResolutionCenterThreads(appId: String) async throws -> [IrisResolutionCenterThread] {
+    func fetchResolutionCenterThreadPages(appId: String) async throws -> [IrisRawPage] {
         let url = "\(Self.baseURL)/apps/\(appId)/resolutionCenterThreads"
-        irisLog("IrisService: fetchResolutionCenterThreads appId=\(appId)")
-        let response: IrisListResponse<IrisResolutionCenterThread> = try await get(url)
-        irisLog("IrisService: fetchResolutionCenterThreads got \(response.data.count) threads")
-        return response.data
+        irisLog("IrisService: fetchResolutionCenterThreadPages appId=\(appId)")
+        return try await fetchAllPages(startingAt: url)
+    }
+
+    func fetchResolutionCenterThreads(appId: String) async throws -> [IrisResolutionCenterThread] {
+        let pages = try await fetchResolutionCenterThreadPages(appId: appId)
+        let threads = pages.flatMap { page in
+            (try? JSONDecoder().decode(IrisListResponse<IrisResolutionCenterThread>.self, from: page.data).data) ?? []
+        }
+        irisLog("IrisService: fetchResolutionCenterThreads got \(threads.count) threads")
+        return threads
+    }
+
+    func fetchMessagesAndRejectionsPages(threadId: String) async throws -> [IrisRawPage] {
+        let url = "\(Self.baseURL)/resolutionCenterThreads/\(threadId)/resolutionCenterMessages?include=fromActor,rejections,resolutionCenterMessageAttachments"
+        irisLog("IrisService: fetchMessagesAndRejectionsPages threadId=\(threadId)")
+        return try await fetchAllPages(startingAt: url)
     }
 
     /// Fetches messages for a thread. The `?include=rejections` param causes Apple
     /// to sideload `reviewRejections` objects in the `included` array, so we parse
     /// both messages and rejections from a single response.
     func fetchMessagesAndRejections(threadId: String) async throws -> IrisMessagesResult {
-        let url = "\(Self.baseURL)/resolutionCenterThreads/\(threadId)/resolutionCenterMessages?include=fromActor,rejections,resolutionCenterMessageAttachments"
-        irisLog("IrisService: fetchMessagesAndRejections threadId=\(threadId)")
+        let pages = try await fetchMessagesAndRejectionsPages(threadId: threadId)
+        var messages: [IrisResolutionCenterMessage] = []
+        var rejectionsById: [String: IrisReviewRejection] = [:]
 
-        let data = try await getRaw(url)
+        for page in pages {
+            let messagesResponse = try JSONDecoder().decode(IrisListResponse<IrisResolutionCenterMessage>.self, from: page.data)
+            irisLog("IrisService: got \(messagesResponse.data.count) messages from \(page.url)")
+            messages.append(contentsOf: messagesResponse.data)
 
-        // Decode messages from `data`
-        let messagesResponse = try JSONDecoder().decode(IrisListResponse<IrisResolutionCenterMessage>.self, from: data)
-        irisLog("IrisService: got \(messagesResponse.data.count) messages")
+            let fullResponse = try JSONDecoder().decode(IrisIncludedResponse.self, from: page.data)
+            let rejections = fullResponse.included?.filter { $0.type == "reviewRejections" } ?? []
+            irisLog("IrisService: got \(rejections.count) rejection objects from included, \(fullResponse.included?.count ?? 0) total included")
 
-        // Decode rejections from `included` sideload
-        let fullResponse = try JSONDecoder().decode(IrisIncludedResponse.self, from: data)
-        let rejections = fullResponse.included?.filter { $0.type == "reviewRejections" } ?? []
-        irisLog("IrisService: got \(rejections.count) rejection objects from included, \(fullResponse.included?.count ?? 0) total included")
-
-        // Re-decode just the rejection objects
-        var parsedRejections: [IrisReviewRejection] = []
-        for item in rejections {
-            if let itemData = try? JSONEncoder().encode(item),
-               let rejection = try? JSONDecoder().decode(IrisReviewRejection.self, from: itemData) {
-                irisLog("IrisService: parsed rejection \(rejection.id), reasons=\(rejection.attributes.reasons?.count ?? 0)")
-                parsedRejections.append(rejection)
+            for item in rejections {
+                if let itemData = try? JSONEncoder().encode(item),
+                   let rejection = try? JSONDecoder().decode(IrisReviewRejection.self, from: itemData) {
+                    irisLog("IrisService: parsed rejection \(rejection.id), reasons=\(rejection.attributes.reasons?.count ?? 0)")
+                    rejectionsById[rejection.id] = rejection
+                }
             }
         }
 
         return IrisMessagesResult(
-            messages: messagesResponse.data,
-            rejections: parsedRejections
+            messages: messages,
+            rejections: Array(rejectionsById.values)
         )
     }
 
     // MARK: - HTTP
+
+    private func fetchAllPages(startingAt startURL: String) async throws -> [IrisRawPage] {
+        var pages: [IrisRawPage] = []
+        var nextURL: String? = startURL
+        var seenURLs: Set<String> = []
+
+        while let currentURL = nextURL {
+            guard seenURLs.insert(currentURL).inserted else {
+                irisLog("IrisService.fetchAllPages: stopping on repeated next URL \(currentURL)")
+                break
+            }
+
+            let data = try await getRaw(currentURL)
+            pages.append(IrisRawPage(url: currentURL, data: data))
+            nextURL = nextURLString(from: data)
+        }
+
+        return pages
+    }
 
     private func getRaw(_ urlString: String) async throws -> Data {
         guard let url = URL(string: urlString) else {
@@ -164,28 +178,41 @@ actor IrisService {
             throw error
         }
     }
+
+    private func nextURLString(from data: Data) -> String? {
+        (try? JSONDecoder().decode(IrisLinksResponse.self, from: data).links?.next)
+            .flatMap { $0.isEmpty ? nil : $0 }
+    }
 }
 
 // MARK: - Iris JSON:API Response Wrappers
 
-private struct IrisListResponse<T: Decodable>: Decodable {
+struct IrisListResponse<T: Decodable>: Decodable {
     let data: [T]
 }
 
 /// Generic included item — we decode type/id/attributes as raw JSON, then
 /// re-decode specific types (reviewRejections) from the raw data.
-private struct IrisIncludedItem: Codable {
+struct IrisIncludedItem: Codable {
     let type: String
     let id: String
     let attributes: AnyCodable?
 }
 
-private struct IrisIncludedResponse: Decodable {
+struct IrisIncludedResponse: Decodable {
     let included: [IrisIncludedItem]?
 }
 
+struct IrisLinksResponse: Decodable {
+    let links: Links?
+
+    struct Links: Decodable {
+        let next: String?
+    }
+}
+
 /// Minimal type-erased Codable wrapper for arbitrary JSON.
-private struct AnyCodable: Codable {
+struct AnyCodable: Codable {
     let value: Any
 
     init(from decoder: Decoder) throws {

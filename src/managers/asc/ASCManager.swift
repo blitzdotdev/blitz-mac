@@ -79,11 +79,11 @@ final class ASCManager {
     var irisFeedbackError: String?
     var showAppleIDLogin = false
     var pendingWebAuthContinuation: CheckedContinuation<IrisSession?, Never>?
+    var irisFetchTasksByAppId: [String: Task<Void, Never>] = [:]
+    var irisLastFetchedAtByAppId: [String: Date] = [:]
     var attachedSubmissionItemIDs: Set<String> = []  // IAP/subscription IDs attached via iris API
     var resolutionCenterThreads: [IrisResolutionCenterThread] = []
-    var rejectionMessages: [IrisResolutionCenterMessage] = []
-    var rejectionReasons: [IrisReviewRejection] = []
-    var cachedFeedback: IrisFeedbackCache?  // loaded from disk, survives session expiry
+    var irisFeedbackCycles: [IrisFeedbackCycle] = []
 
     // App icon status (set externally; nil = not checked / missing)
     var appIconStatus: String?
