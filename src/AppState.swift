@@ -92,6 +92,28 @@ enum AppTab: String, CaseIterable, Identifiable {
     }
 }
 
+/// Sub-tabs within the Dashboard tab (top navbar)
+enum DashboardSubTab: String, CaseIterable, Identifiable {
+    case myApps
+    case allApps
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .myApps: "My Apps"
+        case .allApps: "All Apps"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .myApps: "folder"
+        case .allApps: "globe"
+        }
+    }
+}
+
 /// Sub-tabs within the App tab (top navbar)
 enum AppSubTab: String, CaseIterable, Identifiable {
     case overview
@@ -131,6 +153,7 @@ final class AppState {
     var activeProjectId: String?
     var activeTab: AppTab = .dashboard
     var activeAppSubTab: AppSubTab = .overview
+    var activeDashboardSubTab: DashboardSubTab = .myApps
 
     // Child observable managers
     var projectManager = ProjectManager()

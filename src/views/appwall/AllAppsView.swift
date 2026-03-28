@@ -1,0 +1,301 @@
+import SwiftUI
+
+struct AllAppsView: View {
+    @Bindable var appState: AppState
+    @AppStorage("appWallSyncConsented") private var syncConsented: Bool = false
+
+    @State private var apps: [AppWallApp] = []
+    @State private var totalCount = 0
+    @State private var isLoading = false
+    @State private var isLoadingNextPage = false
+    @State private var loadError: String?
+    @State private var showSyncSheet = false
+    @State private var selectedApp: AppWallApp?
+    @State private var dashboardSummary = DashboardSummaryStore.shared
+
+    // Reads from UserDefaults so retries/partial syncs are reflected without
+    // needing a network round-trip or a full view reset.
+    private var syncedBundleIds: Set<String> {
+        AppWallSyncedBundleIds.load()
+    }
+
+    private var unsyncedLiveCount: Int {
+        guard syncConsented, dashboardSummary.hasLoadedSummary else { return 0 }
+        return appState.projectManager.projects.filter { project in
+            guard let bundleId = project.metadata.bundleIdentifier?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !bundleId.isEmpty else { return false }
+            return dashboardSummary.projectStatuses[bundleId]?.isLiveOnStore == true
+                && !syncedBundleIds.contains(bundleId)
+        }.count
+    }
+
+    private var hasMorePages: Bool {
+        totalCount > apps.count
+    }
+
+    var body: some View {
+        Group {
+            if isLoading && apps.isEmpty {
+                loadingView
+            } else if let error = loadError, apps.isEmpty {
+                errorView(message: error)
+            } else if apps.isEmpty && syncConsented {
+                emptyView
+            } else {
+                appsGrid
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .bottomTrailing) {
+            if unsyncedLiveCount > 0 {
+                unsyncedBanner
+            }
+        }
+        .task(id: syncConsented) {
+            await handleConsentState()
+        }
+        .sheet(isPresented: $showSyncSheet) {
+            AppWallSyncSheet(appState: appState)
+        }
+        .sheet(item: $selectedApp) { app in
+            AppWallDetailView(app: app)
+        }
+    }
+
+    private func handleConsentState() async {
+        if syncConsented {
+            await loadApps()
+        } else {
+            showSyncSheet = true
+        }
+    }
+
+    // MARK: - Sub-views
+
+    private var loadingView: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            Text("Loading App Wall…")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func errorView(message: String) -> some View {
+        VStack(spacing: 14) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 36))
+                .foregroundStyle(.secondary)
+            Text("Failed to load apps")
+                .font(.callout.weight(.medium))
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button("Retry") {
+                Task { await loadApps() }
+            }
+        }
+        .padding(40)
+    }
+
+    private var emptyView: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "globe")
+                .font(.system(size: 36))
+                .foregroundStyle(.secondary)
+            Text("No apps on the wall yet")
+                .font(.callout.weight(.medium))
+            Text("Be the first to sync your apps.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var appsGrid: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 140, maximum: 180), spacing: 16)],
+                    spacing: 16
+                ) {
+                    ForEach(apps) { app in
+                        appCard(app: app)
+                            .onTapGesture { selectedApp = app }
+                            .contentShape(Rectangle())
+                    }
+                }
+                if hasMorePages {
+                    loadMoreSection
+                }
+            }
+            .padding(20)
+        }
+    }
+
+    private var loadMoreSection: some View {
+        VStack(spacing: 8) {
+            Text("Showing \(apps.count) of \(totalCount) apps")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button {
+                Task { await loadApps(reset: false) }
+            } label: {
+                if isLoadingNextPage {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 120)
+                } else {
+                    Text("Load More")
+                        .frame(minWidth: 120)
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(isLoadingNextPage || isLoading)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 8)
+    }
+
+    // MARK: - Unsynced Banner
+
+    private var unsyncedBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Text("\(unsyncedLiveCount) live app\(unsyncedLiveCount == 1 ? "" : "s") not on the wall")
+                .font(.callout.weight(.medium))
+            Button("Sync Now") {
+                showSyncSheet = true
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .padding(20)
+    }
+
+    // MARK: - App Card
+
+    private func appCard(app: AppWallApp) -> some View {
+        VStack(spacing: 8) {
+            appIcon(app: app)
+
+            Text(app.name)
+                .font(.callout.weight(.medium))
+                .lineLimit(1)
+
+            if let state = app.currentState {
+                stateLabel(state)
+                    .font(.caption2)
+                    .lineLimit(1)
+            } else if let category = app.primaryCategory {
+                Text(category.replacingOccurrences(of: "_", with: " ").capitalized)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            } else {
+                Text(app.bundleId)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity)
+        .background(Color(.controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    @ViewBuilder
+    private func appIcon(app: AppWallApp) -> some View {
+        if let iconURLString = app.iconUrl, let iconURL = URL(string: iconURLString) {
+            AsyncImage(url: iconURL) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 56, height: 56)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                default:
+                    iconPlaceholder
+                }
+            }
+        } else {
+            iconPlaceholder
+        }
+    }
+
+    private var iconPlaceholder: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.accentColor.opacity(0.12))
+                .frame(width: 56, height: 56)
+            Image(systemName: "app")
+                .font(.system(size: 24))
+                .foregroundStyle(Color.accentColor.opacity(0.6))
+        }
+    }
+
+    @ViewBuilder
+    private func stateLabel(_ state: String) -> some View {
+        switch state.lowercased() {
+        case "ready_for_sale":
+            Label("Live", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+        case "waiting_for_review", "in_review":
+            Label("In Review", systemImage: "clock.fill")
+                .foregroundStyle(.orange)
+        case "rejected":
+            Label("Rejected", systemImage: "xmark.circle.fill")
+                .foregroundStyle(.red)
+        default:
+            Text(state.replacingOccurrences(of: "_", with: " ").capitalized)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - Data Loading
+
+    private func loadApps() async {
+        await loadApps(reset: true)
+    }
+
+    private func loadApps(reset: Bool) async {
+        if reset {
+            guard !isLoading else { return }
+            isLoading = true
+        } else {
+            guard !isLoading && !isLoadingNextPage && hasMorePages else { return }
+            isLoadingNextPage = true
+        }
+        loadError = nil
+        defer {
+            if reset {
+                isLoading = false
+            } else {
+                isLoadingNextPage = false
+            }
+        }
+
+        do {
+            let response = try await AppWallService.shared.fetchWallApps(
+                limit: 50,
+                offset: reset ? 0 : apps.count
+            )
+            totalCount = response.total
+            if reset {
+                apps = response.items
+            } else {
+                apps.append(contentsOf: response.items)
+            }
+        } catch {
+            loadError = error.localizedDescription
+        }
+    }
+}

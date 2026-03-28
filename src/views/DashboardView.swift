@@ -15,6 +15,71 @@ struct DashboardView: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            // Sub-tab navbar
+            topNavbar
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(.bar)
+
+            Divider()
+
+            // Sub-tab content
+            subTabContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    // MARK: - Top Navbar
+
+    private var topNavbar: some View {
+        HStack(spacing: 2) {
+            ForEach(DashboardSubTab.allCases) { tab in
+                Button {
+                    appState.activeDashboardSubTab = tab
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: tab.systemImage)
+                            .font(.system(size: 11))
+                        Text(tab.label)
+                            .font(.system(size: 12, weight: .medium))
+                            .lineLimit(1)
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(
+                        appState.activeDashboardSubTab == tab
+                            ? Color.accentColor.opacity(0.12)
+                            : Color.clear
+                    )
+                    .foregroundStyle(
+                        appState.activeDashboardSubTab == tab
+                            ? Color.accentColor
+                            : Color.secondary
+                    )
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+
+            Spacer()
+        }
+    }
+
+    // MARK: - Sub-tab Content
+
+    @ViewBuilder
+    private var subTabContent: some View {
+        switch appState.activeDashboardSubTab {
+        case .myApps:
+            myAppsContent
+        case .allApps:
+            AllAppsView(appState: appState)
+        }
+    }
+
+    private var myAppsContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 // Stat cards
@@ -40,13 +105,6 @@ struct DashboardView: View {
                         color: .red,
                         icon: "xmark.seal.fill"
                     )
-                }
-
-                // App grid header
-                HStack {
-                    Text("My Apps")
-                        .font(.title3.weight(.semibold))
-                    Spacer()
                 }
 
                 // App grid

@@ -4,6 +4,7 @@ final class BlitzAppDelegate: NSObject, NSApplicationDelegate {
     var appState: AppState?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        LogClear()
         AppRelaunchService.shared.clearPendingRestart()
         if let fileMenu = NSApp.mainMenu?.item(withTitle: "File") {
             fileMenu.title = "Project"

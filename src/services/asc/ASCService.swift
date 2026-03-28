@@ -155,6 +155,34 @@ final class AppStoreConnectService {
         return app
     }
 
+    /// Fetches all apps for the account, optionally filtering by app store version state.
+    /// Pass `appStoreStateFilter: "READY_FOR_SALE"` to get only live apps.
+    func fetchAllApps(appStoreStateFilter: String? = nil) async throws -> [ASCApp] {
+        var allApps: [ASCApp] = []
+        var nextPath: String? = nil
+
+        var initialQueryItems: [URLQueryItem] = [
+            URLQueryItem(name: "limit", value: "200"),
+            URLQueryItem(name: "fields[apps]", value: "bundleId,name,primaryLocale")
+        ]
+        if let state = appStoreStateFilter {
+            initialQueryItems.append(URLQueryItem(name: "filter[appStoreVersions.appStoreState]", value: state))
+        }
+
+        repeat {
+            let resp: ASCPaginatedResponse<ASCApp>
+            if let path = nextPath {
+                resp = try await get(path, as: ASCPaginatedResponse<ASCApp>.self)
+            } else {
+                resp = try await get("apps", queryItems: initialQueryItems, as: ASCPaginatedResponse<ASCApp>.self)
+            }
+            allApps.append(contentsOf: resp.data)
+            nextPath = resp.links?.next
+        } while nextPath != nil
+
+        return allApps
+    }
+
     // MARK: - App Store Versions
 
     func fetchAppStoreVersions(appId: String) async throws -> [ASCAppStoreVersion] {
@@ -1527,7 +1555,8 @@ final class AppStoreConnectService {
 
     func fetchReviewSubmissionItems(submissionId: String) async throws -> [ASCReviewSubmissionItem] {
         let resp = try await get("reviewSubmissions/\(submissionId)/items", queryItems: [
-            URLQueryItem(name: "limit", value: "50")
+            URLQueryItem(name: "limit", value: "50"),
+            URLQueryItem(name: "include", value: "appStoreVersion"),
         ], as: ASCPaginatedResponse<ASCReviewSubmissionItem>.self)
         return resp.data
     }

@@ -182,8 +182,7 @@ struct RejectionCardView<Footer: View>: View {
 
     @ViewBuilder
     private var appleFeedbackSection: some View {
-        let hasLiveData = !asc.rejectionReasons.isEmpty || !asc.rejectionMessages.isEmpty
-        let hasCache = asc.cachedFeedback != nil
+        let cycles = asc.feedbackCycles(forVersionString: version.attributes.versionString)
 
         Divider()
 
@@ -191,17 +190,15 @@ struct RejectionCardView<Footer: View>: View {
             Text("Apple's Feedback")
                 .font(.callout.weight(.semibold))
 
-            if asc.isLoadingIrisFeedback {
+            if asc.isLoadingIrisFeedback && cycles.isEmpty {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("Loading feedback…")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
-            } else if hasLiveData {
-                liveFeedbackView
-            } else if hasCache {
-                cachedFeedbackView(asc.cachedFeedback!)
+            } else if !cycles.isEmpty {
+                feedbackCyclesView(cycles)
             } else if let error = asc.irisFeedbackError {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle")
@@ -258,50 +255,54 @@ struct RejectionCardView<Footer: View>: View {
     }
 
     @ViewBuilder
-    private var liveFeedbackView: some View {
-        if !asc.rejectionReasons.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(asc.rejectionReasons) { rejection in
-                    ForEach(rejection.attributes.reasons ?? [], id: \.reasonCode) { reason in
-                        reasonCard(section: reason.reasonSection, description: reason.reasonDescription, code: reason.reasonCode)
-                    }
-                }
-            }
-        }
-        if !asc.rejectionMessages.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Reviewer Messages")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                ForEach(asc.rejectionMessages) { msg in
-                    messageCard(body: msg.attributes.messageBody.map { htmlToPlainText($0) }, date: msg.attributes.createdDate)
-                }
+    private func feedbackCyclesView(_ cycles: [IrisFeedbackCycle]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(cycles) { cycle in
+                feedbackCycleView(cycle)
             }
         }
     }
 
     @ViewBuilder
-    private func cachedFeedbackView(_ cache: IrisFeedbackCache) -> some View {
-        if !cache.reasons.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(cache.reasons, id: \.code) { reason in
-                    reasonCard(section: reason.section, description: reason.description, code: reason.code)
+    private func feedbackCycleView(_ cycle: IrisFeedbackCycle) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                if let submissionId = cycle.submissionId, !submissionId.isEmpty {
+                    Text(submissionId)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.tertiary)
+                } else {
+                    Text("Archived Thread")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                Spacer()
+                Text(ascLongDate(cycle.occurredAt))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            if !cycle.reasons.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(cycle.reasons) { reason in
+                        reasonCard(section: reason.section, description: reason.description, code: reason.code)
+                    }
+                }
+            }
+            if !cycle.messages.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Reviewer Messages")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    ForEach(cycle.messages) { msg in
+                        messageCard(body: msg.body, date: msg.createdAt)
+                    }
                 }
             }
         }
-        if !cache.messages.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Reviewer Messages")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                ForEach(cache.messages, id: \.body) { msg in
-                    messageCard(body: msg.body, date: msg.date)
-                }
-            }
-        }
-        Text("Last fetched \(ascLongDate(ISO8601DateFormatter().string(from: cache.fetchedAt)))")
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
+        .padding(10)
+        .background(.background.tertiary)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: - Card Helpers

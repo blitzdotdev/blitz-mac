@@ -92,38 +92,6 @@ enum ASCReleaseStatus {
         "REJECTED",
     ]
 
-    static func submissionHistoryEventType(forVersionState state: String?) -> ASCSubmissionHistoryEventType? {
-        switch normalize(state) {
-        case "WAITING_FOR_REVIEW":
-            return .submitted
-        case "IN_REVIEW":
-            return .inReview
-        case "PROCESSING", "PROCESSING_FOR_APP_STORE", "PROCESSING_FOR_DISTRIBUTION":
-            return .processing
-        case "ACCEPTED", "PENDING_DEVELOPER_RELEASE":
-            return .accepted
-        case "READY_FOR_SALE":
-            return .live
-        case "INVALID_BINARY":
-            return .submissionError
-        case "METADATA_REJECTED", "REJECTED":
-            return .rejected
-        case "DEVELOPER_REJECTED":
-            return .withdrawn
-        case "REMOVED_FROM_SALE", "DEVELOPER_REMOVED_FROM_SALE":
-            return .removed
-        default:
-            return nil
-        }
-    }
-
-    static func reviewSubmissionEventType(forVersionState state: String?) -> ASCSubmissionHistoryEventType {
-        if normalize(state) == "INVALID_BINARY" {
-            return .submissionError
-        }
-        return .submitted
-    }
-
     static func normalize(_ state: String?) -> String {
         state?
             .trimmingCharacters(in: .whitespacesAndNewlines)

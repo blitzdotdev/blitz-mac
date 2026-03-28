@@ -80,15 +80,14 @@ struct ReviewView: View {
                 return s != "READY_FOR_SALE" && s != "REMOVED_FROM_SALE"
                     && s != "DEVELOPER_REMOVED_FROM_SALE" && !s.isEmpty
             })
-            if let version = pendingVersion {
-                asc.loadCachedFeedback(appId: appId, versionString: version.attributes.versionString)
-            }
+            asc.loadCachedFeedback(appId: appId, versionString: pendingVersion?.attributes.versionString)
         }
     }
 
     @ViewBuilder
     private var reviewContent: some View {
         let latest = asc.appStoreVersions.first
+        let feedbackVersion = asc.feedbackDisplayVersion(from: asc.appStoreVersions)
         let isLoading = asc.isTabLoading(.review)
 
         ScrollView {
@@ -120,11 +119,10 @@ struct ReviewView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 10))
 
                     // Rejection detail — shown when rejected, or when cached feedback persists after re-submission
-                    if version.attributes.appStoreState == "REJECTED"
-                        || asc.cachedFeedback != nil
-                        || !asc.rejectionReasons.isEmpty
+                    if let feedbackVersion,
+                       feedbackVersion.id == version.id
                         || asc.latestSubmissionItems.contains(where: { $0.attributes.state == "REJECTED" }) {
-                        RejectionCardView(asc: asc, version: version) {
+                        RejectionCardView(asc: asc, version: feedbackVersion) {
                             Text("Update your review info below and re-submit when ready.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -661,8 +659,7 @@ struct ReviewView: View {
         if asc.latestSubmissionItems.contains(where: { $0.attributes.state == "REJECTED" }) {
             return true
         }
-        // If we have cached rejection feedback for this version
-        if let cached = asc.cachedFeedback, cached.versionString == version.attributes.versionString {
+        if asc.hasIrisFeedback(forVersionString: version.attributes.versionString) {
             return true
         }
         return false

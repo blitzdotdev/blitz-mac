@@ -76,6 +76,7 @@ struct ASCOverview: View {
                     return s != "READY_FOR_SALE" && s != "REMOVED_FROM_SALE"
                         && s != "DEVELOPER_REMOVED_FROM_SALE" && !s.isEmpty
                 }
+                let feedbackVersion = asc.feedbackDisplayVersion(from: asc.appStoreVersions)
 
                 LazyVGrid(
                     columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())],
@@ -105,10 +106,8 @@ struct ASCOverview: View {
                 }
 
                 // Rejection detail — shown when there's rejection data (persists until a new version is approved)
-                if let pending,
-                   pending.attributes.appStoreState == "REJECTED"
-                    || asc.cachedFeedback != nil || !asc.rejectionReasons.isEmpty {
-                    RejectionCardView(asc: asc, version: pending) {
+                if let feedbackVersion {
+                    RejectionCardView(asc: asc, version: feedbackVersion) {
                         HStack {
                             Spacer()
                             Button("Prepare Re-submission") {

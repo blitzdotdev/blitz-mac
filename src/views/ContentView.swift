@@ -264,7 +264,7 @@ struct ContentView: View {
         }) {
             AppleIDLoginSheet { session in
                 appState.ascManager.setIrisSession(session)
-                Task { await appState.ascManager.fetchRejectionFeedback() }
+                Task { await appState.ascManager.fetchRejectionFeedback(force: true) }
             }
         }
         .approvalAlert(appState: appState)
