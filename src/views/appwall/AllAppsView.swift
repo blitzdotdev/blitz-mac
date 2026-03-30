@@ -233,7 +233,7 @@ struct AllAppsView: View {
                 icon: "xmark.seal.fill"
             )
             summaryCard(
-                title: "Avg Rejects until Live",
+                title: "Avg Rejects until success",
                 value: summaryValue { formatDecimal($0.avgRejectionsUntilFirstLive) },
                 color: .purple,
                 icon: "arrow.counterclockwise"
