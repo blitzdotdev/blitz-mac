@@ -1,7 +1,7 @@
 # Changelog
 
 ## 1.0.31
-- New App Wall with synced app details and live status updates
+- New App Wall showing average review time, rejection ratio, and # rejects until success
 - Version-aware ASC release workflow with create/update flow and unified version picker
 - Better ASC diagnostics, fetch resilience, and project switching reliability
 - Dashboard and app grid polish, plus improved launch logging
