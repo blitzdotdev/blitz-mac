@@ -4,8 +4,6 @@
   <p>
 Native macOS App Store Connect tool with MCP. Submit iOS apps, manage IAPs, and automate App Store submission with AI agents.
 
-<hr style="border: none; border-top: 1px solid #555; width: 60%; margin: 8px auto;" />
-
   MCPに対応したmacOSネイティブのApp Store Connectツール。iOSアプリの提出・IAP管理・App Store提出プロセスの自動化をAIエージェントで実現
 </p>
 
@@ -26,7 +24,7 @@ Blitz is a native macOS app for submitting iOS apps to **App Store Connect** usi
 
 If you are fighting App Store Connect to get your app submitted, Blitz automates the painful parts.
 
-<hr style="border: none; border-top: 1px solid #555; width: 60%; margin: 8px auto;" />
+<p>―</p>
 
 AIエージェントを活用してiOSアプリをApp Store Connectに提出するmacOSネイティブアプリ、Blitz。
 
