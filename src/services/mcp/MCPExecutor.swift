@@ -36,14 +36,41 @@ actor MCPExecutor {
         self.appState = appState
     }
 
+    func parseFieldMap(_ rawFields: Any?, applyAliases: Bool) -> [String: String] {
+        var fieldMap: [String: String] = [:]
+        let mapField: (String) -> String = { field in
+            applyAliases ? (Self.fieldAliases[field] ?? field) : field
+        }
+
+        if let fieldsArray = rawFields as? [[String: Any]] {
+            for item in fieldsArray {
+                if let field = item["field"] as? String, let value = item["value"] as? String {
+                    fieldMap[mapField(field)] = value
+                }
+            }
+        } else if let fieldsDict = rawFields as? [String: Any] {
+            for (key, value) in fieldsDict {
+                fieldMap[mapField(key)] = "\(value)"
+            }
+        } else if let fieldsString = rawFields as? String,
+                  let data = fieldsString.data(using: .utf8),
+                  let parsed = try? JSONSerialization.jsonObject(with: data) {
+            fieldMap = parseFieldMap(parsed, applyAliases: applyAliases)
+        }
+
+        return fieldMap
+    }
+
     /// Execute a tool call, requesting approval if needed.
     func execute(name: String, arguments: [String: Any]) async throws -> [String: Any] {
         let category = MCPRegistry.category(for: name)
 
         // Pre-navigate for ASC form tools so the user sees the target tab before approving.
         var previousNavigation: NavigationState?
-        if name == "asc_fill_form" || name == "asc_open_submit_preview"
+        if name == "asc_fill_form" || name == "asc_create_version" || name == "asc_open_submit_preview"
+            || name == "store_listing_switch_localization"
             || name == "asc_create_iap" || name == "asc_create_subscription" || name == "asc_set_app_price"
+            || name == "screenshots_switch_localization"
             || name == "screenshots_add_asset" || name == "screenshots_set_track" || name == "screenshots_save" {
             previousNavigation = await preNavigateASCTool(name: name, arguments: arguments)
         }
@@ -99,10 +126,14 @@ actor MCPExecutor {
                 targetTab = nil
             }
             targetAppSubTab = nil
-        } else if name == "asc_open_submit_preview" {
+        } else if name == "store_listing_switch_localization" {
+            targetTab = .storeListing
+            targetAppSubTab = nil
+        } else if name == "asc_create_version" || name == "asc_open_submit_preview" {
             targetTab = .app
             targetAppSubTab = .overview
-        } else if name == "screenshots_add_asset"
+        } else if name == "screenshots_switch_localization"
+                    || name == "screenshots_add_asset"
                     || name == "screenshots_set_track" || name == "screenshots_save" {
             targetTab = .screenshots
             targetAppSubTab = nil
@@ -133,32 +164,7 @@ actor MCPExecutor {
 
         if name == "asc_fill_form",
            let tab = arguments["tab"] as? String {
-            var fieldMap: [String: String] = [:]
-            if let fieldsArray = arguments["fields"] as? [[String: Any]] {
-                for item in fieldsArray {
-                    if let field = item["field"] as? String, let value = item["value"] as? String {
-                        fieldMap[field] = value
-                    }
-                }
-            } else if let fieldsDict = arguments["fields"] as? [String: Any] {
-                for (key, value) in fieldsDict {
-                    fieldMap[key] = "\(value)"
-                }
-            } else if let fieldsString = arguments["fields"] as? String,
-                      let data = fieldsString.data(using: .utf8),
-                      let parsed = try? JSONSerialization.jsonObject(with: data) {
-                if let dict = parsed as? [String: Any] {
-                    for (key, value) in dict {
-                        fieldMap[key] = "\(value)"
-                    }
-                } else if let array = parsed as? [[String: Any]] {
-                    for item in array {
-                        if let field = item["field"] as? String, let value = item["value"] as? String {
-                            fieldMap[field] = value
-                        }
-                    }
-                }
-            }
+            let fieldMap = parseFieldMap(arguments["fields"], applyAliases: false)
 
             if !fieldMap.isEmpty {
                 let fieldMapCopy = fieldMap
@@ -256,6 +262,14 @@ actor MCPExecutor {
             return await executeASCSetCredentials(arguments)
         case "asc_fill_form":
             return try await executeASCFillForm(arguments)
+        case "store_listing_switch_localization":
+            return try await executeStoreListingSwitchLocalization(arguments)
+        case "asc_select_version":
+            return try await executeASCSelectVersion(arguments)
+        case "asc_create_version":
+            return try await executeASCCreateVersion(arguments)
+        case "screenshots_switch_localization":
+            return try await executeScreenshotsSwitchLocalization(arguments)
         case "screenshots_add_asset":
             return try await executeScreenshotsAddAsset(arguments)
         case "screenshots_set_track":

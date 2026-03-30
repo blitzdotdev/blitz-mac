@@ -3,11 +3,13 @@ import Foundation
 extension ASCManager {
     struct ProjectSnapshot {
         let projectId: String
+        let bundleId: String?
         let app: ASCApp?
         let appStoreVersions: [ASCAppStoreVersion]
         let localizations: [ASCVersionLocalization]
-        let screenshotSets: [ASCScreenshotSet]
-        let screenshots: [String: [ASCScreenshot]]
+        let appInfoLocalizationsByLocale: [String: ASCAppInfoLocalization]
+        let screenshotSetsByLocale: [String: [ASCScreenshotSet]]
+        let screenshotsByLocale: [String: [String: [ASCScreenshot]]]
         let customerReviews: [ASCCustomerReview]
         let builds: [ASCBuild]
         let betaGroups: [ASCBetaGroup]
@@ -25,15 +27,15 @@ extension ASCManager {
         let appInfoLocalization: ASCAppInfoLocalization?
         let ageRatingDeclaration: ASCAgeRatingDeclaration?
         let reviewDetail: ASCReviewDetail?
+        let selectedVersionId: String?
+        let selectedVersionBuild: ASCBuild?
         let reviewSubmissions: [ASCReviewSubmission]
         let reviewSubmissionItemsBySubmissionId: [String: [ASCReviewSubmissionItem]]
         let latestSubmissionItems: [ASCReviewSubmissionItem]
         let submissionHistoryEvents: [ASCSubmissionHistoryEvent]
         let attachedSubmissionItemIDs: Set<String>
         let resolutionCenterThreads: [IrisResolutionCenterThread]
-        let rejectionMessages: [IrisResolutionCenterMessage]
-        let rejectionReasons: [IrisReviewRejection]
-        let cachedFeedback: IrisFeedbackCache?
+        let irisFeedbackCycles: [IrisFeedbackCycle]
         let trackSlots: [String: [TrackSlot?]]
         let savedTrackState: [String: [TrackSlot?]]
         let localScreenshotAssets: [LocalScreenshotAsset]
@@ -45,11 +47,13 @@ extension ASCManager {
         @MainActor
         init(manager: ASCManager, projectId: String) {
             self.projectId = projectId
+            bundleId = Self.normalizedBundleId(manager.app?.bundleId)
             app = manager.app
             appStoreVersions = manager.appStoreVersions
             localizations = manager.localizations
-            screenshotSets = manager.screenshotSets
-            screenshots = manager.screenshots
+            appInfoLocalizationsByLocale = manager.appInfoLocalizationsByLocale
+            screenshotSetsByLocale = manager.screenshotSetsByLocale
+            screenshotsByLocale = manager.screenshotsByLocale
             customerReviews = manager.customerReviews
             builds = manager.builds
             betaGroups = manager.betaGroups
@@ -67,15 +71,15 @@ extension ASCManager {
             appInfoLocalization = manager.appInfoLocalization
             ageRatingDeclaration = manager.ageRatingDeclaration
             reviewDetail = manager.reviewDetail
+            selectedVersionId = manager.selectedVersionId
+            selectedVersionBuild = manager.selectedVersionBuild
             reviewSubmissions = manager.reviewSubmissions
             reviewSubmissionItemsBySubmissionId = manager.reviewSubmissionItemsBySubmissionId
             latestSubmissionItems = manager.latestSubmissionItems
             submissionHistoryEvents = manager.submissionHistoryEvents
             attachedSubmissionItemIDs = manager.attachedSubmissionItemIDs
             resolutionCenterThreads = manager.resolutionCenterThreads
-            rejectionMessages = manager.rejectionMessages
-            rejectionReasons = manager.rejectionReasons
-            cachedFeedback = manager.cachedFeedback
+            irisFeedbackCycles = manager.irisFeedbackCycles
             trackSlots = manager.trackSlots
             savedTrackState = manager.savedTrackState
             localScreenshotAssets = manager.localScreenshotAssets
@@ -91,8 +95,9 @@ extension ASCManager {
             manager.app = app
             manager.appStoreVersions = appStoreVersions
             manager.localizations = localizations
-            manager.screenshotSets = screenshotSets
-            manager.screenshots = screenshots
+            manager.appInfoLocalizationsByLocale = appInfoLocalizationsByLocale
+            manager.screenshotSetsByLocale = screenshotSetsByLocale
+            manager.screenshotsByLocale = screenshotsByLocale
             manager.customerReviews = customerReviews
             manager.builds = builds
             manager.betaGroups = betaGroups
@@ -110,15 +115,15 @@ extension ASCManager {
             manager.appInfoLocalization = appInfoLocalization
             manager.ageRatingDeclaration = ageRatingDeclaration
             manager.reviewDetail = reviewDetail
+            manager.selectedVersionId = selectedVersionId
+            manager.selectedVersionBuild = selectedVersionBuild
             manager.reviewSubmissions = reviewSubmissions
             manager.reviewSubmissionItemsBySubmissionId = reviewSubmissionItemsBySubmissionId
             manager.latestSubmissionItems = latestSubmissionItems
             manager.submissionHistoryEvents = submissionHistoryEvents
             manager.attachedSubmissionItemIDs = attachedSubmissionItemIDs
             manager.resolutionCenterThreads = resolutionCenterThreads
-            manager.rejectionMessages = rejectionMessages
-            manager.rejectionReasons = rejectionReasons
-            manager.cachedFeedback = cachedFeedback
+            manager.irisFeedbackCycles = irisFeedbackCycles
             manager.trackSlots = trackSlots
             manager.savedTrackState = savedTrackState
             manager.localScreenshotAssets = localScreenshotAssets
@@ -136,6 +141,19 @@ extension ASCManager {
             manager.writeError = nil
             manager.submissionError = nil
             manager.overviewReadinessLoadingFields = []
+        }
+
+        func matches(bundleId: String?) -> Bool {
+            let requestedBundleId = Self.normalizedBundleId(bundleId)
+            guard let requestedBundleId else { return true }
+            guard let snapshotBundleId = self.bundleId else { return false }
+            return snapshotBundleId == requestedBundleId
+        }
+
+        private static func normalizedBundleId(_ bundleId: String?) -> String? {
+            let trimmed = bundleId?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let trimmed, !trimmed.isEmpty else { return nil }
+            return trimmed
         }
 
         private static let cachedProjectTabs: Set<AppTab> = [
@@ -190,14 +208,21 @@ extension ASCManager {
         appIconStatus = nil
     }
 
-    func prepareForProjectSwitch(to projectId: String) {
+    func prepareForProjectSwitch(to projectId: String, bundleId: String?) {
         cacheCurrentProjectSnapshot()
         resetProjectData(preserveCredentials: true)
 
-        if let snapshot = projectSnapshots[projectId] {
+        if let snapshot = projectSnapshots[projectId], snapshot.matches(bundleId: bundleId) {
             snapshot.apply(to: self)
         } else {
             loadedProjectId = projectId
+            Task {
+                await ASCUpdateLogger.shared.event("project_switch_reset", metadata: [
+                    "bundleId": bundleId ?? "nil",
+                    "projectId": projectId,
+                    "reason": projectSnapshots[projectId] == nil ? "no_snapshot" : "bundle_mismatch",
+                ])
+            }
         }
     }
 
@@ -211,10 +236,13 @@ extension ASCManager {
     }
 
     func loadCredentials(for projectId: String, bundleId: String?) async {
+        let normalizedBundleId = bundleId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let loadedAppMatchesBundle = normalizedBundleId == nil || app?.bundleId == normalizedBundleId
         let needsCredentialReload = credentials == nil || service == nil
         let shouldSkip = loadedProjectId == projectId
             && !needsCredentialReload
-            && (bundleId == nil || app != nil)
+            && loadedAppMatchesBundle
+            && (normalizedBundleId == nil || app != nil)
         guard !shouldSkip else { return }
 
         credentialsError = nil
@@ -229,11 +257,18 @@ extension ASCManager {
             service = creds.map { AppStoreConnectService(credentials: $0) }
         }
 
+        // Never reuse app/version data for a different bundle ID, even if
+        // credentials are still valid and a previous project left data behind.
+        if loadedProjectId != projectId || !loadedAppMatchesBundle {
+            resetProjectData(preserveCredentials: true)
+        }
+
         loadedProjectId = projectId
         refreshAppIconStatusIfNeeded(for: projectId)
 
-        if let bundleId, !bundleId.isEmpty, credentials != nil, app == nil {
-            await fetchApp(bundleId: bundleId)
+        if let normalizedBundleId, !normalizedBundleId.isEmpty, credentials != nil,
+           app?.bundleId != normalizedBundleId {
+            await fetchApp(bundleId: normalizedBundleId)
         }
     }
 
@@ -307,8 +342,11 @@ extension ASCManager {
         isLoadingApp = false
         appStoreVersions = []
         localizations = []
-        screenshotSets = []
-        screenshots = [:]
+        selectedStoreListingLocale = nil
+        appInfoLocalizationsByLocale = [:]
+        screenshotSetsByLocale = [:]
+        screenshotsByLocale = [:]
+        selectedScreenshotsLocale = nil
         customerReviews = []
         builds = []
         betaGroups = []
@@ -326,10 +364,15 @@ extension ASCManager {
         appInfoLocalization = nil
         ageRatingDeclaration = nil
         reviewDetail = nil
+        selectedVersionId = nil
+        selectedVersionBuild = nil
         pendingFormValues = [:]
         showSubmitPreview = false
+        showCreateUpdateSheet = false
         isSubmitting = false
+        isCreatingVersion = false
         submissionError = nil
+        versionCreationError = nil
         writeError = nil
         reviewSubmissions = []
         reviewSubmissionItemsBySubmissionId = [:]
@@ -338,6 +381,9 @@ extension ASCManager {
         appIconStatus = nil
         monetizationStatus = nil
         attachedSubmissionItemIDs = []
+        trackSlots = [:]
+        savedTrackState = [:]
+        localScreenshotAssets = []
         isLoadingTab = [:]
         tabError = [:]
         loadedTabs = []
@@ -347,9 +393,7 @@ extension ASCManager {
         }
 
         resolutionCenterThreads = []
-        rejectionMessages = []
-        rejectionReasons = []
-        cachedFeedback = nil
+        irisFeedbackCycles = []
         isLoadingIrisFeedback = false
         irisFeedbackError = nil
         cancelPendingWebAuth()

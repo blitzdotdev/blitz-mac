@@ -1,7 +1,7 @@
 <div align="center">
   <img src=".github/assets/logo.png" width="100" />
   <h1>Blitz</h1>
-  <p>Native macOS app for building, testing, and shipping iOS apps with AI agents</p>
+  <p>Native macOS App Store Connect tool with MCP. Submit iOS apps, manage IAPs, and automate App Store submission with AI agents.</p>
 
   [![Website](https://img.shields.io/badge/blitz.dev-website-black)](https://blitz.dev/)
   [![Discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/wJQ6dA95S6)
@@ -16,7 +16,9 @@
 
 <br />
 
-Blitz is a native macOS app that gives AI agents full control over the iOS development lifecycle — simulator/iPhone management, database setup, and App Store Connect submission. It includes built-in MCP servers so Claude Code (or any MCP client) can build, test, and submit your app to the App Store.
+Blitz is a native macOS app for submitting iOS apps to **App Store Connect** using AI agents. It gives Claude Code (or any MCP client) full control over the iOS development lifecycle: running simulators, configuring in-app purchases, uploading screenshots, and triggering App Store review submissions, all from a single native macOS GUI.
+
+If you are fighting App Store Connect to get your app submitted, Blitz automates the painful parts.
 
 <div align="center">
   <img src=".github/assets/before-after.png" width="800" />
@@ -26,18 +28,25 @@ Blitz is a native macOS app that gives AI agents full control over the iOS devel
 
 https://github.com/user-attachments/assets/07364d9f-f6a7-4375-acc8-b7ab46dcc60e
 
-## Requirements
+### Features
 
-- macOS 14+ (Sonoma)
-- Xcode 16+ (Swift 5.10+)
-- Node.js 18+ (for build scripts and sidecar)
-- Go 1.26+ (for source builds that bundle the pinned `ascd` helper)
+| Features                   |                                                                                                                  |
+|----------------------------|------------------------------------------------------------------------------------------------------------------|
+| **App Store Connect**      | Submit for review, manage versions, pricing, listings                                                            |
+| **In-app purchases**       | Create IAPs and subscriptions, attach to versions before submission                                              |
+| **Screenshots**            | Upload all required device sizes across locales                                                                  |
+| **TestFlight**             | Add testers, manage builds                                                                                       |
+| **iOS Simulator**          | Boot/shutdown, touch/swipe, live screen capture                                                                  |
+| **MCP server (~35 tools)** | Claude Code, Codex, Cursor, or any MCP client drives the full workflow                                           |
+| **[asc-cli](https://github.com/rudrankriyam/App-Store-Connect-CLI) (bundled)** | Scriptable CLI for edge-case ASC operations. Auto-installed, shared auth, available in every Blitz agent session |
 
 ## Download
 
-[Download from website](https://blitz.dev)
+[Download from blitz.dev](https://blitz.dev)
 
 ## Build from source
+
+**Requirements:** macOS 14+ · Xcode 16+ · Node.js 18+ · Go 1.26+
 
 ```bash
 # Clone
@@ -71,7 +80,7 @@ The ASC helper binary bundled into the app is built from the pinned submodule at
 ## Verify a release binary
 
 Every GitHub release includes `SHA256SUMS.txt` with checksums of the CI-built binary. To verify:
-[claude-mono (1).md](../../Downloads/claude-mono%20%281%29.md)
+
 **Option 1: Check a downloaded binary against release checksums**
 ```bash
 # Download both Blitz.app.zip and SHA256SUMS.txt from the GitHub release
@@ -107,3 +116,54 @@ Single-target SwiftUI app built with Swift Package Manager. All source lives in 
 ## License
 
 [Apache License 2.0](LICENSE)
+
+---
+
+## FAQ
+
+### How long does App Store review take?
+
+Typically 1–2 days for iOS apps, though this varies. The Mac App Store has been running slower (5–10 days in early 2026). [Runway publishes live review time data](https://www.runway.team/appreviewtimes) updated continuously. Submitting on weekdays and avoiding major Apple event windows (WWDC, product launches) tends to reduce wait times. Expedited review is available for critical bug fixes via App Store Connect.
+
+### What are the most common App Store rejection reasons?
+
+Generally, top rejection reasons are:
+- **Crashes and bugs.** The app crashes during review or has obvious bugs. Always test on a real device before submitting.
+- **Incomplete or placeholder content.** The app has "lorem ipsum" text, grayed-out buttons, or features that don't work.
+- **Inaccurate metadata.** The description, screenshots, or keywords don't match what the app actually does.
+- **Privacy policy missing.** Any app that collects user data (or uses any third-party SDK that does) must include a privacy policy URL in App Store Connect and link to it from within the app.
+- **In-app purchase not attached.** IAPs must be in "Ready to Submit" state and explicitly attached to the app version before submission.
+- **Guideline 4.0 (Design).** UI doesn't meet iOS Human Interface Guidelines, or the app is a thin wrapper around a website.
+
+To detect rejections in your app before submitting, try the [Reviewer Agent](https://github.com/blitzdotdev/app-store-review-agent) which roleplays as an App Store reviewer following all the 100+ guidelines.
+
+### Can I automate App Store Connect?
+
+Yes. Blitz's built-in MCP server lets Claude Code or any AI agent drive the entire App Store Connect submission workflow: filling forms, uploading screenshots, configuring IAPs, and submitting for review, using natural language instructions. Apple also provides the [App Store Connect API](https://developer.apple.com/app-store-connect/api/) for direct automation.
+
+### How do I set up in-app purchases in App Store Connect?
+
+1. In App Store Connect, go to your app → **Monetization** → **In-App Purchases**
+2. Create each product (consumable, non-consumable, or auto-renewable subscription), set the product ID, reference name, price, and localized display name/description
+3. Set the product status to **Ready to Submit**
+4. Before submitting your app version for review, go to the version page and attach each IAP under **In-App Purchases and Subscriptions**
+
+Blitz handles steps 2–4 natively, including attaching IAPs to the version. This is the step most developers miss, which causes rejections.
+
+### How do I add screenshots for App Store submission?
+
+Blitz supports three display types: iPhone 6.7", iPad Pro 12.9", and Mac. Required pixel dimensions:
+
+- **iPhone 6.7"**: 1290×2796, 1284×2778, 1242×2688, or 1260×2736
+- **iPad Pro 12.9"**: 2048×2732
+- **Mac**: 1280×800, 1440×900, 2560×1600, or 2880×1800
+
+Capture screenshots from the iOS Simulator, then drag them into Blitz's screenshot track or let Claude Code place them with `screenshots_set_track`.
+
+### Why does my app keep getting rejected?
+
+The most frequent causes beyond the list above: missing or broken deep links listed in the metadata, sign-in credentials not provided to the reviewer (add a demo account in App Store Connect), and entitlements that don't match what the app actually uses. Review [Apple's App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) and run through [Adapty's pre-submission checklist](https://adapty.io/blog/how-to-pass-app-store-review/) before each submission.
+
+### Does Blitz work with Claude Code and Codex?
+
+Yes. Blitz works with both Claude Code and Codex. Install Blitz, launch it, and you can either launch Claude Code/Codex in the built-in terminal or externally. Claude Code/Codex can then control simulators, generate tests, and submit to App Store Connect without leaving the terminal.

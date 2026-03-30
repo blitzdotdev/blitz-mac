@@ -3,6 +3,23 @@ import Foundation
 extension MCPExecutor {
     // MARK: - Tab State Tool
 
+    @MainActor
+    func versionStatePayload(_ version: ASCAppStoreVersion?) -> [String: Any]? {
+        guard let version else { return nil }
+        var payload: [String: Any] = [
+            "id": version.id,
+            "versionString": version.attributes.versionString,
+            "state": version.attributes.appStoreState ?? "unknown",
+        ]
+        if let createdDate = version.attributes.createdDate {
+            payload["createdDate"] = createdDate
+        }
+        if let releaseType = version.attributes.releaseType {
+            payload["releaseType"] = releaseType
+        }
+        return payload
+    }
+
     func executeGetTabState(_ args: [String: Any]) async throws -> [String: Any] {
         let tabStr = args["tab"] as? String
         let tab: AppTab
@@ -103,7 +120,9 @@ extension MCPExecutor {
                 "missingRequired": readiness.missingRequired.map { $0.label }
             ],
             "totalVersions": asc.appStoreVersions.count,
-            "isSubmitting": asc.isSubmitting
+            "isSubmitting": asc.isSubmitting,
+            "canCreateUpdate": asc.canCreateUpdate,
+            "selectedVersionIsEditable": asc.selectedVersionIsEditable,
         ]
         if let version = asc.appStoreVersions.first {
             result["latestVersion"] = [
@@ -112,14 +131,35 @@ extension MCPExecutor {
                 "state": version.attributes.appStoreState ?? "unknown"
             ]
         }
+        if let selectedVersion = versionStatePayload(asc.selectedVersion) {
+            result["selectedVersion"] = selectedVersion
+        }
+        if let liveVersion = versionStatePayload(asc.liveVersion) {
+            result["liveVersion"] = liveVersion
+        }
+        if let currentUpdateVersion = versionStatePayload(asc.currentUpdateVersion) {
+            result["currentUpdateVersion"] = currentUpdateVersion
+        }
+        if let editableVersion = versionStatePayload(asc.editableVersion) {
+            result["editableVersion"] = editableVersion
+        }
+        if let selectedBuild = asc.selectedVersionBuild {
+            result["selectedVersionBuild"] = [
+                "id": selectedBuild.id,
+                "version": selectedBuild.attributes.version,
+                "processingState": selectedBuild.attributes.processingState ?? "unknown",
+                "uploadedDate": selectedBuild.attributes.uploadedDate ?? "",
+            ]
+        }
         if let error = asc.submissionError {
             result["submissionError"] = error
         }
-        if let cached = asc.cachedFeedback {
+        if let cycle = asc.latestFeedbackCycle(forVersionString: nil) {
             result["rejectionFeedback"] = [
-                "version": cached.versionString,
-                "reasonCount": cached.reasons.count,
-                "messageCount": cached.messages.count,
+                "version": cycle.versionString ?? "",
+                "reasonCount": cycle.reasons.count,
+                "messageCount": cycle.messages.count,
+                "cycleCount": asc.irisFeedbackCycles.count,
                 "hint": "Use get_rejection_feedback tool for full details"
             ]
         }
@@ -128,8 +168,9 @@ extension MCPExecutor {
 
     @MainActor
     func tabStateStoreListing(_ asc: ASCManager) -> [String: Any] {
-        let localization = asc.localizations.first
-        let infoLoc = asc.appInfoLocalization
+        let selectedLocale = asc.activeStoreListingLocale() ?? ""
+        let localization = asc.storeListingLocalization(locale: selectedLocale)
+        let infoLoc = asc.appInfoLocalizationForLocale(selectedLocale)
         let localizationState: [String: Any] = [
             "locale": localization?.attributes.locale ?? "",
             "name": infoLoc?.attributes.name ?? localization?.attributes.title ?? "",
@@ -142,11 +183,19 @@ extension MCPExecutor {
             "whatsNew": localization?.attributes.whatsNew ?? ""
         ]
 
-        return [
+        var result: [String: Any] = [
+            "selectedLocale": selectedLocale,
+            "availableLocales": asc.localizations.map(\.attributes.locale),
             "localization": localizationState,
             "privacyPolicyUrl": infoLoc?.attributes.privacyPolicyUrl ?? "",
-            "localeCount": asc.localizations.count
+            "hasAppInfoLocalization": infoLoc != nil,
+            "localeCount": asc.localizations.count,
+            "canCreateUpdate": asc.canCreateUpdate,
         ]
+        if let selectedVersion = versionStatePayload(asc.selectedVersion) {
+            result["selectedVersion"] = selectedVersion
+        }
+        return result
     }
 
     @MainActor
@@ -156,13 +205,17 @@ extension MCPExecutor {
                 "primaryCategory": asc.appInfo?.primaryCategoryId ?? "",
                 "contentRightsDeclaration": asc.app?.contentRightsDeclaration ?? ""
             ],
-            "versionCount": asc.appStoreVersions.count
+            "versionCount": asc.appStoreVersions.count,
+            "canCreateUpdate": asc.canCreateUpdate,
         ]
         if let version = asc.appStoreVersions.first {
             result["latestVersion"] = [
                 "versionString": version.attributes.versionString,
                 "state": version.attributes.appStoreState ?? "unknown"
             ]
+        }
+        if let selectedVersion = versionStatePayload(asc.selectedVersion) {
+            result["selectedVersion"] = selectedVersion
         }
         return result
     }
@@ -221,14 +274,29 @@ extension MCPExecutor {
                 "uploadedDate": build.attributes.uploadedDate ?? ""
             ]
         }
+        result["canCreateUpdate"] = asc.canCreateUpdate
+        if let selectedVersion = versionStatePayload(asc.selectedVersion) {
+            result["selectedVersion"] = selectedVersion
+        }
+        if let selectedBuild = asc.selectedVersionBuild {
+            result["selectedVersionBuild"] = [
+                "id": selectedBuild.id,
+                "version": selectedBuild.attributes.version,
+                "processingState": selectedBuild.attributes.processingState ?? "unknown",
+                "uploadedDate": selectedBuild.attributes.uploadedDate ?? "",
+            ]
+        }
         return result
     }
 
     @MainActor
     func tabStateScreenshots(_ asc: ASCManager) -> [String: Any] {
-        let sets = asc.screenshotSets.map { set -> [String: Any] in
+        let selectedLocale = asc.selectedScreenshotsLocale ?? asc.localizations.first?.attributes.locale ?? ""
+        let screenshotSets = asc.screenshotSetsForLocale(selectedLocale)
+        let screenshots = asc.screenshotsForLocale(selectedLocale)
+        let sets = screenshotSets.map { set -> [String: Any] in
             var value: [String: Any] = ["id": set.id, "displayType": set.attributes.screenshotDisplayType]
-            if let shots = asc.screenshots[set.id] {
+            if let shots = screenshots[set.id] {
                 value["screenshotCount"] = shots.count
                 value["screenshots"] = shots.map {
                     ["id": $0.id, "fileName": $0.attributes.fileName ?? ""]
@@ -236,7 +304,17 @@ extension MCPExecutor {
             }
             return value
         }
-        return ["screenshotSets": sets, "localeCount": asc.localizations.count]
+        var result: [String: Any] = [
+            "selectedLocale": selectedLocale,
+            "availableLocales": asc.localizations.map(\.attributes.locale),
+            "screenshotSets": sets,
+            "localeCount": asc.localizations.count,
+            "canCreateUpdate": asc.canCreateUpdate,
+        ]
+        if let selectedVersion = versionStatePayload(asc.selectedVersion) {
+            result["selectedVersion"] = selectedVersion
+        }
+        return result
     }
 
     @MainActor

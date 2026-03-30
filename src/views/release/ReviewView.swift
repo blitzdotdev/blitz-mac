@@ -58,6 +58,17 @@ struct ReviewView: View {
             && !contactEmail.isEmpty && !contactPhone.isEmpty
     }
 
+    private var selectedVersionBinding: Binding<String> {
+        Binding(
+            get: { asc.selectedVersion?.id ?? "" },
+            set: { newValue in
+                guard !newValue.isEmpty else { return }
+                asc.prepareForVersionSelection(newValue)
+                Task { await asc.refreshTabData(.review) }
+            }
+        )
+    }
+
     var body: some View {
         ASCCredentialGate(
             appState: appState,
@@ -74,34 +85,38 @@ struct ReviewView: View {
         }
         .onChange(of: asc.appStoreVersions.map(\.id)) { _, _ in
             guard let appId = asc.app?.id else { return }
-            // Load cached rejection feedback for the pending version
-            let pendingVersion = asc.appStoreVersions.first(where: {
-                let s = $0.attributes.appStoreState ?? ""
-                return s != "READY_FOR_SALE" && s != "REMOVED_FROM_SALE"
-                    && s != "DEVELOPER_REMOVED_FROM_SALE" && !s.isEmpty
-            })
-            if let version = pendingVersion {
-                asc.loadCachedFeedback(appId: appId, versionString: version.attributes.versionString)
-            }
+            let targetVersion = asc.selectedVersion
+                ?? asc.currentUpdateVersion
+                ?? asc.feedbackDisplayVersion(from: asc.appStoreVersions)
+            asc.loadCachedFeedback(appId: appId, versionString: targetVersion?.attributes.versionString)
         }
     }
 
     @ViewBuilder
     private var reviewContent: some View {
-        let latest = asc.appStoreVersions.first
+        let selectedVersion = asc.selectedVersion
+        let feedbackVersion = asc.feedbackDisplayVersion(from: asc.appStoreVersions)
         let isLoading = asc.isTabLoading(.review)
+
+        VStack(spacing: 0) {
+            if asc.app != nil {
+                ASCVersionPickerBar(
+                    asc: asc,
+                    selection: selectedVersionBinding
+                ) {
+                    ASCTabRefreshButton(asc: asc, tab: .review, helpText: "Refresh review data")
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(.background.secondary)
+            }
+
+            Divider()
 
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                HStack {
-                    Text("Review")
-                        .font(.title2.weight(.semibold))
-                    Spacer()
-                    ASCTabRefreshButton(asc: asc, tab: .review, helpText: "Refresh review data")
-                }
-
                 // Current version status card
-                if let version = latest {
+                if let version = selectedVersion {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
                             Text("Version \(version.attributes.versionString)")
@@ -120,11 +135,10 @@ struct ReviewView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 10))
 
                     // Rejection detail — shown when rejected, or when cached feedback persists after re-submission
-                    if version.attributes.appStoreState == "REJECTED"
-                        || asc.cachedFeedback != nil
-                        || !asc.rejectionReasons.isEmpty
+                    if let feedbackVersion,
+                       feedbackVersion.id == version.id
                         || asc.latestSubmissionItems.contains(where: { $0.attributes.state == "REJECTED" }) {
-                        RejectionCardView(asc: asc, version: version) {
+                        RejectionCardView(asc: asc, version: feedbackVersion) {
                             Text("Update your review info below and re-submit when ready.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -306,6 +320,7 @@ struct ReviewView: View {
             }
             .padding(24)
         }
+        }
         .onAppear {
             populateAgeRating()
             populateContact()
@@ -316,6 +331,7 @@ struct ReviewView: View {
         .onChange(of: asc.reviewDetail?.id) { _, _ in populateContact() }
         .onChange(of: asc.pendingFormVersion) { _, _ in applyPendingValues() }
         .onChange(of: asc.builds.map(\.id)) { _, _ in syncSelectedBuild() }
+        .onChange(of: asc.selectedVersionBuild?.id) { _, _ in syncSelectedBuild() }
         .onChange(of: contactFocused) { _, _ in
             // Don't auto-save contact — requires all required fields.
             // User saves explicitly via the "Save Contact" button.
@@ -661,14 +677,18 @@ struct ReviewView: View {
         if asc.latestSubmissionItems.contains(where: { $0.attributes.state == "REJECTED" }) {
             return true
         }
-        // If we have cached rejection feedback for this version
-        if let cached = asc.cachedFeedback, cached.versionString == version.attributes.versionString {
+        if asc.hasIrisFeedback(forVersionString: version.attributes.versionString) {
             return true
         }
         return false
     }
 
     private func syncSelectedBuild() {
+        if let attachedBuildId = asc.selectedVersionBuild?.id,
+           asc.builds.contains(where: { $0.id == attachedBuildId }) {
+            selectedBuild = attachedBuildId
+            return
+        }
         if !selectedBuild.isEmpty,
            asc.builds.contains(where: { $0.id == selectedBuild }) {
             return

@@ -120,14 +120,11 @@ enum ASCSubmissionHistoryEventType: String, Codable {
 
 enum ASCSubmissionHistoryEventSource: String, Codable {
     case reviewSubmission
-    case transitionLedger
-    case currentVersion
     case irisFeedback
 }
 
 enum ASCSubmissionHistoryAccuracy: String, Codable {
     case exact
-    case firstSeen
     case derived
 }
 
@@ -142,43 +139,6 @@ struct ASCSubmissionHistoryEvent: Codable, Identifiable {
     let accuracy: ASCSubmissionHistoryAccuracy
     let submissionId: String?
     let note: String?
-}
-
-struct ASCSubmissionHistoryCache: Codable {
-    let appId: String
-    var versionSnapshots: [String: VersionSnapshot]
-    var transitionEvents: [ASCSubmissionHistoryEvent]
-
-    struct VersionSnapshot: Codable {
-        let versionId: String
-        var versionString: String
-        var lastKnownState: String
-        var lastSeenAt: String
-    }
-
-    func save() throws {
-        let url = Self.cacheURL(appId: appId)
-        let dir = url.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(self)
-        try data.write(to: url, options: .atomic)
-    }
-
-    static func load(appId: String) -> ASCSubmissionHistoryCache {
-        let url = cacheURL(appId: appId)
-        guard let data = try? Data(contentsOf: url),
-              let decoded = try? JSONDecoder().decode(ASCSubmissionHistoryCache.self, from: data) else {
-            return ASCSubmissionHistoryCache(appId: appId, versionSnapshots: [:], transitionEvents: [])
-        }
-        return decoded
-    }
-
-    private static func cacheURL(appId: String) -> URL {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        return home.appendingPathComponent(".blitz/asc-history/\(appId).json")
-    }
 }
 
 // MARK: - VersionLocalization

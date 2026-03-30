@@ -6,6 +6,17 @@ struct ASCOverview: View {
     private var asc: ASCManager { appState.ascManager }
     @State private var showPreview = false
 
+    private var selectedVersionBinding: Binding<String> {
+        Binding(
+            get: { asc.selectedVersion?.id ?? "" },
+            set: { newValue in
+                guard !newValue.isEmpty else { return }
+                asc.prepareForVersionSelection(newValue)
+                Task { await asc.refreshTabData(.app) }
+            }
+        )
+    }
+
     var body: some View {
         ASCCredentialGate(
             appState: appState,
@@ -68,14 +79,19 @@ struct ASCOverview: View {
                     }
                 }
 
+                if asc.app != nil {
+                    ASCVersionPickerBar(
+                        asc: asc,
+                        selection: selectedVersionBinding,
+                        onCreateUpdate: { asc.showCreateUpdateSheet = true }
+                    )
+                }
+
                 Divider()
 
-                let live = asc.appStoreVersions.first { $0.attributes.appStoreState == "READY_FOR_SALE" }
-                let pending = asc.appStoreVersions.first {
-                    let s = $0.attributes.appStoreState ?? ""
-                    return s != "READY_FOR_SALE" && s != "REMOVED_FROM_SALE"
-                        && s != "DEVELOPER_REMOVED_FROM_SALE" && !s.isEmpty
-                }
+                let live = asc.liveVersion
+                let pending = asc.currentUpdateVersion
+                let feedbackVersion = asc.feedbackDisplayVersion(from: asc.appStoreVersions)
 
                 LazyVGrid(
                     columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())],
@@ -105,10 +121,8 @@ struct ASCOverview: View {
                 }
 
                 // Rejection detail — shown when there's rejection data (persists until a new version is approved)
-                if let pending,
-                   pending.attributes.appStoreState == "REJECTED"
-                    || asc.cachedFeedback != nil || !asc.rejectionReasons.isEmpty {
-                    RejectionCardView(asc: asc, version: pending) {
+                if let feedbackVersion {
+                    RejectionCardView(asc: asc, version: feedbackVersion) {
                         HStack {
                             Spacer()
                             Button("Prepare Re-submission") {
@@ -127,19 +141,21 @@ struct ASCOverview: View {
                             .font(.headline)
 
                         Spacer()
-                        let versionState = asc.appStoreVersions.first(where: {
-                            let s = $0.attributes.appStoreState ?? ""
-                            return s != "READY_FOR_SALE" && s != "REMOVED_FROM_SALE"
-                                && s != "DEVELOPER_REMOVED_FROM_SALE" && !s.isEmpty
-                        })?.attributes.appStoreState ?? ""
-                        let alreadySubmitted = ["WAITING_FOR_REVIEW", "IN_REVIEW", "PENDING_DEVELOPER_RELEASE"]
-                            .contains(versionState)
+                        let activeUpdateState = asc.currentUpdateVersion?.attributes.appStoreState ?? ""
+                        let showStatus = asc.currentUpdateVersion != nil && !ASCReleaseStatus.isEditable(activeUpdateState)
 
-                        Button(alreadySubmitted ? "View Status" : "Submit for Review") {
-                            showPreview = true
+                        if asc.canCreateUpdate {
+                            Button("Create Update") {
+                                asc.showCreateUpdateSheet = true
+                            }
+                            .buttonStyle(.borderedProminent)
+                        } else {
+                            Button(showStatus ? "View Status" : "Submit for Review") {
+                                showPreview = true
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(!showStatus && !asc.submissionReadiness.isComplete)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!alreadySubmitted && !asc.submissionReadiness.isComplete)
                     }
 
                     VStack(spacing: 0) {

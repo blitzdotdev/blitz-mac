@@ -12,6 +12,18 @@ struct AppDetailsView: View {
     @State private var teamId: String = ""
     @FocusState private var focusedField: String?
     @State private var isSaving = false
+    @State private var suppressAutomaticWrites = false
+
+    private var selectedVersionBinding: Binding<String> {
+        Binding(
+            get: { asc.selectedVersion?.id ?? "" },
+            set: { newValue in
+                guard !newValue.isEmpty else { return }
+                asc.prepareForVersionSelection(newValue)
+                Task { await asc.refreshTabData(.appDetails) }
+            }
+        )
+    }
 
     private static let categories: [(String, String)] = [
         ("GAMES", "Games"),
@@ -62,16 +74,23 @@ struct AppDetailsView: View {
     @ViewBuilder
     private var detailsContent: some View {
         let isLoading = asc.isTabLoading(.appDetails)
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Text("App Details")
-                        .font(.title2.weight(.semibold))
-                    Spacer()
+        VStack(spacing: 0) {
+            if asc.app != nil {
+                ASCVersionPickerBar(
+                    asc: asc,
+                    selection: selectedVersionBinding
+                ) {
                     ASCTabRefreshButton(asc: asc, tab: .appDetails, helpText: "Refresh app details")
                 }
-                .padding(.bottom, 20)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(.background.secondary)
+            }
 
+            Divider()
+
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
                 sectionHeader("App Identity")
 
                 if let app = asc.app {
@@ -162,7 +181,9 @@ struct AppDetailsView: View {
                         }
                         .labelsHidden()
                         .onChange(of: primaryCategory) { _, newValue in
+                            guard !suppressAutomaticWrites else { return }
                             guard !newValue.isEmpty else { return }
+                            guard newValue != asc.appInfo?.primaryCategoryId else { return }
                             Task {
                                 isSaving = true
                                 await asc.updateAppInfoField("primaryCategory", value: newValue)
@@ -184,7 +205,9 @@ struct AppDetailsView: View {
                         }
                         .labelsHidden()
                         .onChange(of: contentRights) { _, newValue in
+                            guard !suppressAutomaticWrites else { return }
                             guard !newValue.isEmpty else { return }
+                            guard newValue != asc.app?.contentRightsDeclaration else { return }
                             Task {
                                 isSaving = true
                                 await asc.updateAppInfoField("contentRightsDeclaration", value: newValue)
@@ -288,11 +311,13 @@ struct AppDetailsView: View {
             }
             .padding(24)
         }
+        }
         .onAppear {
             populateFields()
             applyPendingValues()
         }
-        .onChange(of: asc.appInfo?.id) { _, _ in populateFields() }
+        .onChange(of: asc.appInfo?.primaryCategoryId) { _, _ in populateFields() }
+        .onChange(of: asc.app?.contentRightsDeclaration) { _, _ in populateFields() }
         .onChange(of: asc.pendingFormVersion) { _, _ in applyPendingValues() }
         .onChange(of: focusedField) { oldField, _ in
             if oldField == "copyright", !copyright.isEmpty {
@@ -309,26 +334,38 @@ struct AppDetailsView: View {
     }
 
     private func populateFields() {
-        primaryCategory = asc.appInfo?.primaryCategoryId ?? ""
-        contentRights = asc.app?.contentRightsDeclaration ?? ""
-        // Copyright comes from the version, not appInfo — we don't have it in the model yet,
-        // so initialize from pending if available
+        applyProgrammaticFieldUpdate {
+            primaryCategory = asc.appInfo?.primaryCategoryId ?? ""
+            contentRights = asc.app?.contentRightsDeclaration ?? ""
+            // Copyright comes from the version, not appInfo — we don't have it in the model yet,
+            // so initialize from pending if available
 
-        // Load team ID from project metadata
-        if let project = appState.activeProject {
-            teamId = project.metadata.teamId ?? ""
+            // Load team ID from project metadata
+            if let project = appState.activeProject {
+                teamId = project.metadata.teamId ?? ""
+            }
         }
     }
 
     private func applyPendingValues() {
         guard let pending = asc.pendingFormValues["appDetails"] else { return }
-        for (field, value) in pending {
-            switch field {
-            case "copyright": copyright = value
-            case "primaryCategory": primaryCategory = value
-            case "contentRightsDeclaration": contentRights = value
-            default: break
+        applyProgrammaticFieldUpdate {
+            for (field, value) in pending {
+                switch field {
+                case "copyright": copyright = value
+                case "primaryCategory": primaryCategory = value
+                case "contentRightsDeclaration": contentRights = value
+                default: break
+                }
             }
+        }
+    }
+
+    private func applyProgrammaticFieldUpdate(_ update: () -> Void) {
+        suppressAutomaticWrites = true
+        update()
+        DispatchQueue.main.async {
+            suppressAutomaticWrites = false
         }
     }
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.30
+- New built-in terminal 
+- New Dashboard and App navigation
+- Project switching performance improvements
+- Share ASC auth between asc-cli and Blitz MCP tools  
+- Improved release/update reliability and simulator behavior
+- Localization fixes (screenshot, store listing, overview tab)
+
 ## 1.0.29
 - Faster App Store Connect setup with improved onboarding, credential entry, and bundle ID guidance
 - Better review workflows with rejection feedback in Overview and Review, plus a submission history timeline

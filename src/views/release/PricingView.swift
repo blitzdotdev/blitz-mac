@@ -6,6 +6,17 @@ struct MonetizationView: View {
 
     private var asc: ASCManager { appState.ascManager }
 
+    private var selectedVersionBinding: Binding<String> {
+        Binding(
+            get: { asc.selectedVersion?.id ?? "" },
+            set: { newValue in
+                guard !newValue.isEmpty else { return }
+                asc.prepareForVersionSelection(newValue)
+                Task { await asc.refreshTabData(.monetization) }
+            }
+        )
+    }
+
     var body: some View {
         ASCCredentialGate(
             appState: appState,
@@ -18,6 +29,9 @@ struct MonetizationView: View {
             }
         }
         .task(id: "\(appState.activeProjectId ?? ""):\(asc.credentialActivationRevision)") {
+            // This view stays mounted off-screen so creation progress survives
+            // tab switches; only the visible Monetization tab should auto-load.
+            guard appState.activeTab == .monetization else { return }
             await asc.ensureTabData(.monetization)
         }
     }
@@ -25,15 +39,23 @@ struct MonetizationView: View {
     @ViewBuilder
     private var monetizationContent: some View {
         let isLoading = asc.isTabLoading(.monetization)
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                HStack {
-                    Text("Monetization")
-                        .font(.title2.weight(.semibold))
-                    Spacer()
+        VStack(spacing: 0) {
+            if asc.app != nil {
+                ASCVersionPickerBar(
+                    asc: asc,
+                    selection: selectedVersionBinding
+                ) {
                     ASCTabRefreshButton(asc: asc, tab: .monetization, helpText: "Refresh monetization data")
                 }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(.background.secondary)
+            }
 
+            Divider()
+
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
                 if let err = asc.writeError {
                     Text(err)
                         .font(.callout)
@@ -61,6 +83,7 @@ struct MonetizationView: View {
                 SubscriptionsSection(asc: asc)
             }
             .padding(24)
+        }
         }
     }
 }

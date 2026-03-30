@@ -1,27 +1,6 @@
 import SwiftUI
 import WebKit
 
-private let irisLogPath = FileManager.default.homeDirectoryForCurrentUser
-    .appendingPathComponent(".blitz/iris-debug.log")
-
-private func irisLog(_ msg: String) {
-    let ts = ISO8601DateFormatter().string(from: Date())
-    let line = "[\(ts)] \(msg)\n"
-    if let data = line.data(using: .utf8) {
-        if FileManager.default.fileExists(atPath: irisLogPath.path) {
-            if let handle = try? FileHandle(forWritingTo: irisLogPath) {
-                handle.seekToEndOfFile()
-                handle.write(data)
-                handle.closeFile()
-            }
-        } else {
-            let dir = irisLogPath.deletingLastPathComponent()
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            try? data.write(to: irisLogPath)
-        }
-    }
-}
-
 struct AppleIDLoginSheet: View {
     var subtitle: String = "Sign in to App Store Connect to authenticate your Apple ID session."
     var onSessionCaptured: (IrisSession) -> Void

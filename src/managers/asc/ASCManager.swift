@@ -5,6 +5,8 @@ import Foundation
 final class ASCManager {
     nonisolated init() {}
 
+    weak var appState: AppState?
+
     // Credentials & service
     var credentials: ASCCredentials?
     var service: AppStoreConnectService?
@@ -23,8 +25,11 @@ final class ASCManager {
     // Per-tab data
     var appStoreVersions: [ASCAppStoreVersion] = []
     var localizations: [ASCVersionLocalization] = []
-    var screenshotSets: [ASCScreenshotSet] = []
-    var screenshots: [String: [ASCScreenshot]] = [:]  // keyed by screenshotSet.id
+    var selectedStoreListingLocale: String?
+    var appInfoLocalizationsByLocale: [String: ASCAppInfoLocalization] = [:]
+    var screenshotSetsByLocale: [String: [ASCScreenshotSet]] = [:]
+    var screenshotsByLocale: [String: [String: [ASCScreenshot]]] = [:]
+    var selectedScreenshotsLocale: String?
     var customerReviews: [ASCCustomerReview] = []
     var builds: [ASCBuild] = []
     var betaGroups: [ASCBetaGroup] = []
@@ -52,13 +57,18 @@ final class ASCManager {
     var appInfoLocalization: ASCAppInfoLocalization?
     var ageRatingDeclaration: ASCAgeRatingDeclaration?
     var reviewDetail: ASCReviewDetail?
+    var selectedVersionId: String?
+    var selectedVersionBuild: ASCBuild?
     var pendingCredentialValues: [String: String]?  // Pre-fill values for ASC credential form (from MCP)
     var pendingFormValues: [String: [String: String]] = [:]  // tab -> field -> value (for MCP pre-fill)
     var pendingFormVersion: Int = 0  // Incremented when pendingFormValues changes; views watch this
     var pendingCreateValues: [String: String]?  // Pre-fill values for IAP/subscription create forms (from MCP)
     var showSubmitPreview = false
+    var showCreateUpdateSheet = false
     var isSubmitting = false
+    var isCreatingVersion = false
     var submissionError: String?
+    var versionCreationError: String?
     var writeError: String?  // Inline error for write operations (does not replace tab content)
 
     // Review submission history (for rejection tracking)
@@ -76,11 +86,11 @@ final class ASCManager {
     var irisFeedbackError: String?
     var showAppleIDLogin = false
     var pendingWebAuthContinuation: CheckedContinuation<IrisSession?, Never>?
+    var irisFetchTasksByAppId: [String: Task<Void, Never>] = [:]
+    var irisLastFetchedAtByAppId: [String: Date] = [:]
     var attachedSubmissionItemIDs: Set<String> = []  // IAP/subscription IDs attached via iris API
     var resolutionCenterThreads: [IrisResolutionCenterThread] = []
-    var rejectionMessages: [IrisResolutionCenterMessage] = []
-    var rejectionReasons: [IrisReviewRejection] = []
-    var cachedFeedback: IrisFeedbackCache?  // loaded from disk, survives session expiry
+    var irisFeedbackCycles: [IrisFeedbackCycle] = []
 
     // App icon status (set externally; nil = not checked / missing)
     var appIconStatus: String?
@@ -101,7 +111,7 @@ final class ASCManager {
     var buildPipelineMessage: String = ""
 
     // Screenshot track state per device type
-    var trackSlots: [String: [TrackSlot?]] = [:]      // keyed by ascDisplayType, 10-element arrays
+    var trackSlots: [String: [TrackSlot?]] = [:]      // keyed by locale + ascDisplayType, 10-element arrays
     var savedTrackState: [String: [TrackSlot?]] = [:] // snapshot after last load/save
     var localScreenshotAssets: [LocalScreenshotAsset] = []
     var isSyncing = false
@@ -120,11 +130,13 @@ final class ASCManager {
     var loadedProjectId: String?
 
     // Submission readiness labels used by both the view model and background hydration.
+    static let overviewWhatsNewFieldLabel = "What's New"
     static let overviewLocalizationFieldLabels: Set<String> = [
         "App Name",
         "Description",
         "Keywords",
-        "Support URL"
+        "Support URL",
+        overviewWhatsNewFieldLabel
     ]
     static let overviewVersionFieldLabels: Set<String> = ["Copyright"]
     static let overviewAppInfoFieldLabels: Set<String> = ["Primary Category"]

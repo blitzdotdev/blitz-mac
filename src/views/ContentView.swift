@@ -39,6 +39,13 @@ struct ContentView: View {
         )
     }
 
+    private var createUpdateBinding: Binding<Bool> {
+        Binding(
+            get: { appState.ascManager.showCreateUpdateSheet },
+            set: { appState.ascManager.showCreateUpdateSheet = $0 }
+        )
+    }
+
     /// Consume pendingSetupProjectId and run project scaffolding if needed.
     private func launchTerminal() {
         let settings = appState.settingsStore
@@ -74,10 +81,10 @@ struct ContentView: View {
         }
     }
 
-    private func startPendingSetupIfNeeded() async {
+    private func startPendingSetupIfNeeded() async -> Bool {
         guard let pendingId = appState.projectSetup.pendingSetupProjectId,
               pendingId == appState.activeProjectId,
-              let project = appState.activeProject else { return }
+              let project = appState.activeProject else { return false }
         appState.projectSetup.pendingSetupProjectId = nil
         await appState.projectSetup.setup(
             projectId: project.id,
@@ -86,6 +93,7 @@ struct ContentView: View {
             projectType: project.type,
             platform: project.platform
         )
+        return true
     }
 
     private func refreshProjectFiles(projectId: String, projectType: ProjectType) {
@@ -147,7 +155,11 @@ struct ContentView: View {
             }
 
             // If a project was just created (e.g. from WelcomeWindow), run setup
-            await startPendingSetupIfNeeded()
+            if await startPendingSetupIfNeeded() {
+                // Re-hydrate project metadata after setup so launch sync sees the
+                // final local project state, including bundle IDs.
+                await appState.projectManager.loadProjects()
+            }
 
             // Auto-boot simulator when project opens
             await appState.simulatorManager.bootIfNeeded()
@@ -170,6 +182,7 @@ struct ContentView: View {
                     await appState.ascManager.ensureTabData(.app)
                 }
             }
+            await appState.performLaunchAppWallSyncIfNeeded()
         }
         .onChange(of: appState.activeProjectId) { _, newValue in
             if newValue == nil {
@@ -180,7 +193,10 @@ struct ContentView: View {
             } else {
                 // Project switched → ensure config files, run pending setup, reload ASC credentials
                 if let newId = newValue {
-                    appState.ascManager.prepareForProjectSwitch(to: newId)
+                    appState.ascManager.prepareForProjectSwitch(
+                        to: newId,
+                        bundleId: appState.activeProject?.metadata.bundleIdentifier
+                    )
                 }
 
                 if let newId = newValue, let projectType = appState.activeProject?.type {
@@ -188,7 +204,9 @@ struct ContentView: View {
                 }
 
                 Task {
-                    await startPendingSetupIfNeeded()
+                    if await startPendingSetupIfNeeded() {
+                        await appState.projectManager.loadProjects()
+                    }
                     if let newId = newValue, let project = appState.activeProject {
                         await appState.ascManager.loadCredentials(
                             for: newId,
@@ -259,12 +277,15 @@ struct ContentView: View {
         .sheet(isPresented: $appState.showImportProjectSheet) {
             ImportProjectSheet(appState: appState, isPresented: $appState.showImportProjectSheet)
         }
+        .sheet(isPresented: createUpdateBinding) {
+            CreateUpdateSheet(appState: appState)
+        }
         .sheet(isPresented: appleIDLoginBinding, onDismiss: {
             appState.ascManager.cancelPendingWebAuth()
         }) {
             AppleIDLoginSheet { session in
                 appState.ascManager.setIrisSession(session)
-                Task { await appState.ascManager.fetchRejectionFeedback() }
+                Task { await appState.ascManager.fetchRejectionFeedback(force: true) }
             }
         }
         .approvalAlert(appState: appState)

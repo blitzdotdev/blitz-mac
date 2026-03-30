@@ -22,6 +22,22 @@ enum BlitzPaths {
     /// User-facing Blitz bin directory: ~/.blitz/bin/
     static var bin: URL { root.appendingPathComponent("bin") }
 
+    /// Shared logs directory: ~/.blitz/logs/
+    static var logs: URL { root.appendingPathComponent("logs") }
+
+    /// One timestamped directory per app launch, used by the shared debug log.
+    static let launchLogSessionName: String = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone.current
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return "\(formatter.string(from: Date()))-\(ProcessInfo.processInfo.processIdentifier)"
+    }()
+
+    static var launchLogDirectory: URL { logs.appendingPathComponent(launchLogSessionName) }
+    static var launchLogFile: URL { launchLogDirectory.appendingPathComponent("blitz.log") }
+
     /// Shell integration directory: ~/.blitz/shell/
     static var shell: URL { root.appendingPathComponent("shell") }
 

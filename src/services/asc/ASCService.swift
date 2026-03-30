@@ -3,12 +3,46 @@ import Foundation
 final class AppStoreConnectService {
     private let client: ASCDaemonClient
     private let session = URLSession.shared
+    private let updateLogger = ASCUpdateLogger.shared
 
     init(credentials: ASCCredentials) {
         self.client = ASCDaemonClient(credentials: credentials)
     }
 
     // MARK: - HTTP
+
+    /// Centralized request path so every ASC call gets the same request/response logging.
+    private func performRequest(
+        method: String,
+        path: String,
+        queryItems: [URLQueryItem] = [],
+        headers: [String: String],
+        body: Data? = nil
+    ) async throws -> ASCDaemonClient.HTTPResponse {
+        let resolvedPath = try resolvedPath(path, queryItems: queryItems)
+        let requestId = UUID().uuidString
+        await updateLogger.request(id: requestId, method: method, path: resolvedPath, body: body)
+
+        do {
+            let response = try await client.request(
+                method: method,
+                path: resolvedPath,
+                headers: headers,
+                body: body
+            )
+            await updateLogger.response(
+                id: requestId,
+                method: method,
+                path: resolvedPath,
+                statusCode: response.statusCode,
+                body: response.body
+            )
+            return response
+        } catch {
+            await updateLogger.failure(id: requestId, method: method, path: resolvedPath, error: error)
+            throw error
+        }
+    }
 
     private func resolvedPath(_ rawPath: String, queryItems: [URLQueryItem] = []) throws -> String {
         let trimmedPath = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -35,9 +69,10 @@ final class AppStoreConnectService {
     }
 
     private func get<T: Decodable>(_ path: String, queryItems: [URLQueryItem] = [], as type: T.Type) async throws -> T {
-        let response = try await client.request(
+        let response = try await performRequest(
             method: "GET",
-            path: try resolvedPath(path, queryItems: queryItems),
+            path: path,
+            queryItems: queryItems,
             headers: ["Accept": "application/json"]
         )
         if !(200..<300).contains(response.statusCode) {
@@ -48,9 +83,9 @@ final class AppStoreConnectService {
     }
 
     private func patch(path: String, body: [String: Any]) async throws {
-        let response = try await client.request(
+        let response = try await performRequest(
             method: "PATCH",
-            path: try resolvedPath(path),
+            path: path,
             headers: [
                 "Accept": "application/json",
                 "Content-Type": "application/json",
@@ -64,9 +99,9 @@ final class AppStoreConnectService {
     }
 
     private func post(path: String, body: [String: Any]) async throws -> Data {
-        let response = try await client.request(
+        let response = try await performRequest(
             method: "POST",
-            path: try resolvedPath(path),
+            path: path,
             headers: [
                 "Accept": "application/json",
                 "Content-Type": "application/json",
@@ -81,9 +116,9 @@ final class AppStoreConnectService {
     }
 
     private func delete(path: String) async throws {
-        let response = try await client.request(
+        let response = try await performRequest(
             method: "DELETE",
-            path: try resolvedPath(path),
+            path: path,
             headers: ["Accept": "application/json"]
         )
         if !(200..<300).contains(response.statusCode) {
@@ -120,10 +155,27 @@ final class AppStoreConnectService {
         }
         request.httpBody = body
 
-        let (data, response) = try await session.data(for: request)
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            let respBody = String(data: data, encoding: .utf8) ?? ""
-            throw ASCError.httpError(http.statusCode, respBody)
+        let requestId = UUID().uuidString
+        await updateLogger.request(id: requestId, method: method, path: url.absoluteString, body: body)
+
+        do {
+            let (data, response) = try await session.data(for: request)
+            if let http = response as? HTTPURLResponse {
+                await updateLogger.response(
+                    id: requestId,
+                    method: method,
+                    path: url.absoluteString,
+                    statusCode: http.statusCode,
+                    body: data
+                )
+                if !(200..<300).contains(http.statusCode) {
+                    let respBody = String(data: data, encoding: .utf8) ?? ""
+                    throw ASCError.httpError(http.statusCode, respBody)
+                }
+            }
+        } catch {
+            await updateLogger.failure(id: requestId, method: method, path: url.absoluteString, error: error)
+            throw error
         }
     }
 
@@ -153,6 +205,34 @@ final class AppStoreConnectService {
             }
         }
         return app
+    }
+
+    /// Fetches all apps for the account, optionally filtering by app store version state.
+    /// Pass `appStoreStateFilter: "READY_FOR_SALE"` to get only live apps.
+    func fetchAllApps(appStoreStateFilter: String? = nil) async throws -> [ASCApp] {
+        var allApps: [ASCApp] = []
+        var nextPath: String? = nil
+
+        var initialQueryItems: [URLQueryItem] = [
+            URLQueryItem(name: "limit", value: "200"),
+            URLQueryItem(name: "fields[apps]", value: "bundleId,name,primaryLocale")
+        ]
+        if let state = appStoreStateFilter {
+            initialQueryItems.append(URLQueryItem(name: "filter[appStoreVersions.appStoreState]", value: state))
+        }
+
+        repeat {
+            let resp: ASCPaginatedResponse<ASCApp>
+            if let path = nextPath {
+                resp = try await get(path, as: ASCPaginatedResponse<ASCApp>.self)
+            } else {
+                resp = try await get("apps", queryItems: initialQueryItems, as: ASCPaginatedResponse<ASCApp>.self)
+            }
+            allApps.append(contentsOf: resp.data)
+            nextPath = resp.links?.next
+        } while nextPath != nil
+
+        return allApps
     }
 
     // MARK: - App Store Versions
@@ -295,6 +375,43 @@ final class AppStoreConnectService {
 
     // MARK: - Write: Version
 
+    func createAppStoreVersion(
+        appId: String,
+        versionString: String,
+        platform: String,
+        copyright: String? = nil,
+        releaseType: String? = nil
+    ) async throws -> ASCAppStoreVersion {
+        var attributes: [String: Any] = [
+            "platform": platform,
+            "versionString": versionString
+        ]
+        if let copyright, !copyright.isEmpty {
+            attributes["copyright"] = copyright
+        }
+        if let releaseType, !releaseType.isEmpty {
+            attributes["releaseType"] = releaseType
+        }
+
+        let body: [String: Any] = [
+            "data": [
+                "type": "appStoreVersions",
+                "attributes": attributes,
+                "relationships": [
+                    "app": [
+                        "data": [
+                            "type": "apps",
+                            "id": appId
+                        ]
+                    ]
+                ]
+            ] as [String: Any]
+        ]
+
+        let data = try await post(path: "appStoreVersions", body: body)
+        return try JSONDecoder().decode(ASCSingleResponse<ASCAppStoreVersion>.self, from: data).data
+    }
+
     func patchVersion(id: String, fields: [String: String]) async throws {
         let body: [String: Any] = [
             "data": [
@@ -304,6 +421,33 @@ final class AppStoreConnectService {
             ]
         ]
         try await patch(path: "appStoreVersions/\(id)", body: body)
+    }
+
+    func createVersionLocalization(
+        versionId: String,
+        locale: String,
+        fields: [String: String] = [:]
+    ) async throws -> ASCVersionLocalization {
+        var attributes = fields
+        attributes["locale"] = locale
+
+        let body: [String: Any] = [
+            "data": [
+                "type": "appStoreVersionLocalizations",
+                "attributes": attributes,
+                "relationships": [
+                    "appStoreVersion": [
+                        "data": [
+                            "type": "appStoreVersions",
+                            "id": versionId
+                        ]
+                    ]
+                ]
+            ] as [String: Any]
+        ]
+
+        let data = try await post(path: "appStoreVersionLocalizations", body: body)
+        return try JSONDecoder().decode(ASCSingleResponse<ASCVersionLocalization>.self, from: data).data
     }
 
     /// Attach a build to an app store version (PATCH relationship)
@@ -469,17 +613,17 @@ final class AppStoreConnectService {
             "apps/\(appId)/appPriceSchedule",
             as: ASCSingleResponse<ASCPriceSchedule>.self
         )
-        let pricesResponse = try await client.request(
+        // ASC returns 404 here when pricing has never been configured, which is
+        // not an error state for Blitz. We still route the request through the
+        // shared logger so 409s and malformed payloads are captured verbatim.
+        let pricesResponse = try await performRequest(
             method: "GET",
-            path: try resolvedPath(
-                "appPriceSchedules/\(schedule.data.id)/manualPrices",
-                queryItems: [
-                    URLQueryItem(name: "include", value: "appPricePoint"),
-                    URLQueryItem(name: "limit", value: "200")
-                ]
-            ),
-            headers: ["Accept": "application/json"],
-            expectedStatusCodes: [404]
+            path: "appPriceSchedules/\(schedule.data.id)/manualPrices",
+            queryItems: [
+                URLQueryItem(name: "include", value: "appPricePoint"),
+                URLQueryItem(name: "limit", value: "200")
+            ],
+            headers: ["Accept": "application/json"]
         )
         if pricesResponse.statusCode == 404 {
             return ASCAppPricingState(
@@ -1291,16 +1435,48 @@ final class AppStoreConnectService {
 
     // MARK: - Fetch: AppInfoLocalization
 
-    func fetchAppInfoLocalization(appInfoId: String) async throws -> ASCAppInfoLocalization {
+    func fetchAppInfoLocalizations(appInfoId: String) async throws -> [ASCAppInfoLocalization] {
         let resp = try await get(
             "appInfos/\(appInfoId)/appInfoLocalizations",
-            queryItems: [URLQueryItem(name: "limit", value: "1")],
+            queryItems: [URLQueryItem(name: "limit", value: "200")],
             as: ASCListResponse<ASCAppInfoLocalization>.self
         )
-        guard let loc = resp.data.first else {
+        return resp.data
+    }
+
+    func fetchAppInfoLocalization(appInfoId: String) async throws -> ASCAppInfoLocalization {
+        let localizations = try await fetchAppInfoLocalizations(appInfoId: appInfoId)
+        guard let loc = localizations.first else {
             throw ASCError.notFound("AppInfoLocalization for appInfo \(appInfoId)")
         }
         return loc
+    }
+
+    func createAppInfoLocalization(
+        appInfoId: String,
+        locale: String,
+        fields: [String: String] = [:]
+    ) async throws -> ASCAppInfoLocalization {
+        var attributes = fields
+        attributes["locale"] = locale
+
+        let body: [String: Any] = [
+            "data": [
+                "type": "appInfoLocalizations",
+                "attributes": attributes,
+                "relationships": [
+                    "appInfo": [
+                        "data": [
+                            "type": "appInfos",
+                            "id": appInfoId
+                        ]
+                    ]
+                ]
+            ]
+        ]
+
+        let data = try await post(path: "appInfoLocalizations", body: body)
+        return try JSONDecoder().decode(ASCSingleResponse<ASCAppInfoLocalization>.self, from: data).data
     }
 
     // MARK: - Pricing Check
@@ -1308,34 +1484,29 @@ final class AppStoreConnectService {
     /// Check if pricing has been configured for an app.
     /// Fetches the price schedule and checks for manual prices.
     func fetchPricingConfigured(appId: String) async -> Bool {
-        do {
-            // First get the schedule ID
-            let schedule = try await get(
-                "apps/\(appId)/appPriceSchedule",
-                as: ASCSingleResponse<ASCPriceSchedule>.self
-            )
-            // Then check if it has manual prices configured
-            let pricesResponse = try await client.request(
-                method: "GET",
-                path: try resolvedPath(
-                    "appPriceSchedules/\(schedule.data.id)/manualPrices",
-                    queryItems: [URLQueryItem(name: "limit", value: "1")]
-                ),
-                headers: ["Accept": "application/json"],
-                expectedStatusCodes: [404]
-            )
-            if pricesResponse.statusCode == 404 {
-                return false
-            }
-            guard (200..<300).contains(pricesResponse.statusCode) else {
-                let body = String(data: pricesResponse.body, encoding: .utf8) ?? ""
-                throw ASCError.httpError(pricesResponse.statusCode, body)
-            }
-            let prices = try JSONDecoder().decode(ASCListResponse<ASCPriceScheduleEntry>.self, from: pricesResponse.body)
-            return !prices.data.isEmpty
-        } catch {
+        (try? await fetchPricingConfiguredDetailed(appId: appId)) ?? false
+    }
+
+    func fetchPricingConfiguredDetailed(appId: String) async throws -> Bool {
+        let schedule = try await get(
+            "apps/\(appId)/appPriceSchedule",
+            as: ASCSingleResponse<ASCPriceSchedule>.self
+        )
+        let pricesResponse = try await performRequest(
+            method: "GET",
+            path: "appPriceSchedules/\(schedule.data.id)/manualPrices",
+            queryItems: [URLQueryItem(name: "limit", value: "1")],
+            headers: ["Accept": "application/json"]
+        )
+        if pricesResponse.statusCode == 404 {
             return false
         }
+        guard (200..<300).contains(pricesResponse.statusCode) else {
+            let body = String(data: pricesResponse.body, encoding: .utf8) ?? ""
+            throw ASCError.httpError(pricesResponse.statusCode, body)
+        }
+        let prices = try JSONDecoder().decode(ASCListResponse<ASCPriceScheduleEntry>.self, from: pricesResponse.body)
+        return !prices.data.isEmpty
     }
 
     private static func isoDateString(_ date: Date) -> String {
@@ -1483,6 +1654,18 @@ final class AppStoreConnectService {
         return resp.data.first
     }
 
+    func fetchBuildAttachedToVersion(versionId: String) async throws -> ASCBuild? {
+        do {
+            let resp = try await get(
+                "appStoreVersions/\(versionId)/build",
+                as: ASCSingleResponse<ASCBuild>.self
+            )
+            return resp.data
+        } catch let ASCError.httpError(code, _) where code == 404 {
+            return nil
+        }
+    }
+
     // MARK: - Fetch Review Submissions
 
     func fetchReviewSubmissions(appId: String) async throws -> [ASCReviewSubmission] {
@@ -1495,7 +1678,8 @@ final class AppStoreConnectService {
 
     func fetchReviewSubmissionItems(submissionId: String) async throws -> [ASCReviewSubmissionItem] {
         let resp = try await get("reviewSubmissions/\(submissionId)/items", queryItems: [
-            URLQueryItem(name: "limit", value: "50")
+            URLQueryItem(name: "limit", value: "50"),
+            URLQueryItem(name: "include", value: "appStoreVersion"),
         ], as: ASCPaginatedResponse<ASCReviewSubmissionItem>.self)
         return resp.data
     }

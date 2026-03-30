@@ -286,15 +286,35 @@ extension MCPExecutor {
                                 buildId: newBuild.id,
                                 usesNonExemptEncryption: false
                             )
-                            let versionId = await MainActor.run(body: {
-                                appStateRef.ascManager.pendingVersionId
+                            let versionId = await MainActor.run(body: { () -> String? in
+                                let asc = appStateRef.ascManager
+                                if let selectedVersion = asc.selectedVersion,
+                                   ASCReleaseStatus.isEditable(selectedVersion.attributes.appStoreState) {
+                                    return selectedVersion.id
+                                }
+                                return asc.editableVersion?.id
                             })
                             if let versionId {
                                 do {
                                     try await service.attachBuild(versionId: versionId, buildId: newBuild.id)
                                     allLog.append("Build \(version) attached to app store version.")
+                                    await ASCUpdateLogger.shared.event("build_pipeline_auto_attach_succeeded", metadata: [
+                                        "buildId": newBuild.id,
+                                        "buildVersion": version,
+                                        "versionId": versionId,
+                                    ])
+                                    await MainActor.run {
+                                        if appStateRef.ascManager.selectedVersion?.id == versionId {
+                                            appStateRef.ascManager.selectedVersionBuild = newBuild
+                                        }
+                                    }
                                 } catch {
                                     allLog.append("Warning: could not auto-attach build - \(error.localizedDescription)")
+                                    await ASCUpdateLogger.shared.event("build_pipeline_auto_attach_failed", metadata: [
+                                        "buildId": newBuild.id,
+                                        "error": error.localizedDescription,
+                                        "versionId": versionId,
+                                    ])
                                 }
                             }
                             break

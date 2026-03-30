@@ -75,6 +75,11 @@ enum ASCReleaseStatus {
         "READY_FOR_SALE",
     ]
 
+    static let removedStates: Set<String> = [
+        "REMOVED_FROM_SALE",
+        "DEVELOPER_REMOVED_FROM_SALE",
+    ]
+
     static let pendingReviewStates: Set<String> = [
         "ACCEPTED",
         "IN_REVIEW",
@@ -91,6 +96,15 @@ enum ASCReleaseStatus {
         "METADATA_REJECTED",
         "REJECTED",
     ]
+
+    static let editableStates: Set<String> = Set([
+        "DEVELOPER_REJECTED",
+        "PREPARE_FOR_SUBMISSION",
+    ]).union(rejectedStates)
+
+    static let lockedStates: Set<String> = liveStates
+        .union(removedStates)
+        .union(pendingReviewStates)
 
     static func submissionHistoryEventType(forVersionState state: String?) -> ASCSubmissionHistoryEventType? {
         switch normalize(state) {
@@ -124,6 +138,32 @@ enum ASCReleaseStatus {
         return .submitted
     }
 
+    static func isLive(_ state: String?) -> Bool {
+        liveStates.contains(normalize(state))
+    }
+
+    static func isRemoved(_ state: String?) -> Bool {
+        removedStates.contains(normalize(state))
+    }
+
+    static func isLocked(_ state: String?) -> Bool {
+        lockedStates.contains(normalize(state))
+    }
+
+    static func isEditable(_ state: String?) -> Bool {
+        let normalized = normalize(state)
+        guard !normalized.isEmpty else { return false }
+        if editableStates.contains(normalized) {
+            return true
+        }
+        return !isLocked(normalized)
+    }
+
+    static func isCurrentUpdateCandidate(_ state: String?) -> Bool {
+        let normalized = normalize(state)
+        return !normalized.isEmpty && !isLive(normalized) && !isRemoved(normalized)
+    }
+
     static func normalize(_ state: String?) -> String {
         state?
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -138,6 +178,45 @@ enum ASCReleaseStatus {
             }
             return lhs.id > rhs.id
         }
+    }
+
+    /// App Wall shows one compact version summary per app, so it should use the
+    /// same "current" version that the dashboard summary logic would surface
+    /// instead of blindly taking the newest row.
+    static func appWallCurrentVersion(for versions: [ASCAppStoreVersion]) -> ASCAppStoreVersion? {
+        let sortedVersions = sortedVersionsByRecency(versions)
+        guard !sortedVersions.isEmpty else { return nil }
+
+        let liveIndex = sortedVersions.firstIndex {
+            liveStates.contains(normalize($0.attributes.appStoreState))
+        }
+        let actionableIndex = sortedVersions.firstIndex { version in
+            let state = normalize(version.attributes.appStoreState)
+            return pendingReviewStates.contains(state) || rejectedStates.contains(state)
+        }
+
+        if let actionableIndex {
+            let actionableStateIsCurrent = liveIndex == nil || actionableIndex < liveIndex!
+            if actionableStateIsCurrent {
+                return sortedVersions[actionableIndex]
+            }
+        }
+
+        if let liveIndex {
+            return sortedVersions[liveIndex]
+        }
+
+        let newestVersion = sortedVersions[0]
+        let newestState = normalize(newestVersion.attributes.appStoreState)
+        return newestState.isEmpty ? nil : newestVersion
+    }
+
+    /// App Wall shows one compact state per app, so it should summarize the
+    /// version set the same way the dashboard does instead of copying the newest
+    /// version row verbatim. That keeps live apps live when a newer draft exists.
+    static func appWallCurrentState(for versions: [ASCAppStoreVersion]) -> String? {
+        normalize(appWallCurrentVersion(for: versions)?.attributes.appStoreState)
+            .nilIfEmpty
     }
 
     private static func compareDates(_ lhs: String?, _ rhs: String?) -> Int {
@@ -176,5 +255,11 @@ enum ASCReleaseStatus {
 
         let formatter = ISO8601DateFormatter()
         return formatter.date(from: trimmed)
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }

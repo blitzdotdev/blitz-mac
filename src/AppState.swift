@@ -92,6 +92,28 @@ enum AppTab: String, CaseIterable, Identifiable {
     }
 }
 
+/// Sub-tabs within the Dashboard tab (top navbar)
+enum DashboardSubTab: String, CaseIterable, Identifiable {
+    case myApps
+    case allApps
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .myApps: "My Apps"
+        case .allApps: "All Apps"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .myApps: "folder"
+        case .allApps: "globe"
+        }
+    }
+}
+
 /// Sub-tabs within the App tab (top navbar)
 enum AppSubTab: String, CaseIterable, Identifiable {
     case overview
@@ -131,6 +153,7 @@ final class AppState {
     var activeProjectId: String?
     var activeTab: AppTab = .dashboard
     var activeAppSubTab: AppSubTab = .overview
+    var activeDashboardSubTab: DashboardSubTab = .myApps
 
     // Child observable managers
     var projectManager = ProjectManager()
@@ -156,8 +179,10 @@ final class AppState {
     var showApprovalAlert: Bool = false
     var toolExecutor: MCPExecutor?
     var mcpServer: MCPServerService?
+    var hasAttemptedLaunchAppWallSync = false
 
     init() {
+        ascManager.appState = self
         // Boot MCP server eagerly — this runs before any SwiftUI view callback
         MCPBootstrap.shared.boot(appState: self)
         ascManager.loadStoredCredentialsIfNeeded()
@@ -166,6 +191,41 @@ final class AppState {
     var activeProject: Project? {
         guard let id = activeProjectId else { return nil }
         return projectManager.projects.first { $0.id == id }
+    }
+
+    func performLaunchAppWallSyncIfNeeded() async {
+        guard !hasAttemptedLaunchAppWallSync else { return }
+        hasAttemptedLaunchAppWallSync = true
+
+        guard UserDefaults.standard.bool(forKey: "appWallSyncConsented") else {
+            Log("[AppWall] launch auto-sync skipped: sync toggle is off")
+            return
+        }
+
+        let projects = projectManager.projects
+        guard !projects.isEmpty else {
+            Log("[AppWall] launch auto-sync skipped: no local projects loaded")
+            return
+        }
+
+        guard let credentials = ascManager.credentials ?? ASCCredentials.load() else {
+            Log("[AppWall] launch auto-sync skipped: missing ASC credentials")
+            return
+        }
+
+        do {
+            let result = try await AppWallSyncRunner.syncLocalLiveApps(
+                projects: projects,
+                credentials: credentials
+            )
+            if let warning = result.warning {
+                Log("[AppWall] launch auto-sync completed with warnings: success=\(result.successCount) warning=\(warning)")
+            } else {
+                Log("[AppWall] launch auto-sync completed: success=\(result.successCount)")
+            }
+        } catch {
+            Log("[AppWall] launch auto-sync failed: \(error.localizedDescription)")
+        }
     }
 }
 

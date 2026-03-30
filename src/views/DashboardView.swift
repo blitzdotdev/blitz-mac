@@ -15,6 +15,71 @@ struct DashboardView: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            // Sub-tab navbar
+            topNavbar
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(.bar)
+
+            Divider()
+
+            // Sub-tab content
+            subTabContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    // MARK: - Top Navbar
+
+    private var topNavbar: some View {
+        HStack(spacing: 2) {
+            ForEach(DashboardSubTab.allCases) { tab in
+                Button {
+                    appState.activeDashboardSubTab = tab
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: tab.systemImage)
+                            .font(.system(size: 11))
+                        Text(tab.label)
+                            .font(.system(size: 12, weight: .medium))
+                            .lineLimit(1)
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(
+                        appState.activeDashboardSubTab == tab
+                            ? Color.accentColor.opacity(0.12)
+                            : Color.clear
+                    )
+                    .foregroundStyle(
+                        appState.activeDashboardSubTab == tab
+                            ? Color.accentColor
+                            : Color.secondary
+                    )
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+
+            Spacer()
+        }
+    }
+
+    // MARK: - Sub-tab Content
+
+    @ViewBuilder
+    private var subTabContent: some View {
+        switch appState.activeDashboardSubTab {
+        case .myApps:
+            myAppsContent
+        case .allApps:
+            AllAppsView(appState: appState)
+        }
+    }
+
+    private var myAppsContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 // Stat cards
@@ -42,16 +107,9 @@ struct DashboardView: View {
                     )
                 }
 
-                // App grid header
-                HStack {
-                    Text("My Apps")
-                        .font(.title3.weight(.semibold))
-                    Spacer()
-                }
-
                 // App grid
                 LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 140, maximum: 180), spacing: 16)],
+                    columns: [GridItem(.adaptive(minimum: 140, maximum: 180), spacing: 8, alignment: .leading)],
                     spacing: 16
                 ) {
                     ForEach(projects) { project in
@@ -67,6 +125,7 @@ struct DashboardView: View {
             .padding(20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(DottedCanvasBackground())
         .overlay(alignment: .bottomTrailing) {
             Button {
                 appState.showNewProjectSheet = true
@@ -118,7 +177,7 @@ struct DashboardView: View {
     private func appCard(project: Project) -> some View {
         let isSelected = project.id == appState.activeProjectId
 
-        return VStack(spacing: 8) {
+        return VStack(spacing: 6) {
             ProjectAppIconView(project: project, size: 56, cornerRadius: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12)
@@ -128,23 +187,22 @@ struct DashboardView: View {
                         .foregroundStyle(projectColor(project))
                 }
             }
+            .padding(3)
+            .overlay(
+                RoundedRectangle(cornerRadius: 15)
+                    .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+            )
 
-            Text(project.name)
-                .font(.callout.weight(.medium))
-                .lineLimit(1)
-
-            statusLabel(for: project)
-                .font(.caption2)
-                .lineLimit(1)
+            HStack(spacing: 3) {
+                statusIcon(for: project)
+                    .font(.system(size: 9))
+                Text(project.name)
+                    .font(.callout.weight(.medium))
+                    .lineLimit(1)
+            }
         }
         .padding(14)
         .frame(maxWidth: .infinity)
-        .background(isSelected ? Color.accentColor.opacity(0.1) : Color(.controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
-        )
         .contentShape(Rectangle())
     }
 
@@ -224,28 +282,22 @@ struct DashboardView: View {
     }
 
     @ViewBuilder
-    private func statusLabel(for project: Project) -> some View {
+    private func statusIcon(for project: Project) -> some View {
         let bundleId = project.metadata.bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if let status = dashboardSummary.projectStatuses[bundleId] {
             if status.isRejected {
-                Label("Rejected", systemImage: "xmark.circle.fill")
+                Image(systemName: "xmark.circle.fill")
                     .foregroundStyle(.red)
             } else if status.isPendingReview {
-                Label("In Review", systemImage: "clock.fill")
+                Image(systemName: "clock.fill")
                     .foregroundStyle(.orange)
             } else if status.isLiveOnStore {
-                Label("Live", systemImage: "checkmark.circle.fill")
+                Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)
             } else {
-                Label("Preparing", systemImage: "pencil.circle.fill")
+                Image(systemName: "pencil.circle.fill")
                     .foregroundStyle(.secondary)
             }
-        } else if dashboardSummary.hasLoadedSummary || bundleId.isEmpty {
-            Text(project.type.rawValue)
-                .foregroundStyle(.secondary)
-        } else {
-            Text(bundleId)
-                .foregroundStyle(.secondary)
         }
     }
 

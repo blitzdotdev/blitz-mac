@@ -15,12 +15,13 @@ extension ASCManager {
         // - contentRightsDeclaration → apps (PATCH /v1/apps/{id})
         // - primaryCategory, subcategories → appInfos relationships (PATCH /v1/appInfos/{id})
         if field == "copyright" {
-            guard let versionId = appStoreVersions.first?.id else { return }
+            guard let versionId = selectedVersion?.id else { return }
             do {
                 try await service.patchVersion(id: versionId, fields: [field: value])
                 // Re-fetch versions so submissionReadiness picks up the new copyright
                 if let appId = app?.id {
                     appStoreVersions = try await service.fetchAppStoreVersions(appId: appId)
+                    syncSelectedVersion(preferredVersionId: versionId)
                 }
             } catch {
                 writeError = error.localizedDescription
@@ -49,20 +50,18 @@ extension ASCManager {
     }
 
     /// Update a field on appInfoLocalizations (name, subtitle, privacyPolicyUrl)
-    func updateAppInfoLocalizationField(_ field: String, value: String) async {
-        guard let service else { return }
-        guard let locId = appInfoLocalization?.id else { return }
-        writeError = nil
-        // Map UI field names to API field names
-        let apiField = (field == "title") ? "name" : field
-        do {
-            try await service.patchAppInfoLocalization(id: locId, fields: [apiField: value])
-            if let infoId = appInfo?.id {
-                appInfoLocalization = try? await service.fetchAppInfoLocalization(appInfoId: infoId)
-            }
-        } catch {
-            writeError = error.localizedDescription
+    func updateAppInfoLocalizationField(_ field: String, value: String, locale: String? = nil) async {
+        let targetLocale = locale ?? activeStoreListingLocale()
+        guard let targetLocale else {
+            writeError = "No app info localization selected."
+            return
         }
+
+        await updateStoreListingFields(
+            versionFields: [:],
+            appInfoFields: [field: value],
+            locale: targetLocale
+        )
     }
 
     // MARK: - Age Rating
@@ -74,11 +73,14 @@ extension ASCManager {
         do {
             try await service.patchAgeRating(id: id, attributes: attributes)
             if let infoId = appInfo?.id {
-                ageRatingDeclaration = try? await service.fetchAgeRating(appInfoId: infoId)
+                ageRatingDeclaration = await fetchAgeRatingLogged(
+                    service: service,
+                    appInfoId: infoId,
+                    context: "age_rating_update"
+                )
             }
         } catch {
             writeError = error.localizedDescription
         }
     }
 }
-

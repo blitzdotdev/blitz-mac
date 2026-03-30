@@ -181,11 +181,12 @@ enum MCPRegistry {
         // -- ASC Form Tools --
         tools.append(tool(
             name: "asc_fill_form",
-            description: "Fill one or more App Store Connect form fields. Navigates to the tab automatically if auto-nav is enabled. See CLAUDE.md for complete field reference.",
+            description: "Fill one or more App Store Connect form fields. Navigates to the tab automatically if auto-nav is enabled. For storeListing, pass locale to target a specific localization safely. See CLAUDE.md for complete field reference.",
             properties: [
                 "tab": ["type": "string", "description": "Target form tab", "enum": [
                     "storeListing", "appDetails", "monetization", "review.ageRating", "review.contact", "settings.bundleId"
                 ]],
+                "locale": ["type": "string", "description": "For storeListing only: locale code to target (for example en-US or ja)."],
                 "fields": [
                     "type": "array",
                     "items": [
@@ -201,7 +202,25 @@ enum MCPRegistry {
             required: ["tab", "fields"]
         ))
 
+        tools.append(tool(
+            name: "store_listing_switch_localization",
+            description: "Refresh store-listing localizations from App Store Connect and switch the Blitz store-listing tab to the requested locale.",
+            properties: [
+                "locale": ["type": "string", "description": "Locale code to select in the store-listing tab (for example en-US or ja)"]
+            ],
+            required: ["locale"]
+        ))
+
         // -- Screenshot Track Tools --
+        tools.append(tool(
+            name: "screenshots_switch_localization",
+            description: "Refresh screenshot localizations from App Store Connect, switch the Blitz screenshots tab to the requested locale, and hydrate that locale's screenshot tracks. Call this before screenshots_set_track or screenshots_save when targeting a specific locale.",
+            properties: [
+                "locale": ["type": "string", "description": "Locale code to select in the screenshots tab (for example en-US or en-GB)"]
+            ],
+            required: ["locale"]
+        ))
+
         tools.append(tool(
             name: "screenshots_add_asset",
             description: "Copy a screenshot file into the project's local screenshots asset library.",
@@ -214,23 +233,46 @@ enum MCPRegistry {
 
         tools.append(tool(
             name: "screenshots_set_track",
-            description: "Place a local screenshot asset into a specific track slot (1-10) for upload staging.",
+            description: "Place a local screenshot asset into a specific track slot (1-10) for upload staging. If you are targeting a specific locale, call screenshots_switch_localization first.",
             properties: [
                 "assetFileName": ["type": "string", "description": "File name of the asset in the local screenshots library"],
                 "slotIndex": ["type": "integer", "description": "Track slot position (1-10)"],
-                "displayType": ["type": "string", "description": "Display type (default APP_IPHONE_67)", "enum": ["APP_IPHONE_67", "APP_IPAD_PRO_3GEN_129", "APP_DESKTOP"]]
+                "displayType": ["type": "string", "description": "Display type (default APP_IPHONE_67)", "enum": ["APP_IPHONE_67", "APP_IPAD_PRO_3GEN_129", "APP_DESKTOP"]],
+                "locale": ["type": "string", "description": "Locale code. Must match the currently selected screenshots locale in Blitz."]
             ],
             required: ["assetFileName", "slotIndex"]
         ))
 
         tools.append(tool(
             name: "screenshots_save",
-            description: "Save the current screenshot track to App Store Connect. Syncs all changes (additions, removals, reorder) for the specified device type.",
+            description: "Save the current screenshot track to App Store Connect. Syncs all changes (additions, removals, reorder) for the specified device type. If you are targeting a specific locale, call screenshots_switch_localization first.",
             properties: [
                 "displayType": ["type": "string", "description": "Display type (default APP_IPHONE_67)", "enum": ["APP_IPHONE_67", "APP_IPAD_PRO_3GEN_129", "APP_DESKTOP"]],
-                "locale": ["type": "string", "description": "Locale code (default en-US)"]
+                "locale": ["type": "string", "description": "Locale code. Must match the currently selected screenshots locale in Blitz."]
             ],
             required: []
+        ))
+
+        tools.append(tool(
+            name: "asc_select_version",
+            description: "Select an App Store version in Blitz by version ID or version string, then refresh the active release tab or overview.",
+            properties: [
+                "version": ["type": "string", "description": "Version ID or version string (for example \"1.2.3\")"]
+            ],
+            required: ["version"]
+        ))
+
+        tools.append(tool(
+            name: "asc_create_version",
+            description: "Create a new App Store software update version for the current app. Optionally copy metadata or review contact details from another version and attach a build immediately.",
+            properties: [
+                "versionString": ["type": "string", "description": "New App Store version string (for example \"1.2.4\")"],
+                "copyFromVersion": ["type": "string", "description": "Optional source version ID or version string to copy from"],
+                "copyMetadata": ["type": "boolean", "description": "Copy store listing metadata from the source version. Defaults to true."],
+                "copyReviewDetail": ["type": "boolean", "description": "Copy review contact details from the source version. Defaults to true."],
+                "attachBuildId": ["type": "string", "description": "Optional build ID to attach to the new version immediately"]
+            ],
+            required: ["versionString"]
         ))
 
         tools.append(tool(
@@ -352,7 +394,13 @@ enum MCPRegistry {
             return .query
         case "asc_fill_form":
             return .ascFormMutation
-        case "screenshots_add_asset", "screenshots_set_track", "screenshots_save":
+        case "store_listing_switch_localization":
+            return .ascFormMutation
+        case "asc_select_version":
+            return .query
+        case "asc_create_version":
+            return .ascSubmitMutation
+        case "screenshots_switch_localization", "screenshots_add_asset", "screenshots_set_track", "screenshots_save":
             return .ascScreenshotMutation
         case "asc_open_submit_preview":
             return .ascSubmitMutation

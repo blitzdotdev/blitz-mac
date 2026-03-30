@@ -14,17 +14,56 @@ extension ASCManager {
             && attributes.gamblingSimulated != nil
     }
 
+    private func whatsNewReadinessFields() -> [SubmissionReadiness.FieldStatus] {
+        guard selectedVersionRequiresWhatsNew else { return [] }
+
+        // Update versions require release notes for every loaded localization on
+        // that version, not just the primary locale used elsewhere in Overview.
+        if localizations.isEmpty {
+            return [
+                SubmissionReadiness.FieldStatus(
+                    label: Self.overviewWhatsNewFieldLabel,
+                    value: nil,
+                    isLoading: overviewReadinessLoadingFields.contains(Self.overviewWhatsNewFieldLabel),
+                    hint: "Fill What's New in Store Listing before submitting this update."
+                )
+            ]
+        }
+
+        let missingLocalizations = selectedVersionLocalizationsMissingWhatsNew()
+        if missingLocalizations.isEmpty {
+            return [
+                SubmissionReadiness.FieldStatus(
+                    label: Self.overviewWhatsNewFieldLabel,
+                    value: "Configured for \(localizations.count) localization(s)",
+                    hint: "App Store updates require What's New text for each localization on the selected version."
+                )
+            ]
+        }
+
+        return missingLocalizations.map { localization in
+            SubmissionReadiness.FieldStatus(
+                label: "\(Self.overviewWhatsNewFieldLabel) (\(localization.attributes.locale))",
+                value: nil,
+                hint: "Fill What's New for locale \(localization.attributes.locale) in Store Listing before submitting this update."
+            )
+        }
+    }
+
     var submissionReadiness: SubmissionReadiness {
-        let localization = localizations.first
-        let appInfoLocalization = appInfoLocalization
+        let localization = primaryVersionLocalization()
+        let appInfoLocalization = primaryAppInfoLocalization()
         let review = reviewDetail
         let demoRequired = review?.attributes.demoAccountRequired == true
-        let version = appStoreVersions.first
+        let version = selectedVersion
+        let readinessLocale = localization?.attributes.locale
+        let readinessScreenshotSets = readinessLocale.map(screenshotSetsForLocale) ?? []
+        let readinessScreenshots = readinessLocale.map(screenshotsForLocale) ?? [:]
 
-        let macScreenshots = screenshotSets.first { $0.attributes.screenshotDisplayType == "APP_DESKTOP" }
+        let macScreenshots = readinessScreenshotSets.first { $0.attributes.screenshotDisplayType == "APP_DESKTOP" }
         let isMacApp = macScreenshots != nil
-        let iphoneScreenshots = screenshotSets.first { $0.attributes.screenshotDisplayType == "APP_IPHONE_67" }
-        let ipadScreenshots = screenshotSets.first { $0.attributes.screenshotDisplayType == "APP_IPAD_PRO_3GEN_129" }
+        let iphoneScreenshots = readinessScreenshotSets.first { $0.attributes.screenshotDisplayType == "APP_IPHONE_67" }
+        let ipadScreenshots = readinessScreenshotSets.first { $0.attributes.screenshotDisplayType == "APP_IPAD_PRO_3GEN_129" }
 
         let privacyUrl: String? = app.map {
             "https://appstoreconnect.apple.com/apps/\($0.id)/distribution/privacy"
@@ -52,6 +91,11 @@ extension ASCManager {
             readinessField(label: "Description", value: localization?.attributes.description),
             readinessField(label: "Keywords", value: localization?.attributes.keywords),
             readinessField(label: "Support URL", value: localization?.attributes.supportUrl),
+        ]
+
+        fields.append(contentsOf: whatsNewReadinessFields())
+
+        fields.append(contentsOf: [
             readinessField(label: "Privacy Policy URL", value: appInfoLocalization?.attributes.privacyPolicyUrl),
             readinessField(label: "Copyright", value: version?.attributes.copyright),
             readinessField(label: "Content Rights", value: app?.contentRightsDeclaration),
@@ -62,7 +106,7 @@ extension ASCManager {
             readinessField(label: "Review Contact Last Name", value: review?.attributes.contactLastName),
             readinessField(label: "Review Contact Email", value: review?.attributes.contactEmail),
             readinessField(label: "Review Contact Phone", value: review?.attributes.contactPhone),
-        ]
+        ])
 
         if demoRequired {
             fields.append(readinessField(label: "Demo Account Name", value: review?.attributes.demoAccountName))
@@ -73,7 +117,7 @@ extension ASCManager {
 
         func validCount(for set: ASCScreenshotSet?) -> Int {
             guard let set else { return 0 }
-            if let screenshots = screenshots[set.id] {
+            if let screenshots = readinessScreenshots[set.id] {
                 return screenshots.filter { !$0.hasError }.count
             }
             return set.attributes.screenshotCount ?? 0
@@ -91,7 +135,7 @@ extension ASCManager {
 
         fields.append(contentsOf: [
             readinessField(label: "Privacy Nutrition Labels", value: nil, required: false, actionUrl: privacyUrl),
-            readinessField(label: "Build", value: builds.first?.attributes.version),
+            readinessField(label: "Build", value: selectedVersionBuild?.attributes.version),
         ])
 
         let approvedStates: Set<String> = [

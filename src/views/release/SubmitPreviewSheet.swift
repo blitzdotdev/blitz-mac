@@ -18,25 +18,25 @@ struct SubmitPreviewSheet: View {
         "WAITING_FOR_REVIEW", "IN_REVIEW", "PENDING_DEVELOPER_RELEASE", "READY_FOR_SALE"
     ]
 
-    private var pendingVersion: ASCAppStoreVersion? {
-        asc.appStoreVersions.first {
-            let s = $0.attributes.appStoreState ?? ""
-            return s != "READY_FOR_SALE" && s != "REMOVED_FROM_SALE"
-                && s != "DEVELOPER_REMOVED_FROM_SALE" && !s.isEmpty
-        }
+    private var targetVersion: ASCAppStoreVersion? {
+        asc.selectedVersion ?? asc.currentUpdateVersion ?? asc.appStoreVersions.first
+    }
+
+    private var hasActiveUpdate: Bool {
+        asc.currentUpdateVersion != nil
     }
 
     private var versionState: String {
-        pendingVersion?.attributes.appStoreState ?? ""
+        asc.currentUpdateVersion?.attributes.appStoreState ?? targetVersion?.attributes.appStoreState ?? ""
     }
 
     private var isSubmittable: Bool {
-        !Self.nonSubmittableStates.contains(versionState)
+        hasActiveUpdate && !Self.nonSubmittableStates.contains(versionState)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text(isSubmittable ? "Submit for Review" : "Submission Status")
+            Text(asc.canCreateUpdate ? "Create Update First" : (isSubmittable ? "Submit for Review" : "Submission Status"))
                 .font(.title2.weight(.semibold))
 
             // App header: icon + info
@@ -62,7 +62,7 @@ struct SubmitPreviewSheet: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(asc.app?.name ?? "App")
                         .font(.title3.weight(.semibold))
-                    if let version = pendingVersion ?? asc.appStoreVersions.first {
+                    if let version = targetVersion {
                         Text("Version \(version.attributes.versionString)")
                             .foregroundStyle(.secondary)
                     }
@@ -80,7 +80,9 @@ struct SubmitPreviewSheet: View {
 
             Divider()
 
-            if isSubmittable {
+            if asc.canCreateUpdate {
+                createUpdateRequiredContent
+            } else if isSubmittable {
                 submittableContent
             } else {
                 nonSubmittableContent
@@ -93,7 +95,13 @@ struct SubmitPreviewSheet: View {
                 }
                 .keyboardShortcut(.cancelAction)
                 Spacer()
-                if isSubmittable {
+                if asc.canCreateUpdate {
+                    Button("Create Update") {
+                        asc.showCreateUpdateSheet = true
+                        dismiss()
+                    }
+                    .buttonStyle(.borderedProminent)
+                } else if isSubmittable {
                     Button("Submit for Review") {
                         Task {
                             let buildId = selectedBuildId.isEmpty ? nil : selectedBuildId
@@ -115,10 +123,31 @@ struct SubmitPreviewSheet: View {
             if asc.builds.isEmpty {
                 await asc.refreshTabData(.builds)
             }
-            if selectedBuildId.isEmpty, let latest = validBuilds.first {
-                selectedBuildId = latest.id
+            if selectedBuildId.isEmpty {
+                selectedBuildId = asc.selectedVersionBuild?.id ?? validBuilds.first?.id ?? ""
             }
             appIcon = loadAppIcon()
+        }
+    }
+
+    private var createUpdateRequiredContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.title3)
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("This app is already live.")
+                        .font(.callout.weight(.medium))
+                    Text("Create a new App Store version before attaching a build and submitting an update.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.orange.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
         }
     }
 

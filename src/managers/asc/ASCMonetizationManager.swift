@@ -394,14 +394,25 @@ extension ASCManager {
     func refreshMonetization() async {
         guard let service else { return }
         guard let appId = app?.id else { return }
+        await ASCUpdateLogger.shared.event("monetization_refresh_started", metadata: [
+            "appId": appId,
+        ])
         do {
             inAppPurchases = try await service.fetchInAppPurchases(appId: appId)
             subscriptionGroups = try await service.fetchSubscriptionGroups(appId: appId)
             for group in subscriptionGroups {
                 subscriptionsPerGroup[group.id] = try await service.fetchSubscriptionsInGroup(groupId: group.id)
             }
+            await ASCUpdateLogger.shared.event("monetization_refresh_succeeded", metadata: [
+                "appId": appId,
+                "inAppPurchaseCount": String(inAppPurchases.count),
+                "subscriptionGroupCount": String(subscriptionGroups.count),
+            ])
         } catch {
             writeError = error.localizedDescription
+            await logDataFetchFailure("monetization_refresh_failed", error: error, metadata: [
+                "appId": appId,
+            ])
         }
     }
 
@@ -530,4 +541,3 @@ extension ASCManager {
         })
     }
 }
-

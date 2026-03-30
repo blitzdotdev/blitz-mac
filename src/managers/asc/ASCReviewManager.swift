@@ -8,14 +8,17 @@ extension ASCManager {
 
     func updateReviewContact(_ attributes: [String: Any]) async {
         guard let service else { return }
-        guard let versionId = appStoreVersions.first?.id else { return }
+        guard let versionId = selectedVersion?.id else { return }
         writeError = nil
         do {
             try await service.createOrPatchReviewDetail(versionId: versionId, attributes: attributes)
-            reviewDetail = try? await service.fetchReviewDetail(versionId: versionId)
+            reviewDetail = await fetchReviewDetailLogged(
+                service: service,
+                versionId: versionId,
+                context: "review_contact_update"
+            )
         } catch {
             writeError = error.localizedDescription
         }
     }
 }
-

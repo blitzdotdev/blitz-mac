@@ -30,6 +30,107 @@ extension MCPExecutor {
         "phone": "contactPhone",
     ]
 
+    private func screenshotsDisplayTypesForActiveProject() async -> [String] {
+        await MainActor.run {
+            switch appState.activeProject?.platform ?? .iOS {
+            case .iOS:
+                return ["APP_IPHONE_67", "APP_IPAD_PRO_3GEN_129"]
+            case .macOS:
+                return ["APP_DESKTOP"]
+            }
+        }
+    }
+
+    private func resolveStoreListingLocale(from args: [String: Any]) async -> String {
+        if let requestedLocale = (args["locale"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !requestedLocale.isEmpty {
+            return requestedLocale
+        }
+
+        return await MainActor.run {
+            appState.ascManager.activeStoreListingLocale() ?? "en-US"
+        }
+    }
+
+    private func prepareStoreListingLocale(
+        _ locale: String,
+        forceRefresh: Bool = false
+    ) async -> String? {
+        let trimmedLocale = locale.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedLocale.isEmpty else {
+            return "Error: locale is required."
+        }
+
+        let needsRefresh = await MainActor.run { () -> Bool in
+            let asc = appState.ascManager
+            asc.selectedStoreListingLocale = trimmedLocale
+            return forceRefresh
+                || asc.localizations.isEmpty
+                || !asc.localizations.contains(where: { $0.attributes.locale == trimmedLocale })
+                || asc.appInfoLocalizationsByLocale.isEmpty
+        }
+
+        if needsRefresh {
+            await appState.ascManager.refreshTabData(.storeListing)
+        }
+
+        let availableLocales = await MainActor.run {
+            appState.ascManager.localizations.map(\.attributes.locale).sorted()
+        }
+        guard availableLocales.contains(trimmedLocale) else {
+            let availableText = availableLocales.isEmpty ? "none" : availableLocales.joined(separator: ", ")
+            return "Error: store listing localization '\(trimmedLocale)' was not found after refreshing from ASC. "
+                + "Available localizations: \(availableText)"
+        }
+
+        await MainActor.run {
+            appState.ascManager.selectedStoreListingLocale = trimmedLocale
+        }
+        return nil
+    }
+
+    private func resolveScreenshotsLocale(from args: [String: Any]) async -> (locale: String, explicitlyRequested: Bool) {
+        if let requestedLocale = (args["locale"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !requestedLocale.isEmpty {
+            return (requestedLocale, true)
+        }
+
+        let locale = await MainActor.run {
+            appState.ascManager.selectedScreenshotsLocale
+                ?? appState.ascManager.localizations.first?.attributes.locale
+                ?? "en-US"
+        }
+        return (locale, false)
+    }
+
+    private func activeVersionScopedTabForRefresh() async -> AppTab {
+        await MainActor.run {
+            switch appState.activeTab {
+            case .storeListing, .screenshots, .appDetails, .review:
+                return appState.activeTab
+            default:
+                return .app
+            }
+        }
+    }
+
+    private func versionPayload(_ version: ASCAppStoreVersion) -> [String: Any] {
+        var payload: [String: Any] = [
+            "id": version.id,
+            "versionString": version.attributes.versionString,
+            "state": version.attributes.appStoreState ?? "unknown",
+        ]
+        if let createdDate = version.attributes.createdDate {
+            payload["createdDate"] = createdDate
+        }
+        if let releaseType = version.attributes.releaseType {
+            payload["releaseType"] = releaseType
+        }
+        return payload
+    }
+
     func executeASCSetCredentials(_ args: [String: Any]) async -> [String: Any] {
         guard let issuerId = args["issuerId"] as? String,
               let keyId = args["keyId"] as? String,
@@ -60,36 +161,12 @@ extension MCPExecutor {
             throw MCPServerService.MCPError.invalidToolArgs
         }
 
-        var fieldMap: [String: String] = [:]
-        if let fieldsArray = args["fields"] as? [[String: Any]] {
-            for item in fieldsArray {
-                if let field = item["field"] as? String, let value = item["value"] as? String {
-                    fieldMap[Self.fieldAliases[field] ?? field] = value
-                }
-            }
-        } else if let fieldsDict = args["fields"] as? [String: Any] {
-            for (key, value) in fieldsDict {
-                fieldMap[Self.fieldAliases[key] ?? key] = "\(value)"
-            }
-        } else if let fieldsString = args["fields"] as? String,
-                  let data = fieldsString.data(using: .utf8),
-                  let parsed = try? JSONSerialization.jsonObject(with: data) {
-            if let dict = parsed as? [String: Any] {
-                for (key, value) in dict {
-                    fieldMap[Self.fieldAliases[key] ?? key] = "\(value)"
-                }
-            } else if let array = parsed as? [[String: Any]] {
-                for item in array {
-                    if let field = item["field"] as? String, let value = item["value"] as? String {
-                        fieldMap[Self.fieldAliases[field] ?? field] = value
-                    }
-                }
-            }
-        }
-
+        let fieldMap = parseFieldMap(args["fields"], applyAliases: true)
         guard !fieldMap.isEmpty else {
             throw MCPServerService.MCPError.invalidToolArgs
         }
+
+        var resolvedStoreListingLocale: String?
 
         if let validFields = Self.validFieldsByTab[tab] {
             let invalid = fieldMap.keys.filter { !validFields.contains($0) }
@@ -115,41 +192,28 @@ extension MCPExecutor {
             let appInfoLocFields: Set<String> = ["name", "title", "subtitle", "privacyPolicyUrl"]
             var versionLocFields: [String: String] = [:]
             var infoLocFields: [String: String] = [:]
+            let locale = await resolveStoreListingLocale(from: args)
+            resolvedStoreListingLocale = locale
+
+            if let localeError = await prepareStoreListingLocale(locale) {
+                _ = await MainActor.run { appState.ascManager.pendingFormValues.removeValue(forKey: tab) }
+                return mcpText(localeError)
+            }
 
             for (field, value) in fieldMap {
                 if appInfoLocFields.contains(field) {
-                    let apiField = (field == "title") ? "name" : field
-                    infoLocFields[apiField] = value
+                    infoLocFields[field] = value
                 } else {
                     versionLocFields[field] = value
                 }
             }
 
-            if !infoLocFields.isEmpty {
-                for (field, value) in infoLocFields {
-                    await appState.ascManager.updateAppInfoLocalizationField(field, value: value)
-                }
-                if let err = await checkASCWriteError(tab: tab) { return err }
-            }
-
-            if !versionLocFields.isEmpty {
-                guard let locId = await MainActor.run(body: { appState.ascManager.localizations.first?.id }) else {
-                    return mcpText("Error: no version localizations found.")
-                }
-                do {
-                    guard let service = await MainActor.run(body: { appState.ascManager.service }) else {
-                        return mcpText("Error: ASC service not configured")
-                    }
-                    try await service.patchLocalization(id: locId, fields: versionLocFields)
-                    if let versionId = await MainActor.run(body: { appState.ascManager.appStoreVersions.first?.id }) {
-                        let localizations = try await service.fetchLocalizations(versionId: versionId)
-                        await MainActor.run { appState.ascManager.localizations = localizations }
-                    }
-                } catch {
-                    _ = await MainActor.run { appState.ascManager.pendingFormValues.removeValue(forKey: tab) }
-                    return mcpText("Error: \(error.localizedDescription)")
-                }
-            }
+            await appState.ascManager.updateStoreListingFields(
+                versionFields: versionLocFields,
+                appInfoFields: infoLocFields,
+                locale: locale
+            )
+            if let err = await checkASCWriteError(tab: tab) { return err }
 
         case "appDetails":
             for (field, value) in fieldMap {
@@ -226,7 +290,174 @@ extension MCPExecutor {
         }
 
         _ = await MainActor.run { appState.ascManager.pendingFormValues.removeValue(forKey: tab) }
-        return mcpJSON(["success": true, "tab": tab, "fieldsUpdated": fieldMap.count])
+        var response: [String: Any] = ["success": true, "tab": tab, "fieldsUpdated": fieldMap.count]
+        if let resolvedStoreListingLocale {
+            response["locale"] = resolvedStoreListingLocale
+        }
+        return mcpJSON(response)
+    }
+
+    func executeStoreListingSwitchLocalization(_ args: [String: Any]) async throws -> [String: Any] {
+        guard let rawLocale = args["locale"] as? String else {
+            throw MCPServerService.MCPError.invalidToolArgs
+        }
+
+        let locale = rawLocale.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !locale.isEmpty else {
+            throw MCPServerService.MCPError.invalidToolArgs
+        }
+
+        if let localeError = await prepareStoreListingLocale(locale, forceRefresh: true) {
+            return mcpText(localeError)
+        }
+
+        let state = await MainActor.run { () -> [String: Any] in
+            let asc = appState.ascManager
+            let versionLocalization = asc.storeListingLocalization(locale: locale)
+            let appInfoLocalization = asc.appInfoLocalizationForLocale(locale)
+            let fields: [String: String] = [
+                "name": appInfoLocalization?.attributes.name ?? versionLocalization?.attributes.title ?? "",
+                "subtitle": appInfoLocalization?.attributes.subtitle ?? versionLocalization?.attributes.subtitle ?? "",
+                "description": versionLocalization?.attributes.description ?? "",
+                "keywords": versionLocalization?.attributes.keywords ?? "",
+                "promotionalText": versionLocalization?.attributes.promotionalText ?? "",
+                "marketingUrl": versionLocalization?.attributes.marketingUrl ?? "",
+                "supportUrl": versionLocalization?.attributes.supportUrl ?? "",
+                "whatsNew": versionLocalization?.attributes.whatsNew ?? "",
+                "privacyPolicyUrl": appInfoLocalization?.attributes.privacyPolicyUrl ?? ""
+            ]
+            var response: [String: Any] = [
+                "success": true,
+                "locale": locale,
+                "availableLocales": asc.localizations.map(\.attributes.locale).sorted(),
+                "hasAppInfoLocalization": appInfoLocalization != nil
+            ]
+            response["fields"] = fields
+            return response
+        }
+
+        return mcpJSON(state)
+    }
+
+    func executeASCSelectVersion(_ args: [String: Any]) async throws -> [String: Any] {
+        guard let rawIdentifier = args["version"] as? String else {
+            throw MCPServerService.MCPError.invalidToolArgs
+        }
+
+        let identifier = rawIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !identifier.isEmpty else {
+            throw MCPServerService.MCPError.invalidToolArgs
+        }
+
+        await ASCUpdateLogger.shared.event("mcp_select_version_started", metadata: [
+            "version": identifier,
+        ])
+
+        await appState.ascManager.ensureTabData(.app)
+
+        var resolvedVersion = await MainActor.run {
+            appState.ascManager.version(matching: identifier)
+        }
+        if resolvedVersion == nil {
+            await appState.ascManager.refreshTabData(.app)
+            resolvedVersion = await MainActor.run {
+                appState.ascManager.version(matching: identifier)
+            }
+        }
+
+        guard let resolvedVersion else {
+            await ASCUpdateLogger.shared.event("mcp_select_version_failed", metadata: [
+                "reason": "not_found",
+                "version": identifier,
+            ])
+            return mcpText("Error: app version '\(identifier)' was not found.")
+        }
+
+        // Refresh only the currently relevant version-scoped tab so the UI and
+        // tab-state payloads stay aligned with the new version selection.
+        let refreshTab = await activeVersionScopedTabForRefresh()
+        await MainActor.run {
+            appState.ascManager.prepareForVersionSelection(resolvedVersion.id)
+        }
+        await appState.ascManager.refreshTabData(refreshTab)
+
+        await ASCUpdateLogger.shared.event("mcp_select_version_succeeded", metadata: [
+            "refreshedTab": refreshTab.rawValue,
+            "versionId": resolvedVersion.id,
+            "versionString": resolvedVersion.attributes.versionString,
+        ])
+
+        return mcpJSON([
+            "success": true,
+            "refreshedTab": refreshTab.rawValue,
+            "selectedVersion": versionPayload(resolvedVersion),
+        ])
+    }
+
+    func executeASCCreateVersion(_ args: [String: Any]) async throws -> [String: Any] {
+        guard let rawVersionString = args["versionString"] as? String else {
+            throw MCPServerService.MCPError.invalidToolArgs
+        }
+
+        let versionString = rawVersionString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !versionString.isEmpty else {
+            throw MCPServerService.MCPError.invalidToolArgs
+        }
+
+        let copyFromVersion = (args["copyFromVersion"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let attachBuildId = (args["attachBuildId"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let copyMetadata = args["copyMetadata"] as? Bool ?? true
+        let copyReviewDetail = args["copyReviewDetail"] as? Bool ?? true
+        let platform = await MainActor.run { appState.activeProject?.platform ?? .iOS }
+
+        await ASCUpdateLogger.shared.event("mcp_create_version_started", metadata: [
+            "attachBuildId": attachBuildId ?? "nil",
+            "copyFromVersion": copyFromVersion ?? "nil",
+            "copyMetadata": copyMetadata ? "true" : "false",
+            "copyReviewDetail": copyReviewDetail ? "true" : "false",
+            "versionString": versionString,
+        ])
+
+        await appState.ascManager.createUpdateVersion(
+            versionString: versionString,
+            platform: platform,
+            copyFromVersionId: copyFromVersion?.isEmpty == false ? copyFromVersion : nil,
+            copyMetadata: copyMetadata,
+            copyReviewDetail: copyReviewDetail,
+            attachBuildId: attachBuildId?.isEmpty == false ? attachBuildId : nil
+        )
+
+        if let error = await MainActor.run(body: { appState.ascManager.versionCreationError }) {
+            await ASCUpdateLogger.shared.event("mcp_create_version_failed", metadata: [
+                "error": error,
+                "versionString": versionString,
+            ])
+            return mcpText("Error: \(error)")
+        }
+
+        guard let createdVersion = await MainActor.run(body: {
+            appState.ascManager.version(matching: versionString)
+        }) else {
+            await ASCUpdateLogger.shared.event("mcp_create_version_failed", metadata: [
+                "reason": "version_missing_after_create",
+                "versionString": versionString,
+            ])
+            return mcpText("Error: version creation did not complete.")
+        }
+
+        let canCreateUpdate = await MainActor.run(body: { appState.ascManager.canCreateUpdate })
+        await ASCUpdateLogger.shared.event("mcp_create_version_succeeded", metadata: [
+            "versionId": createdVersion.id,
+            "versionString": createdVersion.attributes.versionString,
+        ])
+
+        return mcpJSON([
+            "success": true,
+            "selectedVersion": versionPayload(createdVersion),
+            "canCreateUpdate": canCreateUpdate,
+        ])
     }
 
     func executeScreenshotsAddAsset(_ args: [String: Any]) async throws -> [String: Any] {
@@ -262,6 +493,60 @@ extension MCPExecutor {
         return mcpJSON(["success": true, "fileName": fileName])
     }
 
+    func executeScreenshotsSwitchLocalization(_ args: [String: Any]) async throws -> [String: Any] {
+        guard let rawLocale = args["locale"] as? String else {
+            throw MCPServerService.MCPError.invalidToolArgs
+        }
+        let locale = rawLocale.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !locale.isEmpty else {
+            throw MCPServerService.MCPError.invalidToolArgs
+        }
+
+        let previousLocale = await MainActor.run {
+            let previous = appState.ascManager.selectedScreenshotsLocale
+            appState.ascManager.selectedScreenshotsLocale = locale
+            return previous
+        }
+
+        await appState.ascManager.refreshTabData(.screenshots)
+
+        let availableLocales = await MainActor.run {
+            appState.ascManager.localizations.map(\.attributes.locale).sorted()
+        }
+        guard availableLocales.contains(locale) else {
+            await MainActor.run {
+                appState.ascManager.selectedScreenshotsLocale = previousLocale
+            }
+            let availableText = availableLocales.isEmpty ? "none" : availableLocales.joined(separator: ", ")
+            return mcpText(
+                "Error: screenshot localization '\(locale)' was not found after refreshing from ASC. "
+                    + "Available localizations: \(availableText)"
+            )
+        }
+
+        await appState.ascManager.loadScreenshots(locale: locale, force: true)
+
+        let displayTypes = await screenshotsDisplayTypesForActiveProject()
+        let trackCounts = await MainActor.run { () -> [String: Int] in
+            var counts: [String: Int] = [:]
+            for displayType in displayTypes {
+                appState.ascManager.loadTrackFromASC(displayType: displayType, locale: locale)
+                counts[displayType] = appState.ascManager
+                    .trackSlotsForDisplayType(displayType, locale: locale)
+                    .compactMap { $0 }
+                    .count
+            }
+            return counts
+        }
+
+        return mcpJSON([
+            "success": true,
+            "locale": locale,
+            "availableLocales": availableLocales,
+            "trackCounts": trackCounts
+        ])
+    }
+
     func executeScreenshotsSetTrack(_ args: [String: Any]) async throws -> [String: Any] {
         guard let assetFileName = args["assetFileName"] as? String else {
             throw MCPServerService.MCPError.invalidToolArgs
@@ -272,6 +557,17 @@ extension MCPExecutor {
         }
         let slotIndex = slotRaw - 1
         let displayType = args["displayType"] as? String ?? "APP_IPHONE_67"
+        let (locale, explicitlyRequestedLocale) = await resolveScreenshotsLocale(from: args)
+
+        let selectedLocale = await MainActor.run {
+            appState.ascManager.selectedScreenshotsLocale ?? appState.ascManager.localizations.first?.attributes.locale
+        }
+        if explicitlyRequestedLocale, selectedLocale != locale {
+            return mcpText(
+                "Error: screenshots locale '\(locale)' is not selected in Blitz. "
+                    + "Call screenshots_switch_localization first."
+            )
+        }
 
         guard let projectId = await MainActor.run(body: { appState.activeProjectId }) else {
             return mcpText("Error: no active project")
@@ -284,22 +580,73 @@ extension MCPExecutor {
             return mcpText("Error: asset '\(assetFileName)' not found in local screenshots library")
         }
 
+        await MainActor.run {
+            let asc = appState.ascManager
+            if !asc.hasTrackState(displayType: displayType, locale: locale),
+               selectedLocale == locale {
+                asc.loadTrackFromASC(displayType: displayType, locale: locale)
+            }
+        }
+        let trackReady = await MainActor.run {
+            appState.ascManager.hasTrackState(displayType: displayType, locale: locale)
+        }
+        guard trackReady else {
+            return mcpText(
+                "Error: screenshot locale '\(locale)' is not prepared in Blitz. "
+                    + "Call screenshots_switch_localization first."
+            )
+        }
+
         let error = await MainActor.run {
-            appState.ascManager.addAssetToTrack(displayType: displayType, slotIndex: slotIndex, localPath: filePath)
+            appState.ascManager.addAssetToTrack(
+                displayType: displayType,
+                slotIndex: slotIndex,
+                localPath: filePath,
+                locale: locale
+            )
         }
         if let error {
             return mcpText("Error: \(error)")
         }
-        return mcpJSON(["success": true, "slot": slotRaw])
+        return mcpJSON(["success": true, "slot": slotRaw, "locale": locale])
     }
 
     func executeScreenshotsSave(_ args: [String: Any]) async throws -> [String: Any] {
         let displayType = args["displayType"] as? String ?? "APP_IPHONE_67"
-        let locale = args["locale"] as? String ?? "en-US"
+        let (locale, explicitlyRequestedLocale) = await resolveScreenshotsLocale(from: args)
 
-        let hasChanges = await MainActor.run { appState.ascManager.hasUnsavedChanges(displayType: displayType) }
+        let selectedLocale = await MainActor.run {
+            appState.ascManager.selectedScreenshotsLocale ?? appState.ascManager.localizations.first?.attributes.locale
+        }
+        if explicitlyRequestedLocale, selectedLocale != locale {
+            return mcpText(
+                "Error: screenshots locale '\(locale)' is not selected in Blitz. "
+                    + "Call screenshots_switch_localization first."
+            )
+        }
+
+        await MainActor.run {
+            let asc = appState.ascManager
+            if !asc.hasTrackState(displayType: displayType, locale: locale),
+               selectedLocale == locale {
+                asc.loadTrackFromASC(displayType: displayType, locale: locale)
+            }
+        }
+        let trackReady = await MainActor.run {
+            appState.ascManager.hasTrackState(displayType: displayType, locale: locale)
+        }
+        guard trackReady else {
+            return mcpText(
+                "Error: screenshot locale '\(locale)' is not prepared in Blitz. "
+                    + "Call screenshots_switch_localization first."
+            )
+        }
+
+        let hasChanges = await MainActor.run {
+            appState.ascManager.hasUnsavedChanges(displayType: displayType, locale: locale)
+        }
         guard hasChanges else {
-            return mcpJSON(["success": true, "message": "No changes to save"])
+            return mcpJSON(["success": true, "message": "No changes to save", "locale": locale])
         }
 
         await appState.ascManager.syncTrackToASC(displayType: displayType, locale: locale)
@@ -307,15 +654,42 @@ extension MCPExecutor {
         if let err = await checkASCWriteError(tab: "screenshots") { return err }
 
         let slotCount = await MainActor.run {
-            (appState.ascManager.trackSlots[displayType] ?? []).compactMap { $0 }.count
+            appState.ascManager.trackSlotsForDisplayType(displayType, locale: locale).compactMap { $0 }.count
         }
-        return mcpJSON(["success": true, "synced": slotCount])
+        return mcpJSON(["success": true, "synced": slotCount, "locale": locale])
     }
 
     func executeASCOpenSubmitPreview() async -> [String: Any] {
+        let needsVersionCreation = await MainActor.run {
+            let asc = appState.ascManager
+            return asc.canCreateUpdate || (asc.currentUpdateVersion == nil && asc.editableVersion == nil)
+        }
+        if needsVersionCreation {
+            await ASCUpdateLogger.shared.event("mcp_open_submit_preview_blocked", metadata: [
+                "reason": "missing_app_store_version",
+            ])
+            return mcpJSON([
+                "ready": false,
+                "missing": ["App Store Version"],
+                "canCreateUpdate": true,
+            ])
+        }
+
         await appState.ascManager.refreshSubmissionReadinessData()
 
         var readiness = await MainActor.run { appState.ascManager.submissionReadiness }
+        let hasLockedUpdateOnly = await MainActor.run {
+            let asc = appState.ascManager
+            return asc.editableVersion == nil && asc.currentUpdateVersion != nil
+        }
+        if hasLockedUpdateOnly {
+            await MainActor.run {
+                appState.ascManager.showSubmitPreview = true
+            }
+            await ASCUpdateLogger.shared.event("mcp_open_submit_preview_status_only", metadata: [:])
+            return mcpJSON(["ready": true, "opened": true, "statusOnly": true])
+        }
+
         let buildMissing = readiness.missingRequired.contains { $0.label == "Build" }
         if buildMissing {
             let service = await MainActor.run { appState.ascManager.service }
@@ -323,14 +697,35 @@ extension MCPExecutor {
             if let service, let appId,
                let latestBuild = try? await service.fetchLatestBuild(appId: appId),
                latestBuild.attributes.processingState == "VALID" {
-                let versionId = await MainActor.run { appState.ascManager.pendingVersionId }
+                let versionId = await MainActor.run { () -> String? in
+                    let asc = appState.ascManager
+                    if let selectedVersion = asc.selectedVersion,
+                       ASCReleaseStatus.isEditable(selectedVersion.attributes.appStoreState) {
+                        return selectedVersion.id
+                    }
+                    return asc.editableVersion?.id
+                }
                 if let versionId {
                     do {
                         try await service.attachBuild(versionId: versionId, buildId: latestBuild.id)
+                        await MainActor.run {
+                            if appState.ascManager.selectedVersion?.id == versionId {
+                                appState.ascManager.selectedVersionBuild = latestBuild
+                            }
+                        }
                         await appState.ascManager.refreshTabData(.app)
                         readiness = await MainActor.run { appState.ascManager.submissionReadiness }
+                        await ASCUpdateLogger.shared.event("mcp_open_submit_preview_auto_attached_build", metadata: [
+                            "buildId": latestBuild.id,
+                            "versionId": versionId,
+                        ])
                     } catch {
                         // Non-fatal: readiness will still surface the missing build.
+                        await ASCUpdateLogger.shared.event("mcp_open_submit_preview_auto_attach_failed", metadata: [
+                            "buildId": latestBuild.id,
+                            "error": error.localizedDescription,
+                            "versionId": versionId,
+                        ])
                     }
                 }
             }
@@ -338,12 +733,16 @@ extension MCPExecutor {
 
         if !readiness.isComplete {
             let missing = readiness.missingRequired.map { $0.label }
+            await ASCUpdateLogger.shared.event("mcp_open_submit_preview_incomplete", metadata: [
+                "missing": missing.joined(separator: ","),
+            ])
             return mcpJSON(["ready": false, "missing": missing])
         }
 
         await MainActor.run {
             appState.ascManager.showSubmitPreview = true
         }
+        await ASCUpdateLogger.shared.event("mcp_open_submit_preview_opened", metadata: [:])
 
         return mcpJSON(["ready": true, "opened": true])
     }
@@ -617,29 +1016,41 @@ extension MCPExecutor {
             if let requestedVersion {
                 version = requestedVersion
             } else if let rejected = asc.appStoreVersions.first(where: {
-                $0.attributes.appStoreState == "REJECTED"
+                let state = ($0.attributes.appStoreState ?? "").uppercased()
+                return state == "REJECTED" || state == "METADATA_REJECTED"
             }) {
                 version = rejected.attributes.versionString
             } else {
                 return ["error": "No rejected version found.", "appId": appId]
             }
 
-            if let cached = IrisFeedbackCache.load(appId: appId, versionString: version) {
-                let reasons = cached.reasons.map { reason in
-                    ["section": reason.section, "description": reason.description, "code": reason.code]
-                }
-                let messages = cached.messages.map { message -> [String: String] in
-                    var msg = ["body": message.body]
-                    if let date = message.date { msg["date"] = date }
-                    return msg
+            asc.loadCachedFeedback(appId: appId, versionString: version)
+            let cycles = asc.feedbackCycles(forVersionString: version)
+            if !cycles.isEmpty {
+                let payload = cycles.map { cycle -> [String: Any] in
+                    let reasons = cycle.reasons.map { reason in
+                        ["section": reason.section, "description": reason.description, "code": reason.code]
+                    }
+                    let messages = cycle.messages.map { message -> [String: String] in
+                        var msg = ["body": message.body]
+                        if let date = message.createdAt { msg["date"] = date }
+                        return msg
+                    }
+                    return [
+                        "id": cycle.id,
+                        "version": cycle.versionString ?? version,
+                        "submissionId": cycle.submissionId ?? "",
+                        "occurredAt": cycle.occurredAt,
+                        "source": cycle.source,
+                        "reasons": reasons,
+                        "messages": messages
+                    ]
                 }
                 return [
                     "appId": appId,
                     "version": version,
-                    "fetchedAt": ISO8601DateFormatter().string(from: cached.fetchedAt),
-                    "reasons": reasons,
-                    "messages": messages,
-                    "source": "cache"
+                    "cycles": payload,
+                    "source": "archive"
                 ]
             }
 

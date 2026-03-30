@@ -1,51 +1,14 @@
 import Foundation
 import Security
 
+private let irisFetchCooldown: TimeInterval = 30
+
 // MARK: - Iris Session (Apple ID cookie-based auth for internal APIs)
 
 extension ASCManager {
-    // MARK: - Iris Session (Apple ID auth for rejection feedback)
-    // TODO - move iris session logic to ASCIrisManager.swift if possible
-    // TODO - don't do logging in production
-    private func irisLog(_ msg: String) {
-        let logPath = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".blitz/iris-debug.log")
-        let ts = ISO8601DateFormatter().string(from: Date())
-        let line = "[\(ts)] \(msg)\n"
-        if let data = line.data(using: .utf8) {
-            if FileManager.default.fileExists(atPath: logPath.path) {
-                if let handle = try? FileHandle(forWritingTo: logPath) {
-                    handle.seekToEndOfFile()
-                    handle.write(data)
-                    handle.closeFile()
-                }
-            } else {
-                let dir = logPath.deletingLastPathComponent()
-                try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                try? data.write(to: logPath)
-            }
-        }
-    }
-
     func refreshSubmissionFeedbackIfNeeded() {
         guard let appId = app?.id else { return }
-
-        let rejectedVersion = appStoreVersions.first(where: {
-            $0.attributes.appStoreState == "REJECTED"
-        })
-        let pendingVersion = appStoreVersions.first(where: {
-            let state = $0.attributes.appStoreState ?? ""
-            return state != "READY_FOR_SALE" && state != "REMOVED_FROM_SALE"
-            && state != "DEVELOPER_REMOVED_FROM_SALE" && !state.isEmpty
-        })
-
-        guard let version = rejectedVersion ?? pendingVersion else {
-            cachedFeedback = nil
-            rebuildSubmissionHistory(appId: appId)
-            return
-        }
-
-        loadCachedFeedback(appId: appId, versionString: version.attributes.versionString)
+        loadCachedFeedback(appId: appId, versionString: feedbackFocusVersion()?.attributes.versionString)
         loadIrisSession()
         if irisSessionState == .valid {
             Task { await fetchRejectionFeedback() }
@@ -53,61 +16,95 @@ extension ASCManager {
     }
 
     /// Loads cached feedback from disk for the given rejected version. No auth needed.
-    func loadCachedFeedback(appId: String, versionString: String) {
-        irisLog("ASCManager.loadCachedFeedback: appId=\(appId) version=\(versionString)")
-        if let cached = IrisFeedbackCache.load(appId: appId, versionString: versionString) {
-            cachedFeedback = cached
-            irisLog("ASCManager.loadCachedFeedback: loaded \(cached.reasons.count) reasons, \(cached.messages.count) messages, fetched \(cached.fetchedAt)")
-        } else {
-            irisLog("ASCManager.loadCachedFeedback: no cache found")
-            cachedFeedback = nil
-        }
+    func loadCachedFeedback(appId: String, versionString: String? = nil) {
+        irisLog("ASCManager.loadCachedFeedback: appId=\(appId) version=\(versionString ?? "all")")
+        let projection = IrisArchiveStore.loadProjection(appId: appId)
+            ?? IrisFeedbackProjection(appId: appId, cycles: [], lastRebuiltAt: ISO8601DateFormatter().string(from: Date()))
+        applyIrisProjection(projection, focusVersionString: versionString)
         rebuildSubmissionHistory(appId: appId)
     }
 
-    func fetchRejectionFeedback() async {
-        irisLog("ASCManager.fetchRejectionFeedback: irisService=\(irisService != nil), appId=\(app?.id ?? "nil")")
-        guard let irisService, let appId = app?.id else {
-            irisLog("ASCManager.fetchRejectionFeedback: guard failed, returning")
+    func fetchRejectionFeedback(force: Bool = false) async {
+        let currentAppId = app?.id ?? "nil"
+        irisLog("ASCManager.fetchRejectionFeedback: irisService=\(irisService != nil), appId=\(currentAppId), force=\(force)")
+        guard app?.id != nil else {
+            irisLog("ASCManager.fetchRejectionFeedback: missing app id, returning")
             return
         }
 
-        // Determine version string for cache
-        let rejectedVersion = appStoreVersions.first(where: {
-            $0.attributes.appStoreState == "REJECTED"
-        })?.attributes.versionString
+        guard let appId = app?.id else { return }
+        if let existingTask = irisFetchTasksByAppId[appId] {
+            irisLog("ASCManager.fetchRejectionFeedback: joining in-flight fetch for appId=\(appId)")
+            await existingTask.value
+            return
+        }
+
+        if !force,
+           let lastFetchedAt = irisLastFetchedAtByAppId[appId],
+           Date().timeIntervalSince(lastFetchedAt) < irisFetchCooldown {
+            irisLog("ASCManager.fetchRejectionFeedback: skipping cooldown for appId=\(appId)")
+            return
+        }
+
+        let task: Task<Void, Never> = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.performRejectionFeedbackFetch(appId: appId)
+        }
+        irisFetchTasksByAppId[appId] = task
+        await task.value
+        irisFetchTasksByAppId[appId] = nil
+    }
+
+    private func performRejectionFeedbackFetch(appId: String) async {
+        guard let irisService else {
+            irisLog("ASCManager.performRejectionFeedbackFetch: missing irisService for appId=\(appId)")
+            return
+        }
+
+        let focusVersionString = feedbackFocusVersion()?.attributes.versionString
 
         isLoadingIrisFeedback = true
         irisFeedbackError = nil
 
+        defer {
+            irisLastFetchedAtByAppId[appId] = Date()
+            isLoadingIrisFeedback = false
+            rebuildSubmissionHistory(appId: appId)
+            irisLog("ASCManager.fetchRejectionFeedback: done")
+        }
+
         do {
-            let threads = try await irisService.fetchResolutionCenterThreads(appId: appId)
+            let threadPages = try await irisService.fetchResolutionCenterThreadPages(appId: appId)
+            var threadsById: [String: IrisResolutionCenterThread] = [:]
+            for page in threadPages {
+                try IrisArchiveStore.recordRawResponse(appId: appId, scopeKey: page.url, data: page.data)
+                let pageThreads = (try? JSONDecoder().decode(IrisListResponse<IrisResolutionCenterThread>.self, from: page.data).data) ?? []
+                for thread in pageThreads {
+                    threadsById[thread.id] = thread
+                }
+            }
+            let threads = threadsById.values.sorted {
+                feedbackDate($0.attributes.createdDate) > feedbackDate($1.attributes.createdDate)
+            }
             irisLog("ASCManager.fetchRejectionFeedback: got \(threads.count) threads")
             resolutionCenterThreads = threads
 
-            if let latestThread = threads.first {
-                irisLog("ASCManager.fetchRejectionFeedback: fetching messages+rejections for thread \(latestThread.id)")
-                let result = try await irisService.fetchMessagesAndRejections(threadId: latestThread.id)
-                rejectionMessages = result.messages
-                rejectionReasons = result.rejections
-                irisLog("ASCManager.fetchRejectionFeedback: got \(rejectionMessages.count) messages, \(rejectionReasons.count) rejections")
-
-                // Write cache
-                if let version = rejectedVersion {
-                    let cache = buildFeedbackCache(appId: appId, versionString: version)
-                    do {
-                        try cache.save()
-                        cachedFeedback = cache
-                        irisLog("ASCManager.fetchRejectionFeedback: cache saved for \(version)")
-                    } catch {
-                        irisLog("ASCManager.fetchRejectionFeedback: cache save failed: \(error)")
+            try await withThrowingTaskGroup(of: [IrisRawPage].self) { group in
+                for thread in threads {
+                    group.addTask {
+                        try await irisService.fetchMessagesAndRejectionsPages(threadId: thread.id)
                     }
                 }
-            } else {
-                irisLog("ASCManager.fetchRejectionFeedback: no threads found")
-                rejectionMessages = []
-                rejectionReasons = []
+
+                for try await pages in group {
+                    for page in pages {
+                        try IrisArchiveStore.recordRawResponse(appId: appId, scopeKey: page.url, data: page.data)
+                    }
+                }
             }
+
+            let projection = try IrisArchiveStore.rebuildProjection(appId: appId)
+            applyIrisProjection(projection, focusVersionString: focusVersionString)
         } catch let error as IrisError {
             irisLog("ASCManager.fetchRejectionFeedback: IrisError: \(error)")
             if case .sessionExpired = error {
@@ -121,10 +118,41 @@ extension ASCManager {
             irisLog("ASCManager.fetchRejectionFeedback: error: \(error)")
             irisFeedbackError = error.localizedDescription
         }
+    }
 
-        isLoadingIrisFeedback = false
-        rebuildSubmissionHistory(appId: appId)
-        irisLog("ASCManager.fetchRejectionFeedback: done")
+    func feedbackCycles(forVersionString versionString: String?) -> [IrisFeedbackCycle] {
+        let targetVersion = versionString.map(trimmed)
+        guard let targetVersion, !targetVersion.isEmpty else { return irisFeedbackCycles }
+        return irisFeedbackCycles.filter { trimmed($0.versionString) == targetVersion }
+    }
+
+    func hasIrisFeedback(forVersionString versionString: String?) -> Bool {
+        !feedbackCycles(forVersionString: versionString).isEmpty
+    }
+
+    func latestFeedbackCycle(forVersionString versionString: String?) -> IrisFeedbackCycle? {
+        feedbackCycles(forVersionString: versionString).sorted {
+            feedbackDate($0.occurredAt) > feedbackDate($1.occurredAt)
+        }.first
+    }
+
+    func feedbackDisplayVersion(from versions: [ASCAppStoreVersion]) -> ASCAppStoreVersion? {
+        if let rejectedVersion = versions.first(where: {
+            isFeedbackRejectedState($0.attributes.appStoreState)
+        }) {
+            return rejectedVersion
+        }
+        if let versionString = latestFeedbackCycle(forVersionString: nil)?.versionString {
+            return versions.first(where: { $0.attributes.versionString == versionString })
+        }
+        if let rejectedEvent = submissionHistoryEvents.first(where: { $0.eventType == .rejected }) {
+            if let versionId = rejectedEvent.versionId,
+               let version = versions.first(where: { $0.id == versionId }) {
+                return version
+            }
+            return versions.first(where: { $0.attributes.versionString == rejectedEvent.versionString })
+        }
+        return nil
     }
 
     func loadIrisSession() {
@@ -214,11 +242,70 @@ extension ASCManager {
         irisService = nil
         irisSessionState = .noSession
         resolutionCenterThreads = []
-        rejectionMessages = []
-        rejectionReasons = []
         if let appId = app?.id {
+            let projection = IrisArchiveStore.loadProjection(appId: appId)
+                ?? IrisFeedbackProjection(appId: appId, cycles: [], lastRebuiltAt: ISO8601DateFormatter().string(from: Date()))
+            applyIrisProjection(projection, focusVersionString: feedbackFocusVersion()?.attributes.versionString)
             rebuildSubmissionHistory(appId: appId)
         }
+    }
+
+    private func applyIrisProjection(
+        _ projection: IrisFeedbackProjection,
+        focusVersionString: String?
+    ) {
+        let sortedCycles = projection.cycles.sorted {
+            feedbackDate($0.occurredAt) > feedbackDate($1.occurredAt)
+        }
+        irisFeedbackCycles = sortedCycles
+        // The archive projection is the only source of truth. The thread summaries
+        // shown in UI are derived from those cycles so we do not maintain parallel caches.
+        resolutionCenterThreads = sortedCycles.compactMap { cycle in
+            return IrisResolutionCenterThread(
+                id: cycle.id,
+                attributes: .init(
+                    state: nil,
+                    createdDate: cycle.threadCreatedAt ?? cycle.occurredAt,
+                    lastMessageResponseDate: cycle.lastMessageAt
+                )
+            )
+        }
+
+        let activeCycle = latestFeedbackCycle(forVersionString: focusVersionString)
+            ?? latestFeedbackCycle(forVersionString: nil)
+
+        if activeCycle == nil {
+            irisLog("ASCManager.applyIrisProjection: no focused cycle for version \(focusVersionString ?? "all")")
+        } else {
+            irisLog("ASCManager.applyIrisProjection: loaded \(sortedCycles.count) cycles, active=\(activeCycle?.id ?? "nil")")
+        }
+    }
+
+    private func feedbackFocusVersion() -> ASCAppStoreVersion? {
+        let rejectedVersion = appStoreVersions.first(where: {
+            isFeedbackRejectedState($0.attributes.appStoreState)
+        })
+        let pendingVersion = appStoreVersions.first(where: {
+            isFeedbackPendingState($0.attributes.appStoreState)
+        })
+        return rejectedVersion ?? pendingVersion
+    }
+
+    private func isFeedbackRejectedState(_ state: String?) -> Bool {
+        let normalized = trimmed(state).uppercased()
+        return normalized == "REJECTED" || normalized == "METADATA_REJECTED"
+    }
+
+    private func isFeedbackPendingState(_ state: String?) -> Bool {
+        let normalized = trimmed(state).uppercased()
+        guard !normalized.isEmpty else { return false }
+        return normalized != "READY_FOR_SALE"
+            && normalized != "REMOVED_FROM_SALE"
+            && normalized != "DEVELOPER_REMOVED_FROM_SALE"
+    }
+
+    private func feedbackDate(_ iso: String?) -> Date {
+        irisArchiveSortDate(iso)
     }
 }
 
@@ -288,6 +375,7 @@ struct IrisResolutionCenterThread: Decodable, Identifiable {
     struct Attributes: Decodable {
         let state: String?
         let createdDate: String?
+        let lastMessageResponseDate: String?
     }
 }
 
@@ -317,63 +405,3 @@ struct IrisReviewRejection: Decodable, Identifiable {
 }
 
 // MARK: - Iris Feedback Cache
-
-struct IrisFeedbackCache: Codable {
-    let appId: String
-    let versionString: String
-    let fetchedAt: Date
-    let messages: [CachedMessage]
-    let reasons: [CachedReason]
-
-    struct CachedMessage: Codable {
-        let body: String
-        let date: String?
-    }
-
-    struct CachedReason: Codable {
-        let section: String
-        let description: String
-        let code: String
-    }
-
-    // MARK: - Persistence
-
-    func save() throws {
-        let url = Self.cacheURL(appId: appId, versionString: versionString)
-        let dir = url.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(self)
-        try data.write(to: url, options: .atomic)
-    }
-
-    static func load(appId: String, versionString: String) -> IrisFeedbackCache? {
-        let url = cacheURL(appId: appId, versionString: versionString)
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(IrisFeedbackCache.self, from: data)
-    }
-
-    static func loadAll(appId: String) -> [IrisFeedbackCache] {
-        let dir = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".blitz/iris-cache/\(appId)")
-        guard let urls = try? FileManager.default.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        ) else { return [] }
-
-        return urls
-        .filter { $0.pathExtension == "json" }
-        .compactMap { url in
-            guard let data = try? Data(contentsOf: url) else { return nil }
-            return try? JSONDecoder().decode(IrisFeedbackCache.self, from: data)
-        }
-        .sorted { $0.fetchedAt > $1.fetchedAt }
-    }
-
-    private static func cacheURL(appId: String, versionString: String) -> URL {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        return home.appendingPathComponent(".blitz/iris-cache/\(appId)/\(versionString).json")
-    }
-}

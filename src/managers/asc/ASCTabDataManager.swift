@@ -52,6 +52,10 @@ extension ASCManager {
         guard credentials != nil else { return }
         guard !loadedTabs.contains(tab) else { return }
         guard isLoadingTab[tab] != true else { return }
+        // Project switches can briefly leave tabs asking for data while the next
+        // app lookup is still in flight. Treat that as "not ready yet" instead
+        // of surfacing a false bundle-ID/app-not-found error.
+        guard !(app == nil && isLoadingApp) else { return }
 
         cancelBackgroundHydration(for: tab)
         isLoadingTab[tab] = true
@@ -65,6 +69,9 @@ extension ASCManager {
         } catch {
             isLoadingTab[tab] = false
             tabError[tab] = error.localizedDescription
+            await logDataFetchFailure("asc_tab_fetch_failed", error: error, metadata: [
+                "tab": tab.rawValue,
+            ])
         }
     }
 
@@ -81,6 +88,10 @@ extension ASCManager {
     func refreshTabData(_ tab: AppTab) async {
         guard let service else { return }
         guard credentials != nil else { return }
+        // Same guard as fetchTabData(_:): an in-flight app lookup should not be
+        // rendered as a tab error. The active tab will be re-requested once the
+        // project load finishes.
+        guard !(app == nil && isLoadingApp) else { return }
 
         let hadLoadedData = loadedTabs.contains(tab)
         cancelBackgroundHydration(for: tab)
@@ -99,6 +110,9 @@ extension ASCManager {
                 tabLoadedAt.removeValue(forKey: tab)
             }
             tabError[tab] = error.localizedDescription
+            await logDataFetchFailure("asc_tab_refresh_failed", error: error, metadata: [
+                "tab": tab.rawValue,
+            ])
         }
     }
 
@@ -120,19 +134,29 @@ extension ASCManager {
         return loadedProjectId == projectId
     }
 
+    private struct OverviewPrimaryLocalization {
+        /// ASC localization record ID used in follow-up API calls like `fetchScreenshotSets(localizationId:)`.
+        let localizationId: String
+        /// Locale code used when storing overview data in Blitz's locale-keyed caches.
+        let locale: String
+
+        init?(_ localization: ASCVersionLocalization?) {
+            guard let localization else { return nil }
+            localizationId = localization.id
+            locale = localization.attributes.locale
+        }
+    }
+
     private func hydrateOverviewSecondaryData(
         projectId: String?,
         appId: String,
-        firstLocalizationId: String?,
+        primaryLocalization: OverviewPrimaryLocalization?,
         appInfoId: String?,
         service: AppStoreConnectService
     ) async {
-        if let firstLocalizationId {
+        if let primaryLocalization {
             do {
-                let fetchedSets = try await service.fetchScreenshotSets(localizationId: firstLocalizationId)
-                guard !Task.isCancelled, isCurrentProject(projectId) else { return }
-                screenshotSets = fetchedSets
-
+                let fetchedSets = try await service.fetchScreenshotSets(localizationId: primaryLocalization.localizationId)
                 let fetchedScreenshots = try await withThrowingTaskGroup(of: (String, [ASCScreenshot]).self) { group in
                     for set in fetchedSets {
                         group.addTask {
@@ -149,7 +173,11 @@ extension ASCManager {
                 }
 
                 guard !Task.isCancelled, isCurrentProject(projectId) else { return }
-                screenshots = Dictionary(uniqueKeysWithValues: fetchedScreenshots)
+                updateScreenshotCache(
+                    locale: primaryLocalization.locale,
+                    sets: fetchedSets,
+                    screenshots: Dictionary(uniqueKeysWithValues: fetchedScreenshots)
+                )
                 finishOverviewReadinessLoading(Self.overviewScreenshotFieldLabels)
             } catch {
                 print("Failed to hydrate overview screenshots: \(error)")
@@ -160,17 +188,27 @@ extension ASCManager {
         }
 
         if let appInfoId {
-            async let ageRatingTask: ASCAgeRatingDeclaration? = try? service.fetchAgeRating(appInfoId: appInfoId)
-            async let appInfoLocalizationTask: ASCAppInfoLocalization? = try? service.fetchAppInfoLocalization(appInfoId: appInfoId)
+            async let ageRatingTask = fetchAgeRatingLogged(
+                service: service,
+                appInfoId: appInfoId,
+                context: "overview_secondary"
+            )
+            async let appInfoLocalizationsTask: [ASCAppInfoLocalization]? = try? service.fetchAppInfoLocalizations(appInfoId: appInfoId)
 
             let fetchedAgeRating = await ageRatingTask
-            let fetchedAppInfoLocalization = await appInfoLocalizationTask
+            let fetchedAppInfoLocalizations = await appInfoLocalizationsTask ?? []
 
             guard !Task.isCancelled, isCurrentProject(projectId) else { return }
             ageRatingDeclaration = fetchedAgeRating
-            appInfoLocalization = fetchedAppInfoLocalization
+            appInfoLocalizationsByLocale = Dictionary(uniqueKeysWithValues: fetchedAppInfoLocalizations.map {
+                ($0.attributes.locale, $0)
+            })
+            appInfoLocalization = primaryAppInfoLocalization(in: fetchedAppInfoLocalizations)
             finishOverviewReadinessLoading(Self.overviewMetadataFieldLabels)
         } else {
+            ageRatingDeclaration = nil
+            appInfoLocalizationsByLocale = [:]
+            appInfoLocalization = nil
             finishOverviewReadinessLoading(Self.overviewMetadataFieldLabels)
         }
 
@@ -181,7 +219,11 @@ extension ASCManager {
         refreshSubmissionFeedbackIfNeeded()
 
         if monetizationStatus == nil {
-            let hasPricing = await service.fetchPricingConfigured(appId: appId)
+            let hasPricing = await fetchPricingConfiguredLogged(
+                service: service,
+                appId: appId,
+                context: "overview_secondary"
+            )
             guard !Task.isCancelled, isCurrentProject(projectId) else { return }
             monetizationStatus = hasPricing ? "Configured" : nil
         }
@@ -191,38 +233,6 @@ extension ASCManager {
         finishOverviewReadinessLoading(Self.overviewPricingFieldLabels)
     }
 
-    private func hydrateScreenshotsSecondaryData(
-        projectId: String?,
-        localizationId: String,
-        service: AppStoreConnectService
-    ) async {
-        do {
-            let fetchedSets = try await service.fetchScreenshotSets(localizationId: localizationId)
-            guard !Task.isCancelled, isCurrentProject(projectId) else { return }
-            screenshotSets = fetchedSets
-
-            let fetchedScreenshots = try await withThrowingTaskGroup(of: (String, [ASCScreenshot]).self) { group in
-                for set in fetchedSets {
-                    group.addTask {
-                        let screenshots = try await service.fetchScreenshots(setId: set.id)
-                        return (set.id, screenshots)
-                    }
-                }
-
-                var pairs: [(String, [ASCScreenshot])] = []
-                for try await pair in group {
-                    pairs.append(pair)
-                }
-                return pairs
-            }
-
-            guard !Task.isCancelled, isCurrentProject(projectId) else { return }
-            screenshots = Dictionary(uniqueKeysWithValues: fetchedScreenshots)
-        } catch {
-            print("Failed to hydrate screenshots: \(error)")
-        }
-    }
-
     private func hydrateReviewSecondaryData(
         projectId: String?,
         appId: String,
@@ -230,7 +240,11 @@ extension ASCManager {
         service: AppStoreConnectService
     ) async {
         if let appInfoId {
-            let fetchedAgeRating = try? await service.fetchAgeRating(appInfoId: appInfoId)
+            let fetchedAgeRating = await fetchAgeRatingLogged(
+                service: service,
+                appInfoId: appInfoId,
+                context: "review_secondary"
+            )
             guard !Task.isCancelled, isCurrentProject(projectId) else { return }
             ageRatingDeclaration = fetchedAgeRating
         } else {
@@ -273,7 +287,11 @@ extension ASCManager {
         }
 
         if currentAppPricePointId == nil && scheduledAppPricePointId == nil && monetizationStatus == nil {
-            let hasPricing = await service.fetchPricingConfigured(appId: appId)
+            let hasPricing = await fetchPricingConfiguredLogged(
+                service: service,
+                appId: appId,
+                context: "monetization_secondary"
+            )
             guard !Task.isCancelled, isCurrentProject(projectId) else { return }
             monetizationStatus = hasPricing ? "Configured" : nil
         }
@@ -323,27 +341,38 @@ extension ASCManager {
 
             let versions = try await versionsTask
             appStoreVersions = versions
+            syncSelectedVersion()
             finishOverviewReadinessLoading(Self.overviewVersionFieldLabels)
             appInfo = await appInfoTask
             finishOverviewReadinessLoading(Self.overviewAppInfoFieldLabels)
             builds = try await buildsTask
-            finishOverviewReadinessLoading(Self.overviewBuildFieldLabels)
 
-            var firstLocalizationId: String?
-            if let latestId = versions.first?.id {
-                async let localizationsTask = service.fetchLocalizations(versionId: latestId)
-                async let reviewDetailTask: ASCReviewDetail? = try? service.fetchReviewDetail(versionId: latestId)
+            var primaryLocalization: OverviewPrimaryLocalization?
+            if let selectedVersionId = selectedVersion?.id {
+                async let localizationsTask = service.fetchLocalizations(versionId: selectedVersionId)
+                async let reviewDetailTask = fetchReviewDetailLogged(
+                    service: service,
+                    versionId: selectedVersionId,
+                    context: "overview_primary"
+                )
+                async let selectedBuildTask: ASCBuild? = try? service.fetchBuildAttachedToVersion(versionId: selectedVersionId)
 
                 let fetchedLocalizations = try await localizationsTask
                 localizations = fetchedLocalizations
-                firstLocalizationId = fetchedLocalizations.first?.id
+                primaryLocalization = OverviewPrimaryLocalization(
+                    primaryVersionLocalization(in: fetchedLocalizations)
+                )
                 finishOverviewReadinessLoading(Self.overviewLocalizationFieldLabels)
                 reviewDetail = await reviewDetailTask
                 finishOverviewReadinessLoading(Self.overviewReviewFieldLabels)
+                selectedVersionBuild = await selectedBuildTask
+                finishOverviewReadinessLoading(Self.overviewBuildFieldLabels)
             } else {
+                selectedVersionBuild = nil
                 finishOverviewReadinessLoading(
                     Self.overviewLocalizationFieldLabels
                         .union(Self.overviewReviewFieldLabels)
+                        .union(Self.overviewBuildFieldLabels)
                 )
             }
 
@@ -355,53 +384,43 @@ extension ASCManager {
                 await self.hydrateOverviewSecondaryData(
                     projectId: projectId,
                     appId: appId,
-                    firstLocalizationId: firstLocalizationId,
+                    primaryLocalization: primaryLocalization,
                     appInfoId: currentAppInfoId,
                     service: service
                 )
             }
 
         case .storeListing:
-            async let versionsTask = service.fetchAppStoreVersions(appId: appId)
-            async let appInfoTask: ASCAppInfo? = try? await service.fetchAppInfo(appId: appId)
-
-            let versions = try await versionsTask
-            appStoreVersions = versions
-            if let latestId = versions.first?.id {
-                localizations = try await service.fetchLocalizations(versionId: latestId)
-            } else {
-                localizations = []
-            }
-            appInfo = await appInfoTask
-            if let infoId = appInfo?.id {
-                appInfoLocalization = try? await service.fetchAppInfoLocalization(appInfoId: infoId)
-            } else {
-                appInfoLocalization = nil
-            }
+            try await refreshStoreListingMetadata(
+                service: service,
+                appId: appId,
+                preferredVersionId: selectedVersionId,
+                preferredLocale: selectedStoreListingLocale
+            )
 
         case .screenshots:
             let versions = try await service.fetchAppStoreVersions(appId: appId)
             appStoreVersions = versions
-            if let latestId = versions.first?.id {
-                let localizations = try await service.fetchLocalizations(versionId: latestId)
+            syncSelectedVersion()
+            if let selectedVersionId = selectedVersion?.id {
+                let localizations = try await service.fetchLocalizations(versionId: selectedVersionId)
                 self.localizations = localizations
-                if let firstLocalizationId = localizations.first?.id {
-                    let projectId = loadedProjectId
-                    startBackgroundHydration(for: .screenshots) {
-                        await self.hydrateScreenshotsSecondaryData(
-                            projectId: projectId,
-                            localizationId: firstLocalizationId,
-                            service: service
-                        )
-                    }
+                let preferredLocale = selectedScreenshotsLocale
+                let targetLocalization = localizations.first(where: { $0.attributes.locale == preferredLocale })
+                    ?? localizations.first
+                if let targetLocalization {
+                    selectedScreenshotsLocale = targetLocalization.attributes.locale
+                    await loadScreenshots(locale: targetLocalization.attributes.locale, force: true)
                 } else {
-                    screenshotSets = []
-                    screenshots = [:]
+                    screenshotSetsByLocale = [:]
+                    screenshotsByLocale = [:]
+                    selectedScreenshotsLocale = nil
                 }
             } else {
                 localizations = []
-                screenshotSets = []
-                screenshots = [:]
+                screenshotSetsByLocale = [:]
+                screenshotsByLocale = [:]
+                selectedScreenshotsLocale = nil
             }
 
         case .appDetails:
@@ -409,6 +428,7 @@ extension ASCManager {
             async let appInfoTask: ASCAppInfo? = try? await service.fetchAppInfo(appId: appId)
 
             appStoreVersions = try await versionsTask
+            syncSelectedVersion()
             appInfo = await appInfoTask
 
         case .review:
@@ -418,10 +438,17 @@ extension ASCManager {
 
             let versions = try await versionsTask
             appStoreVersions = versions
-            if let latestId = versions.first?.id {
-                reviewDetail = try? await service.fetchReviewDetail(versionId: latestId)
+            syncSelectedVersion()
+            if let selectedVersionId = selectedVersion?.id {
+                reviewDetail = await fetchReviewDetailLogged(
+                    service: service,
+                    versionId: selectedVersionId,
+                    context: "review_tab_load"
+                )
+                selectedVersionBuild = try? await service.fetchBuildAttachedToVersion(versionId: selectedVersionId)
             } else {
                 reviewDetail = nil
+                selectedVersionBuild = nil
             }
             appInfo = await appInfoTask
             builds = try await buildsTask
@@ -438,13 +465,23 @@ extension ASCManager {
 
         case .monetization:
             async let pricePointsTask = service.fetchAppPricePoints(appId: appId)
-            async let pricingStateTask = (try? await service.fetchAppPricingState(appId: appId))
-                ?? ASCAppPricingState(currentPricePointId: nil, scheduledPricePointId: nil, scheduledEffectiveDate: nil)
+            async let pricingStateTask = fetchAppPricingStateLogged(
+                service: service,
+                appId: appId,
+                context: "monetization_tab_load"
+            )
             async let iapTask = service.fetchInAppPurchases(appId: appId)
             async let groupsTask = service.fetchSubscriptionGroups(appId: appId)
 
             appPricePoints = try await pricePointsTask
-            applyAppPricingState(await pricingStateTask)
+            applyAppPricingState(
+                await pricingStateTask
+                    ?? ASCAppPricingState(
+                        currentPricePointId: nil,
+                        scheduledPricePointId: nil,
+                        scheduledEffectiveDate: nil
+                    )
+            )
             inAppPurchases = try await iapTask
             let groups = try await groupsTask
             subscriptionGroups = groups

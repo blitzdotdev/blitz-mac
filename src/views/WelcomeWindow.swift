@@ -39,6 +39,7 @@ struct WelcomeWindow: View {
             if appState.projectManager.projects.isEmpty {
                 await appState.projectManager.loadProjects()
             }
+            await appState.performLaunchAppWallSyncIfNeeded()
         }
         .task {
             await appState.autoUpdate.checkForUpdate()
