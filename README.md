@@ -1,8 +1,13 @@
 <div align="center">
   <img src=".github/assets/logo.png" width="100" />
   <h1>Blitz</h1>
-  <p>Native macOS App Store Connect tool with MCP. Submit iOS apps, manage IAPs, and automate App Store submission with AI agents.</p>
-  <p>MCPに対応したmacOSネイティブのApp Store Connectツール。iOSアプリの提出・IAP管理・App Store提出プロセスの自動化をAIエージェントで実現</p>
+  <p>
+Native macOS App Store Connect tool with MCP. Submit iOS apps, manage IAPs, and automate App Store submission with AI agents.
+
+---
+
+  MCPに対応したmacOSネイティブのApp Store Connectツール。iOSアプリの提出・IAP管理・App Store提出プロセスの自動化をAIエージェントで実現
+</p>
 
   [![Website](https://img.shields.io/badge/blitz.dev-website-black)](https://blitz.dev/)
   [![Discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/wJQ6dA95S6)
@@ -20,6 +25,14 @@
 Blitz is a native macOS app for submitting iOS apps to **App Store Connect** using AI agents. It gives Claude Code (or any MCP client) full control over the iOS development lifecycle: running simulators, configuring in-app purchases, uploading screenshots, and triggering App Store review submissions, all from a single native macOS GUI.
 
 If you are fighting App Store Connect to get your app submitted, Blitz automates the painful parts.
+
+---
+
+AIエージェントを活用してiOSアプリをApp Store Connectに提出するmacOSネイティブアプリ、Blitz。
+
+このアプリを使えば、Claude Code（または任意のMCPクライアント）から、iOS開発ライフサイクル全体を完全に制御できます。シミュレータの実行、アプリ内課金の設定、スクリーンショットのアップロード、App Storeへの審査提出まで、すべて単一のmacOSネイティブGUIから実行できます。
+
+App Store Connectでのアプリ提出に苦労しているなら、Blitzがその面倒な作業を自動化します。
 
 <div align="center">
   <img src=".github/assets/before-after.png" width="800" />
