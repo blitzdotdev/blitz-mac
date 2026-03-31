@@ -159,6 +159,7 @@ final class AppState {
     var projectManager = ProjectManager()
     var simulatorManager = SimulatorManager()
     var simulatorStream = SimulatorStreamManager()
+    let simulatorCats = SimulatorCatSceneModel()
     var settingsStore = SettingsService.shared
     var databaseManager = DatabaseManager()
     var projectSetup = ProjectSetupManager()

@@ -39,7 +39,6 @@ final class AutoUpdateManager {
     private static let releasesURL = "https://api.github.com/repos/blitzdotdev/blitz-mac/releases/latest"
     //private static let releasesURL = "https://api.github.com/repos/pythonlearner1025/blitz-mac-preflight/releases/latest"
 
-
     /// Current app version from Info.plist (falls back to "0.0.0" in dev builds).
     var currentVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"

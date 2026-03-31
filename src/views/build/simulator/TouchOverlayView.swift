@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Transparent overlay that captures touch/click events and translates to device actions
+/// Transparent overlay that captures touch/click events and translates to device actions.
+/// Renders laser-pointer-style indicators: neon dots for taps, plasma trails for swipes.
 struct TouchOverlayView: View {
     let deviceConfig: SimulatorDeviceConfig
     let frameWidth: Int
@@ -53,16 +54,16 @@ struct TouchOverlayView: View {
 
                                 let marker = ClickMarker(position: end)
                                 clickMarkers.append(marker)
-                                withAnimation(.easeOut(duration: 0.5)) {
+                                withAnimation(.easeOut(duration: 0.6)) {
                                     if let index = clickMarkers.firstIndex(where: { $0.id == marker.id }) {
                                         clickMarkers[index].opacity = 0
                                     }
                                 }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
                                     clickMarkers.removeAll { $0.id == marker.id }
                                 }
                             } else {
-                                // Swipe — match blitz-cn: pass duration + delta
+                                // Swipe
                                 let (startX, startY) = SimulatorConfigDatabase.viewToSimulatorCoords(
                                     viewX: Double(start.x),
                                     viewY: Double(start.y),
@@ -82,10 +83,7 @@ struct TouchOverlayView: View {
                                     frameHeight: frameHeight
                                 )
 
-                                // Duration = actual drag hold time in seconds
                                 let duration = dragStartTime.map { Date().timeIntervalSince($0) } ?? 0.3
-
-                                // Delta = one interpolation point per 10 simulator pixels (matches blitz-cn)
                                 let simDistance = hypot(endX - startX, endY - startY)
                                 let delta = max(1, Int(round(simDistance / 10)))
 
@@ -98,23 +96,92 @@ struct TouchOverlayView: View {
                         }
                 )
                 .overlay {
+                    // Laser dot indicators
                     ForEach(clickMarkers) { marker in
-                        Circle()
-                            .stroke(.white.opacity(marker.opacity * 0.6), lineWidth: 2)
-                            .frame(width: 30, height: 30)
+                        LaserDotView(opacity: marker.opacity)
                             .position(marker.position)
                     }
 
+                    // Laser trail for active swipe
                     if swipePath.count > 1 {
-                        Path { path in
-                            path.move(to: swipePath[0])
-                            for point in swipePath.dropFirst() {
-                                path.addLine(to: point)
-                            }
-                        }
-                        .stroke(.white.opacity(0.4), lineWidth: 2)
+                        LaserTrailShape(points: swipePath)
+                            .stroke(
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 1.0, green: 0.15, blue: 0.1).opacity(0.3),
+                                        Color(red: 1.0, green: 0.2, blue: 0.15).opacity(0.8),
+                                    ],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                ),
+                                style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)
+                            )
+                            .shadow(color: Color(red: 1.0, green: 0.1, blue: 0.08).opacity(0.7), radius: 6)
+                            .shadow(color: Color(red: 1.0, green: 0.2, blue: 0.1).opacity(0.35), radius: 14)
                     }
                 }
+        }
+    }
+}
+
+// MARK: - Laser Dot View
+
+private struct LaserDotView: View {
+    let opacity: Double
+
+    var body: some View {
+        ZStack {
+            // Outer glow
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            Color(red: 1.0, green: 0.1, blue: 0.08).opacity(0.5 * opacity),
+                            Color(red: 1.0, green: 0.1, blue: 0.08).opacity(0),
+                        ],
+                        center: .center,
+                        startRadius: 2,
+                        endRadius: 20
+                    )
+                )
+                .frame(width: 40, height: 40)
+
+            // Bright core
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            Color(red: 1.0, green: 0.85, blue: 0.8).opacity(opacity),
+                            Color(red: 1.0, green: 0.2, blue: 0.15).opacity(0.8 * opacity),
+                            Color(red: 1.0, green: 0.1, blue: 0.08).opacity(0),
+                        ],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: 8
+                    )
+                )
+                .frame(width: 16, height: 16)
+
+            // Center point
+            Circle()
+                .fill(Color.white.opacity(0.95 * opacity))
+                .frame(width: 4, height: 4)
+        }
+    }
+}
+
+// MARK: - Laser Trail Shape
+
+private struct LaserTrailShape: Shape {
+    let points: [CGPoint]
+
+    func path(in rect: CGRect) -> Path {
+        Path { path in
+            guard let first = points.first else { return }
+            path.move(to: first)
+            for point in points.dropFirst() {
+                path.addLine(to: point)
+            }
         }
     }
 }
