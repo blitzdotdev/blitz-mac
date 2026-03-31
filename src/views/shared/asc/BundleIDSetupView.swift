@@ -13,9 +13,11 @@ struct BundleIDSetupView: View {
         case creating   // Registering bundle ID + enabling capabilities
         case manual     // Step 2: manual action — create app in ASC
         case confirming // Checking if app exists in ASC
+        case browsing   // Browse existing apps to connect
     }
 
     @State private var phase: Phase = .form
+    @State private var tld = "com"
     @State private var organization = ""
     @State private var appName = ""
     @State private var selectedCapabilities: Set<String> = []
@@ -27,6 +29,12 @@ struct BundleIDSetupView: View {
     @State private var showAdditional = false
 
     @State private var showCreateInstructions = false
+
+    // Browse existing apps state
+    @State private var allApps: [ASCApp] = []
+    @State private var isLoadingApps = false
+    @State private var appSearchText = ""
+    @State private var loadAppsError: String?
 
     // Capabilities supported by the ASC API (can be enabled automatically)
     private static let capabilities: [(type: String, name: String)] = [
@@ -98,14 +106,15 @@ struct BundleIDSetupView: View {
     }
 
     private var bundleIdPreview: String {
+        let prefix = sanitize(tld)
         let org = sanitize(organization)
         let app = sanitize(appName)
-        guard !org.isEmpty, !app.isEmpty else { return "com...." }
-        return "com.\(org).\(app)"
+        guard !prefix.isEmpty, !org.isEmpty, !app.isEmpty else { return "\(prefix.isEmpty ? "com" : prefix)...." }
+        return "\(prefix).\(org).\(app)"
     }
 
     private var isFormValid: Bool {
-        !sanitize(organization).isEmpty && !sanitize(appName).isEmpty
+        !sanitize(tld).isEmpty && !sanitize(organization).isEmpty && !sanitize(appName).isEmpty
     }
 
     var body: some View {
@@ -120,6 +129,8 @@ struct BundleIDSetupView: View {
                     manualContent
                 case .confirming:
                     confirmingContent
+                case .browsing:
+                    browsingContent
                 }
             }
             .padding(32)
@@ -145,6 +156,22 @@ struct BundleIDSetupView: View {
             .font(.callout)
             .foregroundStyle(.secondary)
 
+        Button {
+            loadAllApps()
+            phase = .browsing
+        } label: {
+            HStack(spacing: 4) {
+                Text("Already have an app?")
+                    .foregroundStyle(.secondary)
+                Text("Connect Existing App")
+                Image(systemName: "arrow.right")
+                    .font(.caption)
+            }
+            .font(.callout)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.blue)
+
         HStack(spacing: 6) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
@@ -158,6 +185,12 @@ struct BundleIDSetupView: View {
 
         // Fields
         VStack(alignment: .leading, spacing: 16) {
+            labeledField("Top-Level Domain", hint: "e.g. com, io, org, net") {
+                TextField("com", text: $tld)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.body, design: .monospaced))
+            }
+
             labeledField("Organization", hint: "Your company or personal identifier") {
                 TextField("mycompany", text: $organization)
                     .textFieldStyle(.roundedBorder)
@@ -415,6 +448,154 @@ struct BundleIDSetupView: View {
         .frame(maxWidth: .infinity, minHeight: 200)
     }
 
+    // MARK: - Phase 5: Browse Existing Apps
+
+    private var filteredApps: [ASCApp] {
+        guard !appSearchText.isEmpty else { return allApps }
+        let query = appSearchText.lowercased()
+        return allApps.filter {
+            $0.name.lowercased().contains(query) || $0.bundleId.lowercased().contains(query)
+        }
+    }
+
+    @ViewBuilder
+    private var browsingContent: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "link.circle")
+                .font(.title2)
+                .foregroundStyle(.blue)
+            Text("Connect to Existing App")
+                .font(.title2.weight(.semibold))
+        }
+        Text("Select an app from your App Store Connect account.")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+
+        Button {
+            phase = .form
+        } label: {
+            HStack(spacing: 4) {
+                Text("Need a new app?")
+                    .foregroundStyle(.secondary)
+                Text("Register Bundle ID")
+                Image(systemName: "arrow.right")
+                    .font(.caption)
+            }
+            .font(.callout)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.blue)
+
+        Divider()
+
+        if isLoadingApps {
+            VStack(spacing: 12) {
+                ProgressView()
+                Text("Loading apps\u{2026}")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 200)
+        } else if let loadAppsError {
+            VStack(spacing: 8) {
+                Text(loadAppsError)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Retry") { loadAllApps() }
+                    .buttonStyle(.borderedProminent)
+            }
+        } else if allApps.isEmpty {
+            VStack(spacing: 8) {
+                Text("No apps found in your App Store Connect account.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Text("Register a new bundle ID to create one.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 120)
+        } else {
+            TextField("Search apps\u{2026}", text: $appSearchText)
+                .textFieldStyle(.roundedBorder)
+
+            let apps = filteredApps
+            if apps.isEmpty {
+                Text("No apps matching \"\(appSearchText)\"")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 80)
+            } else {
+                VStack(spacing: 2) {
+                    ForEach(apps) { app in
+                        Button {
+                            connectToApp(app)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(app.name)
+                                    .font(.callout.weight(.medium))
+                                    .foregroundStyle(.primary)
+                                Text(app.bundleId)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(.background.secondary)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    private func loadAllApps() {
+        guard let service = asc.service else {
+            loadAppsError = "ASC service not configured"
+            return
+        }
+        isLoadingApps = true
+        loadAppsError = nil
+        Task {
+            do {
+                let apps = try await service.fetchAllApps()
+                allApps = apps.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+                isLoadingApps = false
+            } catch {
+                loadAppsError = error.localizedDescription
+                isLoadingApps = false
+            }
+        }
+    }
+
+    private func connectToApp(_ selectedApp: ASCApp) {
+        if let projectId = asc.loadedProjectId {
+            let storage = ProjectStorage()
+            if var metadata = storage.readMetadata(projectId: projectId) {
+                metadata.bundleIdentifier = selectedApp.bundleId
+                try? storage.writeMetadata(projectId: projectId, metadata: metadata)
+            }
+        }
+
+        error = nil
+        phase = .confirming
+
+        Task {
+            let found = await asc.fetchApp(bundleId: selectedApp.bundleId)
+            if found {
+                asc.credentialsError = nil
+                asc.resetTabState()
+                await asc.fetchTabData(tab)
+            } else {
+                error = "Failed to load app \"\(selectedApp.name)\" from App Store Connect."
+                phase = .browsing
+            }
+        }
+    }
+
     // MARK: - Actions
 
     private func prefill() {
@@ -422,11 +603,12 @@ struct BundleIDSetupView: View {
         let storage = ProjectStorage()
         guard let metadata = storage.readMetadata(projectId: projectId) else { return }
 
-        // Pre-fill from existing bundle ID if it looks like com.xxx.yyy
+        // Pre-fill from existing bundle ID if it looks like tld.org.app
         if let existingBundleId = metadata.bundleIdentifier,
            !existingBundleId.isEmpty {
             let parts = existingBundleId.split(separator: ".")
-            if parts.count >= 3 && parts[0] == "com" {
+            if parts.count >= 3 {
+                tld = String(parts[0])
                 organization = String(parts[1])
                 appName = parts.dropFirst(2).joined(separator: ".")
                 return
