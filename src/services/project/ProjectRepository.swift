@@ -4,6 +4,7 @@ import Foundation
 /// Repository for `~/.blitz/projects` metadata and symlink registration.
 struct ProjectRepository {
     let baseDirectory: URL
+    private var metadataHydrator: ProjectMetadataHydrator { ProjectMetadataHydrator() }
 
     func listProjects() async -> [Project] {
         let fm = FileManager.default
@@ -21,14 +22,20 @@ struct ProjectRepository {
 
             let metadataFile = metadataURL(for: entry.lastPathComponent)
             guard let data = try? Data(contentsOf: metadataFile),
-                  let metadata = try? decoder.decode(BlitzProjectMetadata.self, from: data) else {
+                  let decodedMetadata = try? decoder.decode(BlitzProjectMetadata.self, from: data) else {
                 continue
             }
+
+            let hydrated = hydratedMetadataIfNeeded(
+                decodedMetadata,
+                projectId: entry.lastPathComponent,
+                projectDirectory: entry
+            )
 
             projects.append(
                 Project(
                     id: entry.lastPathComponent,
-                    metadata: metadata,
+                    metadata: hydrated,
                     path: entry.path
                 )
             )
@@ -40,8 +47,16 @@ struct ProjectRepository {
     func readMetadata(projectId: String) -> BlitzProjectMetadata? {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        guard let data = try? Data(contentsOf: metadataURL(for: projectId)) else { return nil }
-        return try? decoder.decode(BlitzProjectMetadata.self, from: data)
+        guard let data = try? Data(contentsOf: metadataURL(for: projectId)),
+              let metadata = try? decoder.decode(BlitzProjectMetadata.self, from: data) else {
+            return nil
+        }
+
+        return hydratedMetadataIfNeeded(
+            metadata,
+            projectId: projectId,
+            projectDirectory: baseDirectory.appendingPathComponent(projectId)
+        )
     }
 
     func writeMetadata(projectId: String, metadata: BlitzProjectMetadata) throws {
@@ -141,6 +156,18 @@ struct ProjectRepository {
         baseDirectory
             .appendingPathComponent(projectId)
             .appendingPathComponent(".blitz/project.json")
+    }
+
+    private func hydratedMetadataIfNeeded(
+        _ metadata: BlitzProjectMetadata,
+        projectId: String,
+        projectDirectory: URL
+    ) -> BlitzProjectMetadata {
+        let result = metadataHydrator.hydrate(metadata, projectDirectory: projectDirectory)
+        if result.didChange {
+            try? writeMetadata(projectId: projectId, metadata: result.metadata)
+        }
+        return result.metadata
     }
 }
 

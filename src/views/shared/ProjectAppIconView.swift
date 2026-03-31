@@ -24,12 +24,12 @@ enum ProjectAppIconLoader {
         imageCache.object(forKey: projectId as NSString)
     }
 
-    static func loadImage(for projectId: String) async -> NSImage? {
+    static func loadImage(for projectId: String, projectPath: String) async -> NSImage? {
         if let cached = cachedImage(for: projectId) {
             return cached
         }
 
-        guard let path = await loadPath(for: projectId),
+        guard let path = await loadPath(for: projectId, projectPath: projectPath),
               let image = NSImage(contentsOfFile: path) else {
             return nil
         }
@@ -38,18 +38,18 @@ enum ProjectAppIconLoader {
         return image
     }
 
-    private static func loadPath(for projectId: String) async -> String? {
+    private static func loadPath(for projectId: String, projectPath: String) async -> String? {
         switch cachedPath(for: projectId) {
         case .resolved(let path):
             return path
         case .missing:
-            return nil
+            break
         case .unresolved:
             break
         }
 
         let path = await Task.detached(priority: .utility) {
-            findIconPath(for: projectId)
+            findIconPath(projectPath: projectPath)
         }.value
 
         cachePath(path, for: projectId)
@@ -68,10 +68,9 @@ enum ProjectAppIconLoader {
         pathCache[projectId] = path.map(ProjectAppIconLookupState.resolved) ?? .missing
     }
 
-    private static func findIconPath(for projectId: String) -> String? {
+    private static func findIconPath(projectPath: String) -> String? {
         let fm = FileManager.default
-        let home = fm.homeDirectoryForCurrentUser.path
-        let projectDir = URL(fileURLWithPath: "\(home)/.blitz/projects/\(projectId)")
+        let projectDir = URL(fileURLWithPath: projectPath).resolvingSymlinksInPath()
 
         let generatedIcon = projectDir.appendingPathComponent("assets/AppIcon/icon_1024.png")
         if fm.fileExists(atPath: generatedIcon.path) {
@@ -177,6 +176,9 @@ struct ProjectAppIconView<Placeholder: View>: View {
         }
 
         icon = nil
-        icon = await ProjectAppIconLoader.loadImage(for: project.id)
+        icon = await ProjectAppIconLoader.loadImage(
+            for: project.id,
+            projectPath: project.path
+        )
     }
 }

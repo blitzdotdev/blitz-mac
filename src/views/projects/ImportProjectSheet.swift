@@ -159,12 +159,13 @@ struct ImportProjectSheet: View {
             createdAt: Date(),
             lastOpenedAt: Date()
         )
+        let hydratedMetadata = ProjectMetadataHydrator().hydrate(metadata, projectDirectory: url).metadata
 
         do {
             // Write metadata into the original project directory first,
             // then register it as a symlink in ~/.blitz/projects/.
             // This ensures all Blitz files land in the actual project, not a detached directory.
-            try storage.writeMetadataToDirectory(url, metadata: metadata)
+            try storage.writeMetadataToDirectory(url, metadata: hydratedMetadata)
             let projectId = try storage.openProject(at: url)
             storage.ensureMCPConfig(
                 projectId: projectId,
