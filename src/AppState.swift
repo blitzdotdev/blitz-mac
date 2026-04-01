@@ -154,11 +154,13 @@ final class AppState {
     var activeTab: AppTab = .dashboard
     var activeAppSubTab: AppSubTab = .overview
     var activeDashboardSubTab: DashboardSubTab = .myApps
+    var selectedOverlaySkin: TouchOverlaySkin = .laser
 
     // Child observable managers
     var projectManager = ProjectManager()
     var simulatorManager = SimulatorManager()
     var simulatorStream = SimulatorStreamManager()
+    var gestureVisualization = GestureVisualizationSocketService()
     var settingsStore = SettingsService.shared
     var databaseManager = DatabaseManager()
     var projectSetup = ProjectSetupManager()

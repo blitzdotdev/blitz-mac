@@ -74,7 +74,10 @@ struct SimulatorView: View {
                             },
                             onSwipe: { fx, fy, tx, ty, duration, delta in
                                 Task { try? await handleSwipe(fromX: fx, fromY: fy, toX: tx, toY: ty, duration: duration, delta: delta) }
-                            }
+                            },
+                            gestureVisualization: appState.gestureVisualization,
+                            activeDeviceID: appState.simulatorManager.bootedDeviceId,
+                            skin: appState.selectedOverlaySkin
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 32))
                     )
@@ -179,22 +182,23 @@ struct SimulatorView: View {
             }
 
             ToolbarItem(placement: .primaryAction) {
-                Button(action: {
-                    if stream.isCapturing {
-                        Task { await stream.stopStreaming() }
-                    } else {
-                        Task {
-                            await stream.startStreaming(
-                                bootedDeviceId: appState.simulatorManager.bootedDeviceId,
-                            )
+                Menu {
+                    ForEach(TouchOverlaySkin.allCases) { s in
+                        Button(action: { appState.selectedOverlaySkin = s }) {
+                            if s == appState.selectedOverlaySkin {
+                                Label(s.label, systemImage: "checkmark")
+                            } else {
+                                Label(s.label, systemImage: s.icon)
+                            }
                         }
                     }
-                }) {
-                    Image(systemName: stream.isCapturing ? "stop.fill" : "play.fill")
+                } label: {
+                    Image(systemName: "paintbrush")
                         .padding(.horizontal, 4)
                 }
-                .help(stream.isCapturing ? "Stop streaming" : "Start streaming")
+                .help("Gesture overlay style")
             }
+
         }
     }
 
