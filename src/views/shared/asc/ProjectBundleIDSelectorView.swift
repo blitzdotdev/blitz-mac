@@ -25,6 +25,15 @@ struct ProjectBundleIDSelectorView: View {
         normalized(appState.activeProject?.metadata.bundleIdentifier)
     }
 
+    private var isImportedProject: Bool {
+        guard let projectPath = currentProject?.path,
+              let attrs = try? FileManager.default.attributesOfItem(atPath: projectPath),
+              let fileType = attrs[.type] as? FileAttributeType else {
+            return false
+        }
+        return fileType == .typeSymbolicLink
+    }
+
     private var selectionOptions: [String] {
         if isASCFilteredSelection {
             return discoveredBundleIds
@@ -222,16 +231,26 @@ struct ProjectBundleIDSelectorView: View {
         let projectURL = URL(fileURLWithPath: project.path)
         let candidates = ProjectMetadataHydrator().discoverBundleIdentifiers(projectDirectory: projectURL)
         error = nil
-        showRegistrationFlow = false
         isASCFilteredSelection = false
+
+        // Newly created local Blitz projects should go directly to bundle registration
+        // when ASC app lookup fails, instead of showing a one-option selector.
+        if standalone, asc.app == nil, !isImportedProject {
+            discoveredBundleIds = candidates
+            applyDefaultSelection(candidates)
+            showRegistrationFlow = true
+            return
+        }
 
         // Fallback mode only: when app lookup failed and multiple targets were discovered,
         // keep only bundle IDs that already map to ASC apps before deciding the next UI.
         if standalone, asc.app == nil, candidates.count > 1 {
+            showRegistrationFlow = false
             await resolveFallbackCandidates(candidates)
             return
         }
 
+        showRegistrationFlow = false
         discoveredBundleIds = candidates
         applyDefaultSelection(candidates)
     }

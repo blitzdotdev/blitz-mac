@@ -16,6 +16,7 @@ struct BundleIDSetupView: View {
     }
 
     @State private var phase: Phase = .form
+    @State private var bundlePrefix = "com"
     @State private var organization = ""
     @State private var appName = ""
     @State private var selectedCapabilities: Set<String> = []
@@ -27,6 +28,8 @@ struct BundleIDSetupView: View {
     @State private var showAdditional = false
 
     @State private var showCreateInstructions = false
+    @State private var showProgramLicenseAlert = false
+    @State private var programLicenseAlertMessage = ""
 
     // Capabilities supported by the ASC API (can be enabled automatically)
     private static let capabilities: [(type: String, name: String)] = [
@@ -98,14 +101,19 @@ struct BundleIDSetupView: View {
     }
 
     private var bundleIdPreview: String {
+        let prefix = sanitize(bundlePrefix)
         let org = sanitize(organization)
         let app = sanitize(appName)
-        guard !org.isEmpty, !app.isEmpty else { return "com...." }
-        return "com.\(org).\(app)"
+        guard !prefix.isEmpty, !org.isEmpty, !app.isEmpty else {
+            return "\(prefix.isEmpty ? "com" : prefix)...."
+        }
+        return "\(prefix).\(org).\(app)"
     }
 
     private var isFormValid: Bool {
-        !sanitize(organization).isEmpty && !sanitize(appName).isEmpty
+        !sanitize(bundlePrefix).isEmpty
+            && !sanitize(organization).isEmpty
+            && !sanitize(appName).isEmpty
     }
 
     var body: some View {
@@ -132,6 +140,14 @@ struct BundleIDSetupView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .onAppear(perform: prefill)
             }
+        }
+        .alert("Action Required in Apple Developer", isPresented: $showProgramLicenseAlert) {
+            Button("Open Apple Developer Account") {
+                NSWorkspace.shared.open(Self.appleDeveloperAccountURL)
+            }
+            Button("Close", role: .cancel) {}
+        } message: {
+            Text(programLicenseAlertMessage)
         }
     }
 
@@ -164,6 +180,12 @@ struct BundleIDSetupView: View {
 
         // Fields
         VStack(alignment: .leading, spacing: 16) {
+            labeledField("Prefix", hint: "Usually com, io, org, net") {
+                TextField("com", text: $bundlePrefix)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.body, design: .monospaced))
+            }
+
             labeledField("Organization", hint: "Your company or personal identifier") {
                 TextField("mycompany", text: $organization)
                     .textFieldStyle(.roundedBorder)
@@ -399,7 +421,13 @@ struct BundleIDSetupView: View {
             }
 
             HStack {
+                Button("Back") {
+                    goBackToBundleRegistrationForm()
+                }
+                .buttonStyle(.bordered)
+
                 Spacer()
+
                 Button("Confirm") {
                     confirmAppCreated()
                 }
@@ -428,11 +456,12 @@ struct BundleIDSetupView: View {
         let storage = ProjectStorage()
         guard let metadata = storage.readMetadata(projectId: projectId) else { return }
 
-        // Pre-fill from existing bundle ID if it looks like com.xxx.yyy
+        // Pre-fill from existing bundle ID if it looks like prefix.org.app
         if let existingBundleId = metadata.bundleIdentifier,
            !existingBundleId.isEmpty {
             let parts = existingBundleId.split(separator: ".")
-            if parts.count >= 3 && parts[0] == "com" {
+            if parts.count >= 3 {
+                bundlePrefix = String(parts[0])
                 organization = String(parts[1])
                 appName = parts.dropFirst(2).joined(separator: ".")
                 return
@@ -480,6 +509,11 @@ struct BundleIDSetupView: View {
                     } catch let err as ASCError {
                         if case .httpError(409, _) = err {
                             enabled += 1  // Already enabled, counts as success
+                        } else if err.isProgramLicenseAgreementRequired {
+                            presentProgramLicenseAgreementAlert(err)
+                            self.error = err.programLicenseAgreementMessage
+                            phase = .form
+                            return
                         }
                         // Other capability errors: skip silently, don't block the flow
                     }
@@ -499,6 +533,14 @@ struct BundleIDSetupView: View {
                 capabilitiesEnabled = enabled
                 phase = .manual
 
+            } catch let ascError as ASCError {
+                if ascError.isProgramLicenseAgreementRequired {
+                    presentProgramLicenseAgreementAlert(ascError)
+                    self.error = ascError.programLicenseAgreementMessage
+                } else {
+                    self.error = ascError.localizedDescription
+                }
+                phase = .form
             } catch {
                 self.error = error.localizedDescription
                 phase = .form
@@ -519,17 +561,50 @@ struct BundleIDSetupView: View {
         phase = .confirming
 
         Task {
-            let found = await asc.fetchApp(bundleId: expectedBundleId)
+            guard let service = asc.service else {
+                error = "ASC service not configured"
+                phase = .manual
+                return
+            }
 
-            if found {
+            do {
+                // Avoid asc.fetchApp here: it toggles isLoadingApp, which can remount the
+                // parent fallback view and reset this setup flow's phase state.
+                let app = try await service.fetchApp(bundleId: expectedBundleId)
+                asc.app = app
                 asc.credentialsError = nil
                 asc.resetTabState()
                 await asc.fetchTabData(tab)
-            } else {
-                error = "App not found in App Store Connect. Make sure you created the app with bundle ID \"\(expectedBundleId)\", then try again."
+            } catch let ascError as ASCError {
+                if ascError.isProgramLicenseAgreementRequired {
+                    presentProgramLicenseAgreementAlert(ascError)
+                    error = ascError.programLicenseAgreementMessage
+                } else {
+                    error = "App not found in App Store Connect. Make sure you created the app with bundle ID \"\(expectedBundleId)\", then try again."
+                }
+                phase = .manual
+            } catch {
+                self.error = error.localizedDescription
                 phase = .manual
             }
         }
+    }
+
+    private func goBackToBundleRegistrationForm() {
+        error = nil
+        let bundleId = createdBundleId.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !bundleId.isEmpty {
+            applyBundleIdToForm(bundleId)
+        }
+        phase = .form
+    }
+
+    private func applyBundleIdToForm(_ bundleId: String) {
+        let parts = bundleId.split(separator: ".")
+        guard parts.count >= 3 else { return }
+        bundlePrefix = String(parts[0])
+        organization = String(parts[1])
+        appName = parts.dropFirst(2).joined(separator: ".")
     }
 
     // MARK: - Auto-create via AI agent
@@ -592,4 +667,11 @@ struct BundleIDSetupView: View {
                 .foregroundStyle(.tertiary)
         }
     }
+
+    private func presentProgramLicenseAgreementAlert(_ error: ASCError) {
+        programLicenseAlertMessage = error.programLicenseAgreementMessage + "\n\nOpen https://developer.apple.com/account and accept the latest agreement, then retry."
+        showProgramLicenseAlert = true
+    }
+
+    private static let appleDeveloperAccountURL = URL(string: "https://developer.apple.com/account")!
 }
