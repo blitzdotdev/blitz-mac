@@ -1,9 +1,11 @@
 # Changelog
 
 ## 1.0.32
-- Replaced simulator cat companion visuals with live gesture visualization overlays (tap/swipe) powered by a local socket stream
-- Added selectable touch overlay skins (Laser, Ripple, Aurora, Spark, Ghost) for simulator interaction previews
-- Hardened ASC bundle ID recovery for multi-target projects, including safer fallback and clearer selector UX
+Features
+- Live gesture visualization overlays to see agents tap/swipe on simulator
+- Automatically discover bundle IDs when importing projects already on App Store
+
+Bug fixes
 - Improved release version selection/update flow by ignoring stale historical versions when choosing defaults
 - Improved imported project metadata/icon hydration and local blitz-iphone MCP command resolution
 
