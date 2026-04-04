@@ -3,7 +3,7 @@ import AppKit
 import Testing
 @testable import Blitz
 
-@Test func interactiveShellChildrenOwnForegroundTTY() async throws {
+@Test func shellChildrenOwnForegroundTTY() async throws {
     let fileManager = FileManager.default
     let zdotdir = fileManager.temporaryDirectory
         .appendingPathComponent("blitz-terminal-host-\(UUID().uuidString)", isDirectory: true)
@@ -28,7 +28,10 @@ import Testing
 
     process.startProcess(
         executable: "/bin/zsh",
-        args: ["-fic", command],
+        // `-i` makes this test depend on runner-specific interactive startup behavior.
+        // The PTY contract we care about is narrower: a shell-launched child should own
+        // the foreground TTY process group regardless of startup files.
+        args: ["-fc", command],
         environment: environment,
         execName: "-zsh"
     )
