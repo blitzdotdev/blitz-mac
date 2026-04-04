@@ -16,6 +16,14 @@ ENTITLEMENTS="$ROOT_DIR/scripts/Entitlements.plist"
 TIMESTAMP_MODE="${CODESIGN_TIMESTAMP:-auto}"
 REQUIRE_SIGNED_RELEASE="${BLITZ_REQUIRE_SIGNED_RELEASE:-0}"
 
+xml_escape() {
+    local value="$1"
+    value="${value//&/&amp;}"
+    value="${value//</&lt;}"
+    value="${value//>/&gt;}"
+    printf '%s' "$value"
+}
+
 resolve_ascd_path() {
     local candidate="${BLITZ_ASCD_PATH:-}"
     [ -n "$candidate" ] || return 1
@@ -93,6 +101,27 @@ if [ -z "$SIGNING_IDENTITY" ]; then
     echo "WARNING: APPLE_SIGNING_IDENTITY not set, falling back to ad-hoc signing."
     echo "         TCC will require re-approval on every rebuild."
     SIGNING_IDENTITY="-"
+fi
+
+ANALYTICS_PLIST_KEYS=""
+if [ "$CONFIG" != "debug" ]; then
+    if [ -n "${BLITZ_ANALYTICS_ENDPOINT:-}" ] && [ -n "${BLITZ_ANALYTICS_TOKEN:-}" ]; then
+        ANALYTICS_ENDPOINT_ESCAPED="$(xml_escape "$BLITZ_ANALYTICS_ENDPOINT")"
+        ANALYTICS_TOKEN_ESCAPED="$(xml_escape "$BLITZ_ANALYTICS_TOKEN")"
+        echo "Embedding analytics config for this build."
+        ANALYTICS_PLIST_KEYS="
+    <key>BlitzAnalyticsEndpoint</key>
+    <string>$ANALYTICS_ENDPOINT_ESCAPED</string>
+    <key>BlitzAnalyticsToken</key>
+    <string>$ANALYTICS_TOKEN_ESCAPED</string>"
+    elif [ -n "${BLITZ_ANALYTICS_ENDPOINT:-}" ] || [ -n "${BLITZ_ANALYTICS_TOKEN:-}" ]; then
+        echo "WARNING: BLITZ_ANALYTICS_ENDPOINT and BLITZ_ANALYTICS_TOKEN must both be set."
+        echo "         Analytics config will not be embedded in this build."
+    else
+        echo "Analytics disabled for this build: no BLITZ_ANALYTICS_ENDPOINT / BLITZ_ANALYTICS_TOKEN provided."
+    fi
+else
+    echo "Analytics disabled for this build: debug builds do not embed analytics config."
 fi
 
 # Read version from package.json
@@ -238,6 +267,7 @@ cat > "$BUNDLE_DIR/Contents/Info.plist" << PLIST
     <string>Blitz needs screen recording access to capture the iOS Simulator display.</string>
     <key>NSCameraUsageDescription</key>
     <string>Blitz needs camera access to capture physical iOS device screens via USB.</string>
+$ANALYTICS_PLIST_KEYS
 </dict>
 </plist>
 PLIST

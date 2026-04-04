@@ -9,6 +9,7 @@ extension ASCManager {
     func createIAP(name: String, productId: String, type: String, displayName: String, description: String?, price: String, screenshotPath: String? = nil) {
         guard let service else { return }
         guard let appId = app?.id else { return }
+        let startedAt = Date()
         writeError = nil
         isCreating = true
         createProgress = 0
@@ -55,8 +56,18 @@ extension ASCManager {
                 createProgress = 0.9
                 try await pollRefreshIAPs(service: service, appId: appId)
                 createProgress = 1.0
+                AnalyticsService.trackBlitzManagedASCUsage(
+                    commandType: "iap.create",
+                    success: true,
+                    startedAt: startedAt
+                )
             } catch {
                 writeError = error.localizedDescription
+                AnalyticsService.trackBlitzManagedASCUsage(
+                    commandType: "iap.create",
+                    success: false,
+                    startedAt: startedAt
+                )
             }
             isCreating = false
             createProgress = 0
@@ -69,6 +80,7 @@ extension ASCManager {
     func updateIAP(id: String, name: String?, reviewNote: String?, displayName: String?, description: String?) async {
         guard let service else { return }
         guard let appId = app?.id else { return }
+        let startedAt = Date()
         writeError = nil
         do {
             // Patch IAP attributes (name, reviewNote)
@@ -89,8 +101,18 @@ extension ASCManager {
                 }
             }
             inAppPurchases = try await service.fetchInAppPurchases(appId: appId)
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "iap.update",
+                success: true,
+                startedAt: startedAt
+            )
         } catch {
             writeError = error.localizedDescription
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "iap.update",
+                success: false,
+                startedAt: startedAt
+            )
         }
     }
 
@@ -99,12 +121,23 @@ extension ASCManager {
     func deleteIAP(id: String) async {
         guard let service else { return }
         guard let appId = app?.id else { return }
+        let startedAt = Date()
         writeError = nil
         do {
             try await service.deleteInAppPurchase(iapId: id)
             inAppPurchases = try await service.fetchInAppPurchases(appId: appId)
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "iap.delete",
+                success: true,
+                startedAt: startedAt
+            )
         } catch {
             writeError = error.localizedDescription
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "iap.delete",
+                success: false,
+                startedAt: startedAt
+            )
         }
     }
 
@@ -112,11 +145,22 @@ extension ASCManager {
 
     func uploadIAPScreenshot(iapId: String, path: String) async {
         guard let service else { return }
+        let startedAt = Date()
         writeError = nil
         do {
             try await service.uploadIAPReviewScreenshot(iapId: iapId, path: path)
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "iap.screenshot.upload",
+                success: true,
+                startedAt: startedAt
+            )
         } catch {
             writeError = error.localizedDescription
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "iap.screenshot.upload",
+                success: false,
+                startedAt: startedAt
+            )
         }
     }
 
@@ -125,10 +169,16 @@ extension ASCManager {
     func submitIAPForReview(id: String) async -> Bool {
         guard let service else { return false }
         guard let appId = app?.id else { return false }
+        let startedAt = Date()
         writeError = nil
         do {
             try await service.submitIAPForReview(iapId: id)
             inAppPurchases = try await service.fetchInAppPurchases(appId: appId)
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "iap.submit_for_review",
+                success: true,
+                startedAt: startedAt
+            )
             return true
         } catch {
             let msg = error.localizedDescription
@@ -137,6 +187,11 @@ extension ASCManager {
             } else {
                 writeError = msg
             }
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "iap.submit_for_review",
+                success: false,
+                startedAt: startedAt
+            )
             return false
         }
     }
@@ -146,6 +201,7 @@ extension ASCManager {
     func createSubscription(groupName: String, name: String, productId: String, displayName: String, description: String?, duration: String, price: String, screenshotPath: String? = nil) {
         guard let service else { return }
         guard let appId = app?.id else { return }
+        let startedAt = Date()
         writeError = nil
         isCreating = true
         createProgress = 0
@@ -212,8 +268,18 @@ extension ASCManager {
                 createProgress = 0.9
                 try await pollRefreshSubscriptions(service: service, appId: appId)
                 createProgress = 1.0
+                AnalyticsService.trackBlitzManagedASCUsage(
+                    commandType: "subscription.create",
+                    success: true,
+                    startedAt: startedAt
+                )
             } catch {
                 writeError = error.localizedDescription
+                AnalyticsService.trackBlitzManagedASCUsage(
+                    commandType: "subscription.create",
+                    success: false,
+                    startedAt: startedAt
+                )
             }
             isCreating = false
             createProgress = 0
@@ -226,6 +292,7 @@ extension ASCManager {
     func updateSubscription(id: String, name: String?, reviewNote: String?, displayName: String?, description: String?) async {
         guard let service else { return }
         guard let appId = app?.id else { return }
+        let startedAt = Date()
         writeError = nil
         do {
             var attrs: [String: Any] = [:]
@@ -247,8 +314,18 @@ extension ASCManager {
             for g in subscriptionGroups {
                 subscriptionsPerGroup[g.id] = try await service.fetchSubscriptionsInGroup(groupId: g.id)
             }
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "subscription.update",
+                success: true,
+                startedAt: startedAt
+            )
         } catch {
             writeError = error.localizedDescription
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "subscription.update",
+                success: false,
+                startedAt: startedAt
+            )
         }
     }
 
@@ -257,6 +334,7 @@ extension ASCManager {
     func deleteSubscription(id: String) async {
         guard let service else { return }
         guard let appId = app?.id else { return }
+        let startedAt = Date()
         writeError = nil
         do {
             try await service.deleteSubscription(subscriptionId: id)
@@ -264,21 +342,42 @@ extension ASCManager {
             for g in subscriptionGroups {
                 subscriptionsPerGroup[g.id] = try await service.fetchSubscriptionsInGroup(groupId: g.id)
             }
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "subscription.delete",
+                success: true,
+                startedAt: startedAt
+            )
         } catch {
             writeError = error.localizedDescription
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "subscription.delete",
+                success: false,
+                startedAt: startedAt
+            )
         }
     }
 
     func deleteSubscriptionGroup(id: String) async {
         guard let service else { return }
         guard let appId = app?.id else { return }
+        let startedAt = Date()
         writeError = nil
         do {
             try await service.deleteSubscriptionGroup(groupId: id)
             subscriptionGroups = try await service.fetchSubscriptionGroups(appId: appId)
             subscriptionsPerGroup.removeValue(forKey: id)
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "subscription_group.delete",
+                success: true,
+                startedAt: startedAt
+            )
         } catch {
             writeError = error.localizedDescription
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "subscription_group.delete",
+                success: false,
+                startedAt: startedAt
+            )
         }
     }
 
@@ -286,11 +385,22 @@ extension ASCManager {
 
     func uploadSubscriptionScreenshot(subscriptionId: String, path: String) async {
         guard let service else { return }
+        let startedAt = Date()
         writeError = nil
         do {
             try await service.uploadSubscriptionReviewScreenshot(subscriptionId: subscriptionId, path: path)
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "subscription.screenshot.upload",
+                success: true,
+                startedAt: startedAt
+            )
         } catch {
             writeError = error.localizedDescription
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "subscription.screenshot.upload",
+                success: false,
+                startedAt: startedAt
+            )
         }
     }
 
@@ -298,6 +408,7 @@ extension ASCManager {
 
     func updateSubscriptionGroupLocalization(groupId: String, name: String) async {
         guard let service else { return }
+        let startedAt = Date()
         writeError = nil
         do {
             let locs = try await service.fetchSubscriptionGroupLocalizations(groupId: groupId)
@@ -306,8 +417,18 @@ extension ASCManager {
             } else {
                 try await service.localizeSubscriptionGroup(groupId: groupId, locale: "en-US", name: name)
             }
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "subscription_group.update",
+                success: true,
+                startedAt: startedAt
+            )
         } catch {
             writeError = error.localizedDescription
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "subscription_group.update",
+                success: false,
+                startedAt: startedAt
+            )
         }
     }
 
@@ -316,6 +437,7 @@ extension ASCManager {
     func submitSubscriptionForReview(id: String) async -> Bool {
         guard let service else { return false }
         guard let appId = app?.id else { return false }
+        let startedAt = Date()
         writeError = nil
         do {
             try await service.submitSubscriptionForReview(subscriptionId: id)
@@ -323,6 +445,11 @@ extension ASCManager {
             for g in subscriptionGroups {
                 subscriptionsPerGroup[g.id] = try await service.fetchSubscriptionsInGroup(groupId: g.id)
             }
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "subscription.submit_for_review",
+                success: true,
+                startedAt: startedAt
+            )
             return true
         } catch {
             let msg = error.localizedDescription
@@ -331,6 +458,11 @@ extension ASCManager {
             } else {
                 writeError = msg
             }
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "subscription.submit_for_review",
+                success: false,
+                startedAt: startedAt
+            )
             return false
         }
     }
@@ -340,6 +472,7 @@ extension ASCManager {
     func setAppPrice(pricePointId: String) async {
         guard let service else { return }
         guard let appId = app?.id else { return }
+        let startedAt = Date()
         writeError = nil
         do {
             try await service.setAppPrice(appId: appId, pricePointId: pricePointId)
@@ -348,14 +481,25 @@ extension ASCManager {
             scheduledAppPricePointId = nil
             scheduledAppPriceEffectiveDate = nil
             monetizationStatus = isFreePricePoint(pricePointId) ? "Free" : "Configured"
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "app_price.set",
+                success: true,
+                startedAt: startedAt
+            )
         } catch {
             writeError = error.localizedDescription
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "app_price.set",
+                success: false,
+                startedAt: startedAt
+            )
         }
     }
 
     func setScheduledAppPrice(currentPricePointId: String, futurePricePointId: String, effectiveDate: String) async {
         guard let service else { return }
         guard let appId = app?.id else { return }
+        let startedAt = Date()
         writeError = nil
         do {
             try await service.setScheduledAppPrice(
@@ -368,14 +512,25 @@ extension ASCManager {
             scheduledAppPricePointId = futurePricePointId
             scheduledAppPriceEffectiveDate = effectiveDate
             monetizationStatus = "Configured"
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "app_price.schedule",
+                success: true,
+                startedAt: startedAt
+            )
         } catch {
             writeError = error.localizedDescription
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "app_price.schedule",
+                success: false,
+                startedAt: startedAt
+            )
         }
     }
 
     func setPriceFree() async {
         guard let service else { return }
         guard let appId = app?.id else { return }
+        let startedAt = Date()
         writeError = nil
         do {
             try await service.setPriceFree(appId: appId)
@@ -384,8 +539,18 @@ extension ASCManager {
             scheduledAppPricePointId = nil
             scheduledAppPriceEffectiveDate = nil
             monetizationStatus = "Free"
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "app_price.free",
+                success: true,
+                startedAt: startedAt
+            )
         } catch {
             writeError = error.localizedDescription
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "app_price.free",
+                success: false,
+                startedAt: startedAt
+            )
         }
     }
 

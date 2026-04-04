@@ -5,6 +5,7 @@ import Foundation
 final class ProjectManager {
     var projects: [Project] = []
     var isLoading = false
+    private var hasTrackedInventory = false
 
     func loadProjects() async {
         isLoading = true
@@ -12,6 +13,12 @@ final class ProjectManager {
 
         let storage = ProjectStorage()
         projects = await storage.listProjects()
+
+        guard !hasTrackedInventory else { return }
+        hasTrackedInventory = true
+        for project in projects {
+            AnalyticsService.trackProjectInventory(projectType: project.type)
+        }
     }
 }
 

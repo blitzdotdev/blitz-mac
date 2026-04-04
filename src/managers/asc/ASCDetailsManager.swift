@@ -8,6 +8,7 @@ extension ASCManager {
 
     func updateAppInfoField(_ field: String, value: String) async {
         guard let service else { return }
+        let startedAt = Date()
         writeError = nil
 
         // Fields that live on different ASC resources:
@@ -23,8 +24,18 @@ extension ASCManager {
                     appStoreVersions = try await service.fetchAppStoreVersions(appId: appId)
                     syncSelectedVersion(preferredVersionId: versionId)
                 }
+                AnalyticsService.trackBlitzManagedASCUsage(
+                    commandType: "app_details.update",
+                    success: true,
+                    startedAt: startedAt
+                )
             } catch {
                 writeError = error.localizedDescription
+                AnalyticsService.trackBlitzManagedASCUsage(
+                    commandType: "app_details.update",
+                    success: false,
+                    startedAt: startedAt
+                )
             }
         } else if field == "contentRightsDeclaration" {
             guard let appId = app?.id else { return }
@@ -32,15 +43,35 @@ extension ASCManager {
                 try await service.patchApp(id: appId, fields: [field: value])
                 // Refetch app to reflect the change
                 app = try await service.fetchApp(bundleId: app?.bundleId ?? "")
+                AnalyticsService.trackBlitzManagedASCUsage(
+                    commandType: "app_details.update",
+                    success: true,
+                    startedAt: startedAt
+                )
             } catch {
                 writeError = error.localizedDescription
+                AnalyticsService.trackBlitzManagedASCUsage(
+                    commandType: "app_details.update",
+                    success: false,
+                    startedAt: startedAt
+                )
             }
         } else if let infoId = appInfo?.id {
             do {
                 try await service.patchAppInfo(id: infoId, fields: [field: value])
                 appInfo = try? await service.fetchAppInfo(appId: app?.id ?? "")
+                AnalyticsService.trackBlitzManagedASCUsage(
+                    commandType: "app_details.update",
+                    success: true,
+                    startedAt: startedAt
+                )
             } catch {
                 writeError = error.localizedDescription
+                AnalyticsService.trackBlitzManagedASCUsage(
+                    commandType: "app_details.update",
+                    success: false,
+                    startedAt: startedAt
+                )
             }
         }
     }
@@ -69,6 +100,7 @@ extension ASCManager {
     func updateAgeRating(_ attributes: [String: Any]) async {
         guard let service else { return }
         guard let id = ageRatingDeclaration?.id else { return }
+        let startedAt = Date()
         writeError = nil
         do {
             try await service.patchAgeRating(id: id, attributes: attributes)
@@ -79,8 +111,18 @@ extension ASCManager {
                     context: "age_rating_update"
                 )
             }
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "age_rating.update",
+                success: true,
+                startedAt: startedAt
+            )
         } catch {
             writeError = error.localizedDescription
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "age_rating.update",
+                success: false,
+                startedAt: startedAt
+            )
         }
     }
 }

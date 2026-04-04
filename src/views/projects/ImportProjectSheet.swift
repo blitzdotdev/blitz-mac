@@ -251,6 +251,7 @@ struct ImportProjectSheet: View {
                 whitelistBlitzMCP: appState.settingsStore.whitelistBlitzMCPTools,
                 allowASCCLICalls: appState.settingsStore.allowASCCLICalls
             )
+            AnalyticsService.trackProjectImport(projectType: projectType)
             await appState.projectManager.loadProjects()
             appState.activeProjectId = projectId
             isPresented = false

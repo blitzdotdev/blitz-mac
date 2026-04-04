@@ -112,8 +112,10 @@ All release binaries are built by the public [GitHub Actions workflow](.github/w
 
 ## Security and privacy
 
-- **No analytics or telemetry.** The app makes zero tracking calls. No data is collected about your usage.
-- **No phone-home.** The only network requests are to Apple's App Store Connect API (when you use ASC features) and GitHub's releases API for optional update checks.
+- **Minimal telemetry in official releases only.** GitHub release builds may send anonymous product telemetry. Source builds, forks, and debug builds stay off by default unless you explicitly embed analytics config while bundling.
+- **What Blitz records.** App launches, Blitz project type inventory/create/import events, and App Store Connect usage events with only `source` (`blitz_managed` or `agent_direct`), normalized action name, success, and duration.
+- **What Blitz never records.** No project names, paths, bundle IDs, CLI args, App Store Connect form values, file names, prompts, terminal contents, or user content.
+- **No broad phone-home.** Beyond the optional anonymous telemetry above, network requests are limited to Apple's App Store Connect API (when you use ASC features) and GitHub's releases API for update checks.
 - **MCP server is localhost-only.** The built-in MCP server binds to `127.0.0.1` and is never exposed to the network.
 - **No access to sensitive data.** The app does not access your contacts, photos, location, or any personal data. Screen capture is limited to the iOS Simulator window.
 

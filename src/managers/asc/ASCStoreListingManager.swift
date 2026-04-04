@@ -154,6 +154,7 @@ extension ASCManager {
             return
         }
 
+        let startedAt = Date()
         writeError = nil
 
         do {
@@ -188,8 +189,18 @@ extension ASCManager {
                 preferredVersionId: selectedVersion?.id,
                 preferredLocale: trimmedLocale
             )
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "store_listing.update",
+                success: true,
+                startedAt: startedAt
+            )
         } catch {
             writeError = error.localizedDescription
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "store_listing.update",
+                success: false,
+                startedAt: startedAt
+            )
         }
     }
 }

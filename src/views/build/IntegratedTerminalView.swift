@@ -1,12 +1,19 @@
 import SwiftUI
-import SwiftTerm
 
-/// Hosts a `TerminalSession`'s `LocalProcessTerminalView` inside a container NSView.
+/// Hosts a `TerminalSession`'s terminal host view inside a container NSView.
 /// The terminal view is owned by `TerminalSession` (not by SwiftUI), so it persists
 /// across show/hide cycles and tab switches.
 struct TerminalSessionView: NSViewRepresentable {
     let session: TerminalSession
     let isActive: Bool
+
+    final class Coordinator {
+        var lastActive = false
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
 
     func makeNSView(context: Context) -> NSView {
         let container = NSView(frame: .zero)
@@ -23,17 +30,22 @@ struct TerminalSessionView: NSViewRepresentable {
             embed(termView, in: nsView)
         }
 
-        guard isActive else { return }
+        guard isActive else {
+            context.coordinator.lastActive = false
+            return
+        }
 
         termView.needsLayout = true
         termView.needsDisplay = true
         termView.displayIfNeeded()
 
-        if nsView.window?.firstResponder !== termView {
+        if !context.coordinator.lastActive, nsView.window?.firstResponder !== termView {
             DispatchQueue.main.async {
                 nsView.window?.makeFirstResponder(termView)
             }
         }
+
+        context.coordinator.lastActive = true
     }
 
     static func dismantleNSView(_ nsView: NSView, coordinator: ()) {
@@ -43,7 +55,7 @@ struct TerminalSessionView: NSViewRepresentable {
         // rendering context to be lost, resulting in a blank view.
     }
 
-    private func embed(_ termView: LocalProcessTerminalView, in container: NSView) {
+    private func embed(_ termView: BlitzTerminalView, in container: NSView) {
         termView.removeFromSuperview()
         termView.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(termView)

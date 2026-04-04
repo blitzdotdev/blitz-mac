@@ -27,6 +27,30 @@ enum TerminalLauncher {
         return segments.joined(separator: " && ")
     }
 
+    static func buildAgentExecCommand(
+        projectPath: String?,
+        agent: AIAgent,
+        prompt: String? = nil,
+        skipPermissions: Bool = false
+    ) -> String {
+        var segments = shellExportCommands(for: projectPath)
+
+        if let path = projectPath {
+            segments.append("cd \(shellQuote(path))")
+        }
+
+        var agentCommand = agent.cliCommand
+        if skipPermissions, let flag = agent.skipPermissionsFlag {
+            agentCommand += " \(flag)"
+        }
+        if let prompt, !prompt.isEmpty {
+            agentCommand += " \(shellQuote(prompt))"
+        }
+        segments.append("exec \(agentCommand)")
+
+        return segments.joined(separator: " && ")
+    }
+
     /// Launch the default terminal with the default agent CLI, optionally with a prompt.
     /// Returns true if the launch was attempted, false if the terminal couldn't be resolved.
     @discardableResult
@@ -179,6 +203,7 @@ enum TerminalLauncher {
 
     private static func shellExportCommands(for projectPath: String?) -> [String] {
         ASCAuthBridge().shellExportCommands(forLaunchPath: projectPath)
+            + AnalyticsService.agentSessionExportCommands()
     }
 
     private static func runOsascript(_ script: String) -> Bool {

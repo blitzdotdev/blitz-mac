@@ -90,6 +90,8 @@ struct NewProjectSheet: View {
             return
         }
 
+        AnalyticsService.trackProjectCreate(projectType: projectType)
+
         // Reload project list so the new project appears in the switcher
         await appState.projectManager.loadProjects()
 

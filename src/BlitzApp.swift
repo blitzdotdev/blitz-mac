@@ -7,6 +7,7 @@ final class BlitzAppDelegate: NSObject, NSApplicationDelegate {
         LogClear()
         Log("launch_log=\(BlitzPaths.launchLogFile.path)")
         AppRelaunchService.shared.clearPendingRestart()
+        AnalyticsService.trackAppLaunch()
         if let fileMenu = NSApp.mainMenu?.item(withTitle: "File") {
             fileMenu.title = "Project"
         }

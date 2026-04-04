@@ -46,6 +46,7 @@ yarn-error.log
 *.pem
 *.p8
 .mcpregistry_*
+.plans
 
 # IDE
 .vscode/

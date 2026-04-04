@@ -55,23 +55,14 @@ struct ContentView: View {
             // Show built-in terminal panel
             appState.showTerminal = true
 
-            // Create a new session with the AI agent command
-            let session = appState.terminalManager.createSession(projectPath: appState.activeProject?.path)
-
-            // Build and send the agent CLI command
             let agent = AIAgent(rawValue: settings.defaultAgentCLI) ?? .claudeCode
             let prompt = settings.sendDefaultPrompt ? ConnectAIPopover.prompt(for: appState.activeTab) : nil
-            let command = TerminalLauncher.buildAgentCommand(
+            appState.terminalManager.createAgentSession(
                 projectPath: appState.activeProject?.path,
                 agent: agent,
                 prompt: prompt,
                 skipPermissions: settings.skipAgentPermissions
             )
-
-            // Small delay so the shell is ready to receive input
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                session.sendCommand(command)
-            }
         } else {
             // Launch external terminal
             TerminalLauncher.launchFromSettings(

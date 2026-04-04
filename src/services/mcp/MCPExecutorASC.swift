@@ -800,82 +800,119 @@ extension MCPExecutor {
         }
 
         if let priceVal = Double(priceStr), priceVal < 0.001 {
-            try await service.setPriceFree(appId: appId)
+            let startedAt = Date()
+            do {
+                try await service.setPriceFree(appId: appId)
+                try await service.ensureAppAvailability(appId: appId)
+                await MainActor.run {
+                    appState.ascManager.currentAppPricePointId = appState.ascManager.freeAppPricePointId
+                    appState.ascManager.scheduledAppPricePointId = nil
+                    appState.ascManager.scheduledAppPriceEffectiveDate = nil
+                    appState.ascManager.monetizationStatus = "Free"
+                }
+                await appState.ascManager.refreshTabData(.monetization)
+                AnalyticsService.trackBlitzManagedASCUsage(
+                    commandType: "app_price.free",
+                    success: true,
+                    startedAt: startedAt
+                )
+                return mcpJSON([
+                    "success": true,
+                    "price": "0.00",
+                    "message": "App set to free with territory availability configured"
+                ])
+            } catch {
+                AnalyticsService.trackBlitzManagedASCUsage(
+                    commandType: "app_price.free",
+                    success: false,
+                    startedAt: startedAt
+                )
+                throw error
+            }
+        }
+
+        let commandType = effectiveDate == nil ? "app_price.set" : "app_price.schedule"
+        let startedAt = Date()
+
+        do {
+            let pricePoints = try await service.fetchAppPricePoints(appId: appId)
+            guard let match = pricePoints.first(where: {
+                Self.priceMatches($0.attributes.customerPrice, target: priceStr)
+            }) else {
+                let sorted = pricePoints.compactMap { $0.attributes.customerPrice }
+                    .compactMap { Double($0) }
+                    .filter { $0 > 0 }
+                    .sorted()
+                let samples = sorted.count <= 30 ? sorted : {
+                    let lo = Array(sorted.prefix(5))
+                    let hi = Array(sorted.suffix(5))
+                    let step = max(1, (sorted.count - 10) / 10)
+                    let mid = stride(from: 5, to: sorted.count - 5, by: step).map { sorted[$0] }
+                    return lo + mid + hi
+                }()
+                let formatted = samples.map { String(format: "%.2f", $0) }
+                return mcpText(
+                    "Error: no price point matching $\(priceStr). \(sorted.count) tiers available, "
+                        + "samples: \(formatted.joined(separator: ", "))"
+                )
+            }
+
+            if let effectiveDate {
+                let freePoint = pricePoints.first(where: {
+                    let p = $0.attributes.customerPrice ?? "0"
+                    return p == "0" || p == "0.0" || p == "0.00"
+                })
+                let currentId = freePoint?.id ?? match.id
+                try await service.setScheduledAppPrice(
+                    appId: appId,
+                    currentPricePointId: currentId,
+                    futurePricePointId: match.id,
+                    effectiveDate: effectiveDate
+                )
+                try await service.ensureAppAvailability(appId: appId)
+                await MainActor.run {
+                    appState.ascManager.currentAppPricePointId = currentId
+                    appState.ascManager.scheduledAppPricePointId = match.id
+                    appState.ascManager.scheduledAppPriceEffectiveDate = effectiveDate
+                    appState.ascManager.monetizationStatus = "Configured"
+                }
+                await appState.ascManager.refreshTabData(.monetization)
+                AnalyticsService.trackBlitzManagedASCUsage(
+                    commandType: commandType,
+                    success: true,
+                    startedAt: startedAt
+                )
+                return mcpJSON([
+                    "success": true,
+                    "price": priceStr,
+                    "effectiveDate": effectiveDate,
+                    "message": "Scheduled price change for \(effectiveDate) with territory availability configured"
+                ])
+            }
+
+            try await service.setAppPrice(appId: appId, pricePointId: match.id)
             try await service.ensureAppAvailability(appId: appId)
             await MainActor.run {
-                appState.ascManager.currentAppPricePointId = appState.ascManager.freeAppPricePointId
+                appState.ascManager.currentAppPricePointId = match.id
                 appState.ascManager.scheduledAppPricePointId = nil
                 appState.ascManager.scheduledAppPriceEffectiveDate = nil
-                appState.ascManager.monetizationStatus = "Free"
-            }
-            await appState.ascManager.refreshTabData(.monetization)
-            return mcpJSON([
-                "success": true,
-                "price": "0.00",
-                "message": "App set to free with territory availability configured"
-            ])
-        }
-
-        let pricePoints = try await service.fetchAppPricePoints(appId: appId)
-        guard let match = pricePoints.first(where: {
-            Self.priceMatches($0.attributes.customerPrice, target: priceStr)
-        }) else {
-            let sorted = pricePoints.compactMap { $0.attributes.customerPrice }
-                .compactMap { Double($0) }
-                .filter { $0 > 0 }
-                .sorted()
-            let samples = sorted.count <= 30 ? sorted : {
-                let lo = Array(sorted.prefix(5))
-                let hi = Array(sorted.suffix(5))
-                let step = max(1, (sorted.count - 10) / 10)
-                let mid = stride(from: 5, to: sorted.count - 5, by: step).map { sorted[$0] }
-                return lo + mid + hi
-            }()
-            let formatted = samples.map { String(format: "%.2f", $0) }
-            return mcpText(
-                "Error: no price point matching $\(priceStr). \(sorted.count) tiers available, "
-                    + "samples: \(formatted.joined(separator: ", "))"
-            )
-        }
-
-        if let effectiveDate {
-            let freePoint = pricePoints.first(where: {
-                let p = $0.attributes.customerPrice ?? "0"
-                return p == "0" || p == "0.0" || p == "0.00"
-            })
-            let currentId = freePoint?.id ?? match.id
-            try await service.setScheduledAppPrice(
-                appId: appId,
-                currentPricePointId: currentId,
-                futurePricePointId: match.id,
-                effectiveDate: effectiveDate
-            )
-            try await service.ensureAppAvailability(appId: appId)
-            await MainActor.run {
-                appState.ascManager.currentAppPricePointId = currentId
-                appState.ascManager.scheduledAppPricePointId = match.id
-                appState.ascManager.scheduledAppPriceEffectiveDate = effectiveDate
                 appState.ascManager.monetizationStatus = "Configured"
             }
             await appState.ascManager.refreshTabData(.monetization)
-            return mcpJSON([
-                "success": true,
-                "price": priceStr,
-                "effectiveDate": effectiveDate,
-                "message": "Scheduled price change for \(effectiveDate) with territory availability configured"
-            ])
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: commandType,
+                success: true,
+                startedAt: startedAt
+            )
+            return mcpJSON(["success": true, "price": priceStr, "pricePointId": match.id])
+        } catch {
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: commandType,
+                success: false,
+                startedAt: startedAt
+            )
+            throw error
         }
-
-        try await service.setAppPrice(appId: appId, pricePointId: match.id)
-        try await service.ensureAppAvailability(appId: appId)
-        await MainActor.run {
-            appState.ascManager.currentAppPricePointId = match.id
-            appState.ascManager.scheduledAppPricePointId = nil
-            appState.ascManager.scheduledAppPriceEffectiveDate = nil
-            appState.ascManager.monetizationStatus = "Configured"
-        }
-        await appState.ascManager.refreshTabData(.monetization)
-        return mcpJSON(["success": true, "price": priceStr, "pricePointId": match.id])
     }
 
     func executeASCCreateIAP(_ args: [String: Any]) async throws -> [String: Any] {

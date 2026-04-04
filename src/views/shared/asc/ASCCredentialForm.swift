@@ -159,16 +159,12 @@ struct ASCCredentialForm: View {
 
                         if terminal.isBuiltIn {
                             appState.showTerminal = true
-                            let session = appState.terminalManager.createSession(projectPath: BlitzPaths.mcps.path)
-                            let command = TerminalLauncher.buildAgentCommand(
+                            appState.terminalManager.createAgentSession(
                                 projectPath: BlitzPaths.mcps.path,
                                 agent: agent,
                                 prompt: prompt,
                                 skipPermissions: settings.skipAgentPermissions
                             )
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                session.sendCommand(command)
-                            }
                         } else {
                             TerminalLauncher.launch(
                                 projectPath: BlitzPaths.mcps.path,

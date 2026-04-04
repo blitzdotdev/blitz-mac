@@ -172,6 +172,7 @@ extension ASCManager {
             return
         }
 
+        let startedAt = Date()
         await ASCUpdateLogger.shared.event("attach_build_started", metadata: [
             "buildId": buildId,
             "versionId": versionId,
@@ -185,6 +186,11 @@ extension ASCManager {
                 "buildId": buildId,
                 "versionId": versionId,
             ])
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "build.attach",
+                success: true,
+                startedAt: startedAt
+            )
         } catch {
             writeError = error.localizedDescription
             await ASCUpdateLogger.shared.event("attach_build_failed", metadata: [
@@ -192,6 +198,11 @@ extension ASCManager {
                 "error": error.localizedDescription,
                 "versionId": versionId,
             ])
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "build.attach",
+                success: false,
+                startedAt: startedAt
+            )
         }
     }
 
@@ -247,6 +258,7 @@ extension ASCManager {
 
         isCreatingVersion = true
         versionCreationError = nil
+        let startedAt = Date()
         await ASCUpdateLogger.shared.event("create_update_started", metadata: [
             "appId": appId,
             "attachBuildId": attachBuildId ?? "nil",
@@ -344,12 +356,22 @@ extension ASCManager {
                 "versionId": createdVersion.id,
                 "versionString": trimmedVersion,
             ])
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "version.create",
+                success: true,
+                startedAt: startedAt
+            )
         } catch {
             versionCreationError = error.localizedDescription
             await ASCUpdateLogger.shared.event("create_update_failed", metadata: [
                 "error": error.localizedDescription,
                 "versionString": trimmedVersion,
             ])
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "version.create",
+                success: false,
+                startedAt: startedAt
+            )
         }
 
         isCreatingVersion = false
@@ -368,6 +390,7 @@ extension ASCManager {
         }
         isSubmitting = true
         submissionError = nil
+        let startedAt = Date()
         await ASCUpdateLogger.shared.event("submit_for_review_started", metadata: [
             "appId": appId,
             "attachBuildId": attachBuildId ?? "nil",
@@ -386,6 +409,11 @@ extension ASCManager {
                 "appId": appId,
                 "versionId": versionId,
             ])
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "submit.review",
+                success: true,
+                startedAt: startedAt
+            )
         } catch {
             isSubmitting = false
             submissionError = error.localizedDescription
@@ -393,6 +421,11 @@ extension ASCManager {
                 "error": error.localizedDescription,
                 "versionId": versionId,
             ])
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "submit.review",
+                success: false,
+                startedAt: startedAt
+            )
         }
     }
 

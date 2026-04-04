@@ -218,6 +218,7 @@ extension ASCManager {
         }
 
         let trackKey = screenshotTrackKey(displayType: displayType, locale: loc.attributes.locale)
+        let startedAt = Date()
 
         do {
             // Refresh the remote baseline before diffing so stale cached ASC IDs
@@ -269,8 +270,18 @@ extension ASCManager {
 
             await loadScreenshots(locale: loc.attributes.locale, force: true)
             loadTrackFromASC(displayType: displayType, locale: loc.attributes.locale, overwriteUnsaved: true)
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "screenshots.save",
+                success: true,
+                startedAt: startedAt
+            )
         } catch {
             writeError = error.localizedDescription
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "screenshots.save",
+                success: false,
+                startedAt: startedAt
+            )
         }
     }
 

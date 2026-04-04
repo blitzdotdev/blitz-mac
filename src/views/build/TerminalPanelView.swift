@@ -161,7 +161,7 @@ struct TerminalPanelView: View {
         } else {
             ZStack {
                 // Keep each session's host NSView alive so switching tabs does not require
-                // SwiftUI to reparent a single LocalProcessTerminalView between containers.
+                // SwiftUI to reparent a single terminal host view between containers.
                 ForEach(manager.sessions) { session in
                     let isActive = session.id == manager.activeSessionId
 

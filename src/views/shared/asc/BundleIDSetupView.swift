@@ -625,16 +625,12 @@ struct BundleIDSetupView: View {
 
         if terminal.isBuiltIn {
             appState.showTerminal = true
-            let session = appState.terminalManager.createSession(projectPath: projectPath)
-            let command = TerminalLauncher.buildAgentCommand(
+            appState.terminalManager.createAgentSession(
                 projectPath: projectPath,
                 agent: agent,
                 prompt: prompt,
                 skipPermissions: settings.skipAgentPermissions
             )
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                session.sendCommand(command)
-            }
         } else {
             TerminalLauncher.launch(projectPath: projectPath, agent: agent, terminal: terminal, prompt: prompt, skipPermissions: settings.skipAgentPermissions)
         }

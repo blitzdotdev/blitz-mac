@@ -11,20 +11,88 @@ struct ProjectAgentConfigService {
 
     private func blitzIphoneCommand(nodeRuntimeBin: String) -> (command: String, args: [String], env: [String: String]) {
         let pathEnv = "\(nodeRuntimeBin):/usr/bin:/bin:/usr/sbin:/sbin"
+        let command: String
+        let args: [String]
+
         if let localCLI = Self.localBlitzIphoneCLIPath() {
             let localNode = Self.localNodePath() ?? "/opt/homebrew/bin/node"
+            command = localNode
+            args = [localCLI]
+        } else {
+            command = nodeRuntimeBin + "/npx"
+            args = ["-y", "@blitzdev/iphone-mcp"]
+        }
+
+        let env = ["PATH": "\(pathEnv):/opt/homebrew/bin:/usr/local/bin"]
+        if let launcher = Self.ensureDetachedMCPLauncher() {
             return (
-                command: localNode,
-                args: [localCLI],
-                env: ["PATH": "\(pathEnv):/opt/homebrew/bin:/usr/local/bin"]
+                command: launcher,
+                args: [command] + args,
+                env: env
             )
         }
 
         return (
-            command: nodeRuntimeBin + "/npx",
-            args: ["-y", "@blitzdev/iphone-mcp"],
-            env: ["PATH": pathEnv]
+            command: command,
+            args: args,
+            env: env
         )
+    }
+
+    private static func ensureDetachedMCPLauncher() -> String? {
+        let fm = FileManager.default
+        let launcherURL = BlitzPaths.bin.appendingPathComponent("blitz-detached-mcp")
+        let script = """
+        #!/usr/bin/env python3
+        import os
+        import signal
+        import sys
+
+        def main() -> int:
+            if len(sys.argv) < 2:
+                print("usage: blitz-detached-mcp <command> [args...]", file=sys.stderr)
+                return 64
+
+            child_pid = os.fork()
+            if child_pid == 0:
+                os.setsid()
+                os.execvpe(sys.argv[1], sys.argv[1:], os.environ)
+
+            def forward(sig, _frame):
+                try:
+                    os.kill(child_pid, sig)
+                except ProcessLookupError:
+                    pass
+
+            for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+                signal.signal(sig, forward)
+
+            while True:
+                try:
+                    _, status = os.waitpid(child_pid, 0)
+                    break
+                except InterruptedError:
+                    continue
+
+            if os.WIFEXITED(status):
+                return os.WEXITSTATUS(status)
+            if os.WIFSIGNALED(status):
+                return 128 + os.WTERMSIG(status)
+            return 1
+
+        if __name__ == "__main__":
+            raise SystemExit(main())
+        """
+
+        do {
+            try fm.createDirectory(at: BlitzPaths.bin, withIntermediateDirectories: true)
+            try script.write(to: launcherURL, atomically: true, encoding: .utf8)
+            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: launcherURL.path)
+            return launcherURL.path
+        } catch {
+            print("[ProjectAgentConfigService] Failed to write detached MCP launcher: \(error)")
+            return nil
+        }
     }
 
     private static func localBlitzIphoneCLIPath() -> String? {

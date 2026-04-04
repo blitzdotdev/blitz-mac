@@ -9,6 +9,7 @@ extension ASCManager {
     func updateReviewContact(_ attributes: [String: Any]) async {
         guard let service else { return }
         guard let versionId = selectedVersion?.id else { return }
+        let startedAt = Date()
         writeError = nil
         do {
             try await service.createOrPatchReviewDetail(versionId: versionId, attributes: attributes)
@@ -17,8 +18,18 @@ extension ASCManager {
                 versionId: versionId,
                 context: "review_contact_update"
             )
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "review.contact.update",
+                success: true,
+                startedAt: startedAt
+            )
         } catch {
             writeError = error.localizedDescription
+            AnalyticsService.trackBlitzManagedASCUsage(
+                commandType: "review.contact.update",
+                success: false,
+                startedAt: startedAt
+            )
         }
     }
 }

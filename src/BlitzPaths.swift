@@ -25,6 +25,10 @@ enum BlitzPaths {
     /// Shared logs directory: ~/.blitz/logs/
     static var logs: URL { root.appendingPathComponent("logs") }
 
+    /// Analytics state directory: ~/.blitz/analytics/
+    static var analytics: URL { root.appendingPathComponent("analytics") }
+    static var analyticsDeviceID: URL { analytics.appendingPathComponent("device-id") }
+
     /// One timestamped directory per app launch, used by the shared debug log.
     static let launchLogSessionName: String = {
         let formatter = DateFormatter()

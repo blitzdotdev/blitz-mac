@@ -115,7 +115,18 @@ struct ASCOverview: View {
 
                 let live = asc.liveVersion
                 let pending = asc.currentUpdateVersion
+                let selectedVersion = asc.selectedVersion
                 let feedbackVersion = asc.feedbackDisplayVersion(from: asc.appStoreVersions)
+                let rejectionCardVersion: ASCAppStoreVersion? = {
+                    guard let selectedVersion else { return nil }
+                    if let feedbackVersion, feedbackVersion.id == selectedVersion.id {
+                        return feedbackVersion
+                    }
+                    if asc.latestSubmissionItems.contains(where: { $0.attributes.state == "REJECTED" }) {
+                        return feedbackVersion ?? selectedVersion
+                    }
+                    return nil
+                }()
 
                 LazyVGrid(
                     columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())],
@@ -144,9 +155,9 @@ struct ASCOverview: View {
                     )
                 }
 
-                // Rejection detail — shown when there's rejection data (persists until a new version is approved)
-                if let feedbackVersion {
-                    RejectionCardView(asc: asc, version: feedbackVersion) {
+                // Rejection detail — scoped to the selected version, matching Review tab behavior.
+                if let rejectionCardVersion {
+                    RejectionCardView(asc: asc, version: rejectionCardVersion) {
                         HStack {
                             Spacer()
                             Button("Prepare Re-submission") {
@@ -329,16 +340,12 @@ struct ASCOverview: View {
 
         if terminal.isBuiltIn {
             appState.showTerminal = true
-            let session = appState.terminalManager.createSession(projectPath: projectPath)
-            let command = TerminalLauncher.buildAgentCommand(
+            appState.terminalManager.createAgentSession(
                 projectPath: projectPath,
                 agent: agent,
                 prompt: prompt,
                 skipPermissions: settings.skipAgentPermissions
             )
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                session.sendCommand(command)
-            }
         } else {
             TerminalLauncher.launch(projectPath: projectPath, agent: agent, terminal: terminal, prompt: prompt, skipPermissions: settings.skipAgentPermissions)
         }

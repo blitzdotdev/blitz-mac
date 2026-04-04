@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.33
+- Fixed codex breaking in built-in terminal
+- Show Review messages only when the attached version is selected in Overview tab
+
 ## 1.0.32
 Features
 - Live gesture visualization overlays to see agents tap/swipe on simulator
