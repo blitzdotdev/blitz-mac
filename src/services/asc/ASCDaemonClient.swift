@@ -139,7 +139,7 @@ actor ASCDaemonClient {
     private let fileManager = FileManager.default
     private let decoder = JSONDecoder()
     private let logger = ASCDaemonLogger.shared
-    private let responseTimeoutSeconds: TimeInterval = 45
+    private let defaultResponseTimeoutSeconds: TimeInterval = 45
 
     private var process: Process?
     private var stdinHandle: FileHandle?
@@ -209,7 +209,10 @@ actor ASCDaemonClient {
         return response
     }
 
-    func cliExec(args: [String]) async throws -> (exitCode: Int, stdout: String, stderr: String) {
+    func cliExec(
+        args: [String],
+        responseTimeoutSeconds: TimeInterval? = nil
+    ) async throws -> (exitCode: Int, stdout: String, stderr: String) {
         struct CLIExecResult: Decodable {
             let exitCode: Int
             let stdout: String?
@@ -217,7 +220,11 @@ actor ASCDaemonClient {
         }
 
         try await ensureProcessRunning()
-        let result: CLIExecResult = try await send(method: "cli.exec", params: ["args": args])
+        let result: CLIExecResult = try await send(
+            method: "cli.exec",
+            params: ["args": args],
+            responseTimeoutSeconds: responseTimeoutSeconds
+        )
         return (result.exitCode, result.stdout ?? "", result.stderr ?? "")
     }
 
@@ -461,7 +468,12 @@ actor ASCDaemonClient {
         waitTask = nil
     }
 
-    private func send<Result: Decodable>(method: String, params: [String: Any]?, as type: Result.Type = Result.self) async throws -> Result {
+    private func send<Result: Decodable>(
+        method: String,
+        params: [String: Any]?,
+        responseTimeoutSeconds: TimeInterval? = nil,
+        as type: Result.Type = Result.self
+    ) async throws -> Result {
         try await ensureProcessRunning()
 
         requestCounter += 1
@@ -479,7 +491,7 @@ actor ASCDaemonClient {
         let requestData = try JSONSerialization.data(withJSONObject: request, options: [])
         await logger.debug("-> [\(id)] \(summary)")
 
-        let timeoutSeconds = self.responseTimeoutSeconds
+        let timeoutSeconds = responseTimeoutSeconds ?? defaultResponseTimeoutSeconds
         let timeoutTask = Task { [weak self] in
             do {
                 try await Task.sleep(for: .seconds(timeoutSeconds))

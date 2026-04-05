@@ -106,6 +106,7 @@ final class ProcessOutputCollector: @unchecked Sendable {
 /// Each method is idempotent — re-running skips already-completed steps via cached signing state.
 actor BuildPipelineService {
     private static let helperUploadVerifyTimeout = "15s"
+    private static let helperUploadWaitResponseTimeoutSeconds: TimeInterval = 15 * 60
 
     // MARK: - Signing State (persisted for idempotency)
 
@@ -987,7 +988,10 @@ actor BuildPipelineService {
                 platform: platform,
                 skipPolling: skipPolling
             )
-            let cliResult = try await ascService.cliExec(args: cliArgs)
+            let cliResult = try await ascService.cliExec(
+                args: cliArgs,
+                responseTimeoutSeconds: skipPolling ? nil : Self.helperUploadWaitResponseTimeoutSeconds
+            )
 
             let stderrLines = cliResult.stderr
                 .replacingOccurrences(of: "\r\n", with: "\n")

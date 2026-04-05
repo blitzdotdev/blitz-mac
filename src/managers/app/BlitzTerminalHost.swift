@@ -21,6 +21,7 @@ final class BlitzPTYProcess {
 
     private let dispatchQueue: DispatchQueue
     private let readQueue = DispatchQueue(label: "blitz.terminal.read")
+    private let writeQueue = DispatchQueue(label: "blitz.terminal.write")
     private let pendingLock = NSLock()
 
     private var io: DispatchIO?
@@ -91,14 +92,41 @@ final class BlitzPTYProcess {
 
     func send(data: ArraySlice<UInt8>) {
         guard isRunning else { return }
+        let bytes = Array(data)
+        guard !bytes.isEmpty else { return }
 
-        data.withUnsafeBytes { ptr in
-            let dispatchData = DispatchData(bytes: ptr)
-            DispatchIO.write(
-                toFileDescriptor: childfd,
-                data: dispatchData,
-                runningHandlerOn: DispatchQueue.global(qos: .userInitiated)
-            ) { _, _ in }
+        writeQueue.async { [self, bytes] in
+            writeToChild(bytes)
+        }
+    }
+
+    private func writeToChild(_ bytes: [UInt8]) {
+        let fd = childfd
+        guard isRunning, fd >= 0 else { return }
+
+        bytes.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.baseAddress else { return }
+
+            var writtenTotal = 0
+            while writtenTotal < rawBuffer.count {
+                let result = Darwin.write(
+                    fd,
+                    baseAddress.advanced(by: writtenTotal),
+                    rawBuffer.count - writtenTotal
+                )
+                if result > 0 {
+                    writtenTotal += result
+                    continue
+                }
+                if result == -1, errno == EINTR {
+                    continue
+                }
+                if result == -1, errno == EAGAIN || errno == EWOULDBLOCK {
+                    usleep(1_000)
+                    continue
+                }
+                return
+            }
         }
     }
 
@@ -119,6 +147,13 @@ final class BlitzPTYProcess {
         childfd = -1
 
         childStopped()
+
+        if pid != 0 {
+            // Reap manually terminated children off the main queue so closed sessions do not leave zombies behind.
+            DispatchQueue.global(qos: .utility).async { [self, pid] in
+                _ = reapChild(pid: pid, options: 0)
+            }
+        }
     }
 
     private func childStopped(cancelProcessMonitor: Bool = true) {
@@ -130,23 +165,31 @@ final class BlitzPTYProcess {
     }
 
     private func processTerminated() {
-        var status: Int32 = 0
-        let waitResult = waitpid(shellPid, &status, WNOHANG)
-        let exitCode: Int32?
-        if waitResult > 0 {
-            if waitStatusExited(status) {
-                exitCode = waitStatusExitCode(status)
-            } else if waitStatusSignaled(status) {
-                exitCode = waitStatusSignal(status)
-            } else {
-                exitCode = status
-            }
-        } else {
-            exitCode = nil
-        }
+        guard isRunning || childMonitor != nil else { return }
+
+        let exitCode = reapChild(pid: shellPid, options: 0)
 
         delegate?.terminalProcess(self, didTerminateWith: exitCode)
         childStopped()
+    }
+
+    private func reapChild(pid: pid_t, options: Int32) -> Int32? {
+        guard pid > 0 else { return nil }
+
+        var status: Int32 = 0
+        var waitResult: pid_t
+        repeat {
+            waitResult = waitpid(pid, &status, options)
+        } while waitResult == -1 && errno == EINTR
+
+        guard waitResult > 0 else { return nil }
+        if waitStatusExited(status) {
+            return waitStatusExitCode(status)
+        }
+        if waitStatusSignaled(status) {
+            return waitStatusSignal(status)
+        }
+        return status
     }
 
     private func childProcessRead(done: Bool, data: DispatchData?, errno: Int32) {

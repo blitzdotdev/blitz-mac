@@ -9,8 +9,11 @@ final class AppStoreConnectService {
         self.client = ASCDaemonClient(credentials: credentials)
     }
 
-    func cliExec(args: [String]) async throws -> (exitCode: Int, stdout: String, stderr: String) {
-        try await client.cliExec(args: args)
+    func cliExec(
+        args: [String],
+        responseTimeoutSeconds: TimeInterval? = nil
+    ) async throws -> (exitCode: Int, stdout: String, stderr: String) {
+        try await client.cliExec(args: args, responseTimeoutSeconds: responseTimeoutSeconds)
     }
 
     // MARK: - HTTP

@@ -447,7 +447,7 @@ extension MCPExecutor {
                 privateKeyPEM: credentials.privateKey,
                 appId: appId,
                 ascService: service,
-                skipPolling: true,
+                skipPolling: skipPolling,
                 platform: uploadPlatform,
                 onProgress: { msg in
                     Task { @MainActor in
