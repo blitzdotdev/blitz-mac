@@ -114,6 +114,51 @@ import Testing
     #expect(value(for: "Privacy Policy URL") == "https://example.com/en/privacy")
 }
 
+@Test func screenshotValidationAcceptsHelperCatalogIpadVariants() {
+    #expect(
+        ASCManager.validateDimensions(
+            width: 2064,
+            height: 2752,
+            displayType: "APP_IPAD_PRO_3GEN_129"
+        ) == nil
+    )
+    #expect(
+        ASCManager.validateDimensions(
+            width: 2752,
+            height: 2064,
+            displayType: "APP_IPAD_PRO_3GEN_129"
+        ) == nil
+    )
+}
+
+@Test func screenshotValidationAcceptsExpandedIPhone67Catalog() {
+    #expect(
+        ASCManager.validateDimensions(
+            width: 1320,
+            height: 2868,
+            displayType: "APP_IPHONE_67"
+        ) == nil
+    )
+    #expect(
+        ASCManager.validateDimensions(
+            width: 2868,
+            height: 1320,
+            displayType: "APP_IPHONE_67"
+        ) == nil
+    )
+}
+
+@Test func screenshotDimensionSummaryMatchesHelperCatalog() {
+    #expect(
+        ASCManager.screenshotDimensionSummary(displayType: "APP_IPAD_PRO_3GEN_129")
+            == "2048×2732 or 2064×2752 (portrait or landscape)"
+    )
+    #expect(
+        ASCManager.screenshotDimensionSummary(displayType: "APP_IPHONE_67")
+            == "1260×2736, 1290×2796, or 1320×2868 (portrait or landscape)"
+    )
+}
+
 private func makeApp(primaryLocale: String?) -> ASCApp {
     ASCApp(
         id: "app-id",

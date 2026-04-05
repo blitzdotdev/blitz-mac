@@ -12,12 +12,7 @@ extension ASCManager {
         let startedAt = Date()
         writeError = nil
         do {
-            try await service.createOrPatchReviewDetail(versionId: versionId, attributes: attributes)
-            reviewDetail = await fetchReviewDetailLogged(
-                service: service,
-                versionId: versionId,
-                context: "review_contact_update"
-            )
+            reviewDetail = try await service.createOrPatchReviewDetail(versionId: versionId, attributes: attributes)
             AnalyticsService.trackBlitzManagedASCUsage(
                 commandType: "review.contact.update",
                 success: true,

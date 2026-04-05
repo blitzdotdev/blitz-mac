@@ -3,6 +3,219 @@ import Foundation
 extension MCPExecutor {
     // MARK: - Build Pipeline Tools
 
+    struct UploadedArtifactMetadata {
+        let shortVersion: String?
+        let buildNumber: String?
+        let hasEncryptionDeclaration: Bool
+    }
+
+    private struct BuildUploadObservation {
+        let upload: ASCBuildUpload?
+        let build: ASCBuild?
+        let timedOut: Bool
+    }
+
+    static func artifactMetadata(fromPlistXML plistXML: String) -> UploadedArtifactMetadata? {
+        guard let data = plistXML.data(using: .utf8),
+              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
+            return nil
+        }
+
+        func cleanedString(_ value: Any?) -> String? {
+            guard let value = value as? String else { return nil }
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+
+        return UploadedArtifactMetadata(
+            shortVersion: cleanedString(plist["CFBundleShortVersionString"]),
+            buildNumber: cleanedString(plist["CFBundleVersion"]),
+            hasEncryptionDeclaration: plist.keys.contains("ITSAppUsesNonExemptEncryption")
+        )
+    }
+
+    static func buildUploadProcessingHint(codes: [String]) -> String? {
+        let normalized = Set(codes.map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty })
+
+        let appIconCodes: Set<String> = ["90022", "90023", "90713"]
+        if !normalized.isDisjoint(with: appIconCodes) {
+            return "Likely cause: the app icon payload is missing or invalid. Verify AppIcon.appiconset includes a valid 1024x1024 App Store icon plus the required platform icon sizes, then rebuild."
+        }
+
+        return nil
+    }
+
+    private static func ascPlatformString(for platform: ProjectPlatform) -> String {
+        platform == .macOS ? "MAC_OS" : "IOS"
+    }
+
+    private static func parseASCDate(_ value: String?) -> Date? {
+        guard let value else {
+            return nil
+        }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return nil
+        }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let parsed = formatter.date(from: trimmed) {
+            return parsed
+        }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: trimmed)
+    }
+
+    private static func buildUploadAssociationDate(_ upload: ASCBuildUpload) -> Date? {
+        parseASCDate(upload.attributes.createdDate) ?? parseASCDate(upload.attributes.uploadedDate)
+    }
+
+    private static func buildUploadStateEntries(
+        _ details: [ASCBuildUpload.Attributes.AssetState.StateDetail]?
+    ) -> [[String: Any]] {
+        (details ?? []).map { detail in
+            var entry: [String: Any] = [:]
+            if let code = detail.code, !code.isEmpty {
+                entry["code"] = code
+            }
+            if let message = detail.message, !message.isEmpty {
+                entry["message"] = message
+            }
+            return entry
+        }.filter { !$0.isEmpty }
+    }
+
+    private static func buildUploadStatusMessage(upload: ASCBuildUpload?, build: ASCBuild?) -> String {
+        if let build {
+            let buildState = build.attributes.processingState ?? "UNKNOWN"
+            return "Build \(build.attributes.version) is \(buildState) on App Store Connect."
+        }
+
+        if let upload {
+            let uploadState = upload.attributes.state?.state ?? "UNKNOWN"
+            return "Upload \(upload.id) is \(uploadState) on App Store Connect."
+        }
+
+        return "Upload committed, but the App Store Connect upload record is not visible yet."
+    }
+
+    private static func isTerminalBuildState(_ state: String?) -> Bool {
+        guard let state else {
+            return false
+        }
+        let normalized = state.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard !normalized.isEmpty else {
+            return false
+        }
+        return ["VALID", "INVALID", "FAILED"].contains(normalized)
+    }
+
+    private func findRecentBuildUpload(
+        service: AppStoreConnectService,
+        appId: String,
+        metadata: UploadedArtifactMetadata,
+        platform: ProjectPlatform,
+        uploadStartedAt: Date,
+        uploadCompletedAt: Date
+    ) async throws -> ASCBuildUpload? {
+        guard let shortVersion = metadata.shortVersion,
+              let buildNumber = metadata.buildNumber else {
+            return nil
+        }
+
+        let uploads = try await service.fetchBuildUploads(
+            appId: appId,
+            shortVersion: shortVersion,
+            buildNumber: buildNumber,
+            platform: Self.ascPlatformString(for: platform),
+            limit: 50
+        )
+
+        let lowerBound = uploadStartedAt.addingTimeInterval(-5)
+        let upperBound = uploadCompletedAt.addingTimeInterval(60)
+        for upload in uploads {
+            guard let associationAt = Self.buildUploadAssociationDate(upload) else { continue }
+            guard associationAt >= lowerBound, associationAt <= upperBound else { continue }
+            return upload
+        }
+
+        return nil
+    }
+
+    private func observeBuildUpload(
+        service: AppStoreConnectService,
+        appId: String,
+        preferredUploadId: String?,
+        metadata: UploadedArtifactMetadata?,
+        platform: ProjectPlatform,
+        uploadStartedAt: Date,
+        uploadCompletedAt: Date,
+        waitBudget: TimeInterval,
+        pollInterval: TimeInterval = 3,
+        onProgress: @escaping @Sendable (String) -> Void
+    ) async -> BuildUploadObservation {
+        let deadline = Date().addingTimeInterval(max(0, waitBudget))
+        var resolvedUploadId = preferredUploadId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if resolvedUploadId?.isEmpty == true {
+            resolvedUploadId = nil
+        }
+        var lastUpload: ASCBuildUpload?
+        var lastBuild: ASCBuild?
+        var lastProgressMessage: String?
+        var waited = false
+
+        while true {
+            do {
+                if resolvedUploadId == nil,
+                   let metadata,
+                   let matchedUpload = try await findRecentBuildUpload(
+                       service: service,
+                       appId: appId,
+                       metadata: metadata,
+                       platform: platform,
+                       uploadStartedAt: uploadStartedAt,
+                       uploadCompletedAt: uploadCompletedAt
+                   ) {
+                    resolvedUploadId = matchedUpload.id
+                    lastUpload = matchedUpload
+                }
+
+                if let resolvedUploadId {
+                    let upload = try await service.fetchBuildUpload(id: resolvedUploadId)
+                    lastUpload = upload
+                    if let buildId = upload.buildId, !buildId.isEmpty {
+                        lastBuild = try? await service.fetchBuild(id: buildId)
+                    }
+
+                    let progressMessage = Self.buildUploadStatusMessage(upload: upload, build: lastBuild)
+                    if progressMessage != lastProgressMessage {
+                        onProgress(progressMessage)
+                        lastProgressMessage = progressMessage
+                    }
+
+                    if upload.attributes.state?.state?.uppercased() == "FAILED"
+                        || Self.isTerminalBuildState(lastBuild?.attributes.processingState) {
+                        return BuildUploadObservation(upload: lastUpload, build: lastBuild, timedOut: false)
+                    }
+                }
+            } catch {
+                // Best-effort status observation only; the upload itself already succeeded.
+            }
+
+            if Date() >= deadline {
+                break
+            }
+
+            waited = true
+            try? await Task.sleep(for: .seconds(pollInterval))
+        }
+
+        return BuildUploadObservation(upload: lastUpload, build: lastBuild, timedOut: waited)
+    }
+
     func executeSetupSigning(_ args: [String: Any]) async throws -> [String: Any] {
         let (optCtx, err) = await requireBuildContext()
         guard let ctx = optCtx else { return err! }
@@ -133,6 +346,7 @@ extension MCPExecutor {
         guard await MainActor.run(body: { appState.activeProject }) != nil else {
             return mcpText("Error: no active project.")
         }
+        let commandStartedAt = Date()
 
         let ipaPath: String
         if let path = args["ipaPath"] as? String {
@@ -174,27 +388,19 @@ extension MCPExecutor {
         let skipPolling = args["skipPolling"] as? Bool ?? false
         let appId = await MainActor.run { appState.ascManager.app?.id }
         let service = await MainActor.run { appState.ascManager.service }
+        var artifactMetadata: UploadedArtifactMetadata?
 
         let isIPA = ipaPath.hasSuffix(".ipa")
-        var existingVersions: Set<String> = []
+        var existingBuildNumbers: Set<String> = []
         do {
             guard isIPA else { throw NSError(domain: "skip", code: 0) }
             let plistXML = try await ProcessRunner.run(
                 "/bin/bash",
                 arguments: ["-c", "unzip -p '\(ipaPath)' 'Payload/*.app/Info.plist' | plutil -convert xml1 -o - -"]
             )
+            artifactMetadata = Self.artifactMetadata(fromPlistXML: plistXML)
 
-            let ipaVersion: String? = {
-                guard let range = plistXML.range(of: "<key>CFBundleVersion</key>"),
-                      let valueStart = plistXML.range(of: "<string>", range: range.upperBound..<plistXML.endIndex),
-                      let valueEnd = plistXML.range(of: "</string>", range: valueStart.upperBound..<plistXML.endIndex) else {
-                    return nil
-                }
-                return String(plistXML[valueStart.upperBound..<valueEnd.lowerBound])
-            }()
-
-            let hasEncryptionKey = plistXML.contains("ITSAppUsesNonExemptEncryption")
-            if !hasEncryptionKey {
+            if artifactMetadata?.hasEncryptionDeclaration != true {
                 return mcpText(
                     "Error: ITSAppUsesNonExemptEncryption is not set in the IPA's Info.plist. "
                         + "Without this key, App Store Connect will require manual encryption compliance confirmation in the web UI after every upload. "
@@ -203,14 +409,14 @@ extension MCPExecutor {
                 )
             }
 
-            if let ipaVersion, !ipaVersion.isEmpty, let appId, let service {
+            if let buildNumber = artifactMetadata?.buildNumber, let appId, let service {
                 let builds = try await service.fetchBuilds(appId: appId)
-                existingVersions = Set(builds.map(\.attributes.version))
-                if existingVersions.contains(ipaVersion) {
-                    let maxVersion = existingVersions.compactMap { Int($0) }.max() ?? 0
+                existingBuildNumbers = Set(builds.map(\.attributes.version))
+                if existingBuildNumbers.contains(buildNumber) {
+                    let maxVersion = existingBuildNumbers.compactMap { Int($0) }.max() ?? 0
                     return mcpText(
-                        "Error: build version \(ipaVersion) already exists in App Store Connect. "
-                            + "Existing build versions: \(existingVersions.sorted().joined(separator: ", ")). "
+                        "Error: build version \(buildNumber) already exists in App Store Connect. "
+                            + "Existing build versions: \(existingBuildNumbers.sorted().joined(separator: ", ")). "
                             + "The next valid build version is \(maxVersion + 1). "
                             + "Update CFBundleVersion in Info.plist (or CURRENT_PROJECT_VERSION in the Xcode build settings) and rebuild."
                     )
@@ -220,8 +426,8 @@ extension MCPExecutor {
             // Non-fatal — proceed with upload and let altool catch any issues.
         }
 
-        if existingVersions.isEmpty, let appId, let service {
-            existingVersions = Set((try? await service.fetchBuilds(appId: appId))?.map(\.attributes.version) ?? [])
+        if existingBuildNumbers.isEmpty, let appId, let service {
+            existingBuildNumbers = Set((try? await service.fetchBuilds(appId: appId))?.map(\.attributes.version) ?? [])
         }
 
         await MainActor.run {
@@ -233,6 +439,7 @@ extension MCPExecutor {
         let appStateRef = appState
         do {
             let uploadPlatform = await MainActor.run { appState.activeProject?.platform ?? .iOS }
+            let uploadStartedAt = Date()
             let result = try await pipeline.uploadToTestFlight(
                 ipaPath: ipaPath,
                 keyId: credentials.keyId,
@@ -248,88 +455,113 @@ extension MCPExecutor {
                     }
                 }
             )
+            let uploadCompletedAt = Date()
 
             var allLog = result.log
-            var finalState = result.processingState
-            var finalVersion = result.buildVersion
+            var observedUpload: ASCBuildUpload?
+            var observedBuild: ASCBuild?
 
-            if !skipPolling, let appId, let service {
-                await MainActor.run {
-                    appStateRef.ascManager.buildPipelinePhase = .processing
-                    appStateRef.ascManager.buildPipelineMessage = "Waiting for new build to appear…"
-                }
+            func autoAttachBuildIfPossible(_ build: ASCBuild) async {
+                guard let service else { return }
 
-                let pollInterval: TimeInterval = 10
-                let maxAttempts = 30
+                allLog.append("Build processing complete!")
+                try? await service.patchBuildEncryption(
+                    buildId: build.id,
+                    usesNonExemptEncryption: false
+                )
 
-                for attempt in 1...maxAttempts {
-                    try? await Task.sleep(for: .seconds(pollInterval))
+                let versionId = await MainActor.run(body: { () -> String? in
+                    let asc = appStateRef.ascManager
+                    if let selectedVersion = asc.selectedVersion,
+                       ASCReleaseStatus.isEditable(selectedVersion.attributes.appStoreState) {
+                        return selectedVersion.id
+                    }
+                    return asc.editableVersion?.id
+                })
+                guard let versionId else { return }
 
-                    guard let builds = try? await service.fetchBuilds(appId: appId) else { continue }
-
-                    if let newBuild = builds.first(where: { !existingVersions.contains($0.attributes.version) }) {
-                        let state = newBuild.attributes.processingState ?? "UNKNOWN"
-                        let version = newBuild.attributes.version
-                        let msg = "Poll \(attempt): build \(version) — \(state)"
-                        allLog.append(msg)
-                        await MainActor.run {
-                            appStateRef.ascManager.buildPipelineMessage = msg
-                            appStateRef.ascManager.builds = builds
-                        }
-
-                        finalVersion = version
-                        finalState = state
-
-                        if state == "VALID" {
-                            allLog.append("Build processing complete!")
-                            try? await service.patchBuildEncryption(
-                                buildId: newBuild.id,
-                                usesNonExemptEncryption: false
-                            )
-                            let versionId = await MainActor.run(body: { () -> String? in
-                                let asc = appStateRef.ascManager
-                                if let selectedVersion = asc.selectedVersion,
-                                   ASCReleaseStatus.isEditable(selectedVersion.attributes.appStoreState) {
-                                    return selectedVersion.id
-                                }
-                                return asc.editableVersion?.id
-                            })
-                            if let versionId {
-                                do {
-                                    try await service.attachBuild(versionId: versionId, buildId: newBuild.id)
-                                    allLog.append("Build \(version) attached to app store version.")
-                                    await ASCUpdateLogger.shared.event("build_pipeline_auto_attach_succeeded", metadata: [
-                                        "buildId": newBuild.id,
-                                        "buildVersion": version,
-                                        "versionId": versionId,
-                                    ])
-                                    await MainActor.run {
-                                        if appStateRef.ascManager.selectedVersion?.id == versionId {
-                                            appStateRef.ascManager.selectedVersionBuild = newBuild
-                                        }
-                                    }
-                                } catch {
-                                    allLog.append("Warning: could not auto-attach build - \(error.localizedDescription)")
-                                    await ASCUpdateLogger.shared.event("build_pipeline_auto_attach_failed", metadata: [
-                                        "buildId": newBuild.id,
-                                        "error": error.localizedDescription,
-                                        "versionId": versionId,
-                                    ])
-                                }
-                            }
-                            break
-                        } else if state == "INVALID" {
-                            allLog.append("Build processing failed with INVALID state.")
-                            break
-                        }
-                    } else {
-                        let msg = "Poll \(attempt): new build not yet visible…"
-                        allLog.append(msg)
-                        await MainActor.run {
-                            appStateRef.ascManager.buildPipelineMessage = msg
+                do {
+                    try await service.attachBuild(versionId: versionId, buildId: build.id)
+                    allLog.append("Build \(build.attributes.version) attached to app store version.")
+                    await ASCUpdateLogger.shared.event("build_pipeline_auto_attach_succeeded", metadata: [
+                        "buildId": build.id,
+                        "buildVersion": build.attributes.version,
+                        "versionId": versionId,
+                    ])
+                    await MainActor.run {
+                        if appStateRef.ascManager.selectedVersion?.id == versionId {
+                            appStateRef.ascManager.selectedVersionBuild = build
                         }
                     }
+                } catch {
+                    allLog.append("Warning: could not auto-attach build - \(error.localizedDescription)")
+                    await ASCUpdateLogger.shared.event("build_pipeline_auto_attach_failed", metadata: [
+                        "buildId": build.id,
+                        "error": error.localizedDescription,
+                        "versionId": versionId,
+                    ])
                 }
+            }
+
+            if let appId, let service {
+                let maxObservationBudget: TimeInterval = skipPolling ? 6 : 25
+                let remainingBudget = max(0, 95 - Date().timeIntervalSince(commandStartedAt))
+                let observation = await observeBuildUpload(
+                    service: service,
+                    appId: appId,
+                    preferredUploadId: result.uploadId,
+                    metadata: artifactMetadata,
+                    platform: uploadPlatform,
+                    uploadStartedAt: uploadStartedAt,
+                    uploadCompletedAt: uploadCompletedAt,
+                    waitBudget: min(maxObservationBudget, remainingBudget),
+                    onProgress: { msg in
+                        Task { @MainActor in
+                            appStateRef.ascManager.buildPipelinePhase = .processing
+                            appStateRef.ascManager.buildPipelineMessage = String(msg.prefix(120))
+                        }
+                    }
+                )
+
+                observedUpload = observation.upload
+                observedBuild = observation.build
+                if observation.timedOut {
+                    allLog.append("Stopped waiting before the tool timeout; returning the latest upload/build state instead.")
+                }
+                if let observedUpload {
+                    allLog.append("Observed ASC upload \(observedUpload.id) state: \(observedUpload.attributes.state?.state ?? "UNKNOWN")")
+                }
+                if let observedBuild {
+                    allLog.append("Observed ASC build \(observedBuild.attributes.version) state: \(observedBuild.attributes.processingState ?? "UNKNOWN")")
+                } else if let buildNumber = artifactMetadata?.buildNumber,
+                          let builds = try? await service.fetchBuilds(appId: appId),
+                          let build = builds.first(where: {
+                              $0.attributes.version == buildNumber && !existingBuildNumbers.contains($0.attributes.version)
+                          }) {
+                    observedBuild = build
+                    allLog.append("Observed ASC build \(build.attributes.version) state: \(build.attributes.processingState ?? "UNKNOWN")")
+                }
+            }
+
+            let uploadState = observedUpload?.attributes.state?.state
+                ?? (result.uploadCommitted ? "UPLOAD_COMMITTED" : "UNKNOWN")
+            let buildState = observedBuild?.attributes.processingState ?? result.processingState ?? "UNKNOWN"
+            let buildNumber = observedBuild?.attributes.version ?? artifactMetadata?.buildNumber ?? result.buildVersion
+            let uploadErrorCodes = (observedUpload?.attributes.state?.errors ?? []).compactMap(\.code)
+            let diagnosticHint = Self.buildUploadProcessingHint(codes: uploadErrorCodes)
+            let uploadFailed = uploadState.uppercased() == "FAILED"
+            let buildFailed = ["INVALID", "FAILED"].contains(buildState.uppercased())
+            let buildValidated = buildState.uppercased() == "VALID"
+
+            if let diagnosticHint {
+                allLog.append(diagnosticHint)
+            }
+            if uploadFailed {
+                allLog.append("App Store Connect rejected the upload during ingest.")
+            } else if buildFailed {
+                allLog.append("Build processing failed on App Store Connect.")
+            } else if buildValidated, let observedBuild {
+                await autoAttachBuildIfPossible(observedBuild)
             }
 
             await MainActor.run {
@@ -338,13 +570,42 @@ extension MCPExecutor {
             }
             await appState.ascManager.refreshTabData(.builds)
 
+            let followUpRequired = !(uploadFailed || buildFailed || buildValidated)
             var response: [String: Any] = [
-                "success": true,
-                "processingState": finalState ?? "UNKNOWN",
+                "success": !(uploadFailed || buildFailed),
+                "uploadCommitted": result.uploadCommitted,
+                "processingState": buildState,
+                "uploadState": uploadState,
+                "followUpRequired": followUpRequired,
+                "message": Self.buildUploadStatusMessage(upload: observedUpload, build: observedBuild),
                 "log": allLog
             ]
-            if let version = finalVersion {
-                response["buildVersion"] = version
+            if let uploadId = observedUpload?.id ?? result.uploadId {
+                response["uploadId"] = uploadId
+            }
+            if let fileId = result.fileId {
+                response["fileId"] = fileId
+            }
+            if let buildNumber {
+                response["buildNumber"] = buildNumber
+                response["buildVersion"] = buildNumber
+            }
+            if let shortVersion = artifactMetadata?.shortVersion {
+                response["versionString"] = shortVersion
+            }
+            if let buildId = observedBuild?.id {
+                response["buildId"] = buildId
+            }
+            let uploadErrors = Self.buildUploadStateEntries(observedUpload?.attributes.state?.errors)
+            if !uploadErrors.isEmpty {
+                response["uploadErrors"] = uploadErrors
+            }
+            let uploadWarnings = Self.buildUploadStateEntries(observedUpload?.attributes.state?.warnings)
+            if !uploadWarnings.isEmpty {
+                response["uploadWarnings"] = uploadWarnings
+            }
+            if let diagnosticHint {
+                response["diagnosticHint"] = diagnosticHint
             }
             return mcpJSON(response)
         } catch {

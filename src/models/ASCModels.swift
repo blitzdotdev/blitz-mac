@@ -277,6 +277,39 @@ struct ASCBuild: Decodable, Identifiable {
     }
 }
 
+struct ASCBuildUpload: Decodable, Identifiable {
+    let id: String
+    let attributes: Attributes
+    let relationships: Relationships?
+
+    struct Attributes: Decodable {
+        let cfBundleShortVersionString: String?
+        let cfBundleVersion: String?
+        let platform: String?
+        let createdDate: String?
+        let uploadedDate: String?
+        let state: AssetState?
+
+        struct AssetState: Decodable {
+            let state: String?
+            let errors: [StateDetail]?
+            let warnings: [StateDetail]?
+            let infos: [StateDetail]?
+
+            struct StateDetail: Decodable {
+                let code: String?
+                let message: String?
+            }
+        }
+    }
+
+    struct Relationships: Decodable {
+        let build: ASCToOneRelationship?
+    }
+
+    var buildId: String? { relationships?.build?.data?.id }
+}
+
 // MARK: - BetaGroup
 
 struct ASCBetaGroup: Decodable, Identifiable {
@@ -411,6 +444,10 @@ struct ASCReviewDetail: Decodable, Identifiable {
         var notes: String?
     }
     let attributes: Attributes
+
+    var isPlaceholder: Bool {
+        id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 }
 
 // MARK: - SubmissionReadiness

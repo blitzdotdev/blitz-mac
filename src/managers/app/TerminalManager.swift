@@ -51,7 +51,10 @@ final class TerminalSession: Identifiable {
             )
         }
         env["TERM"] = "xterm-256color"
-        let authEnvironment = ASCAuthBridge().environmentOverrides(forLaunchPath: projectPath)
+        let authEnvironment = ASCAuthBridge().environmentOverrides(
+            forLaunchPath: projectPath,
+            baseEnvironment: env
+        )
         for (key, value) in authEnvironment {
             env[key] = value
         }
@@ -138,6 +141,7 @@ final class TerminalManager {
         cleanup() {
             status=$?
             trap - EXIT HUP INT TERM
+            trap '' HUP INT TERM
             kill -HUP 0 >/dev/null 2>&1 || true
             kill -TERM 0 >/dev/null 2>&1 || true
             wait >/dev/null 2>&1 || true

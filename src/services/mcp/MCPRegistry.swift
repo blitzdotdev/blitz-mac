@@ -245,9 +245,9 @@ enum MCPRegistry {
 
         tools.append(tool(
             name: "screenshots_save",
-            description: "Save the current screenshot track to App Store Connect. Syncs all changes (additions, removals, reorder) for the specified device type. If you are targeting a specific locale, call screenshots_switch_localization first.",
+            description: "Save screenshot track changes to App Store Connect. If displayType is provided, syncs that device family only; otherwise it syncs every prepared/staged device family for the current locale. If you are targeting a specific locale, call screenshots_switch_localization first.",
             properties: [
-                "displayType": ["type": "string", "description": "Display type (default APP_IPHONE_67)", "enum": ["APP_IPHONE_67", "APP_IPAD_PRO_3GEN_129", "APP_DESKTOP"]],
+                "displayType": ["type": "string", "description": "Optional display type. Omit it to sync every prepared/staged device family for the selected locale.", "enum": ["APP_IPHONE_67", "APP_IPAD_PRO_3GEN_129", "APP_DESKTOP"]],
                 "locale": ["type": "string", "description": "Locale code. Must match the currently selected screenshots locale in Blitz."]
             ],
             required: []

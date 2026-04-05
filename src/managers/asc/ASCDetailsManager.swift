@@ -42,7 +42,7 @@ extension ASCManager {
             do {
                 try await service.patchApp(id: appId, fields: [field: value])
                 // Refetch app to reflect the change
-                app = try await service.fetchApp(bundleId: app?.bundleId ?? "")
+                app = try await service.fetchApp(id: appId)
                 AnalyticsService.trackBlitzManagedASCUsage(
                     commandType: "app_details.update",
                     success: true,

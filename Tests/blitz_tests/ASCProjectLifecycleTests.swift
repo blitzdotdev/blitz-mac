@@ -24,6 +24,26 @@ import Testing
     #expect(manager.loadedTabs.isEmpty)
 }
 
+@MainActor
+@Test func syncOverviewSubmissionReadinessWaitsForOverviewHydrationTask() async {
+    let manager = ASCManager()
+    let credentials = ASCCredentials(issuerId: "issuer", keyId: "key", privateKey: "private")
+    manager.credentials = credentials
+    manager.service = AppStoreConnectService(credentials: credentials)
+    manager.loadedTabs = [.app]
+    manager.tabLoadedAt = [.app: Date()]
+    manager.monetizationStatus = nil
+
+    manager.startBackgroundHydration(for: .app) {
+        try? await Task.sleep(for: .milliseconds(50))
+        manager.monetizationStatus = "Configured"
+    }
+
+    await manager.syncOverviewSubmissionReadiness()
+
+    #expect(manager.monetizationStatus == "Configured")
+}
+
 private func makeProjectSwitchApp(bundleId: String) -> ASCApp {
     ASCApp(
         id: "app-id",

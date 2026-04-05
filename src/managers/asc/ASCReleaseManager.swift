@@ -75,6 +75,22 @@ extension ASCManager {
         })
     }
 
+    func rejectionCardVersionForSelectedVersion(from versions: [ASCAppStoreVersion]) -> ASCAppStoreVersion? {
+        guard let selectedVersion else { return nil }
+
+        if let feedbackVersion = feedbackDisplayVersion(from: versions),
+           feedbackVersion.id == selectedVersion.id {
+            return feedbackVersion
+        }
+
+        let normalizedState = ASCReleaseStatus.normalize(selectedVersion.attributes.appStoreState)
+        guard normalizedState == "REJECTED" || normalizedState == "METADATA_REJECTED" else {
+            return nil
+        }
+
+        return selectedVersion
+    }
+
     func newVersionCreationBlockerMessage(desiredVersionString: String? = nil) -> String? {
         guard let blocker = newVersionCreationBlocker else { return nil }
         let blockerState = ASCReleaseStatus.normalize(blocker.attributes.appStoreState)
@@ -329,7 +345,7 @@ extension ASCManager {
             }
 
             if copyReviewDetail, let sourceReviewDetail {
-                try await service.createOrPatchReviewDetail(
+                _ = try await service.createOrPatchReviewDetail(
                     versionId: createdVersion.id,
                     attributes: reviewDetailAttributesToCopy(sourceReviewDetail)
                 )

@@ -16,6 +16,7 @@ import Testing
     let script = startup.args[1]
     #expect(script.contains("cleanup() {"))
     #expect(script.contains("trap cleanup EXIT HUP INT TERM"))
+    #expect(script.contains("trap '' HUP INT TERM"))
     #expect(script.contains("kill -HUP 0 >/dev/null 2>&1 || true"))
     #expect(script.contains("kill -TERM 0 >/dev/null 2>&1 || true"))
     #expect(script.contains("/usr/bin/python3 - <<'PY' &"))

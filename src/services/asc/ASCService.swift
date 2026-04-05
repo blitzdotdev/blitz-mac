@@ -9,6 +9,10 @@ final class AppStoreConnectService {
         self.client = ASCDaemonClient(credentials: credentials)
     }
 
+    func cliExec(args: [String]) async throws -> (exitCode: Int, stdout: String, stderr: String) {
+        try await client.cliExec(args: args)
+    }
+
     // MARK: - HTTP
 
     /// Centralized request path so every ASC call gets the same request/response logging.
@@ -96,6 +100,23 @@ final class AppStoreConnectService {
             let body = String(data: response.body, encoding: .utf8) ?? ""
             throw ASCError.httpError(response.statusCode, body)
         }
+    }
+
+    private func patchData(path: String, body: [String: Any]) async throws -> Data {
+        let response = try await performRequest(
+            method: "PATCH",
+            path: path,
+            headers: [
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            ],
+            body: try JSONSerialization.data(withJSONObject: body)
+        )
+        if !(200..<300).contains(response.statusCode) {
+            let body = String(data: response.body, encoding: .utf8) ?? ""
+            throw ASCError.httpError(response.statusCode, body)
+        }
+        return response.body
     }
 
     private func post(path: String, body: [String: Any]) async throws -> Data {
@@ -207,6 +228,25 @@ final class AppStoreConnectService {
         return app
     }
 
+    func fetchApp(id: String) async throws -> ASCApp {
+        let trimmedId = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedId.isEmpty else {
+            throw ASCError.notFound("App with a valid ID")
+        }
+
+        let response = try await get(
+            "apps/\(trimmedId)",
+            queryItems: [
+                URLQueryItem(
+                    name: "fields[apps]",
+                    value: "bundleId,name,primaryLocale,contentRightsDeclaration"
+                )
+            ],
+            as: ASCSingleResponse<ASCApp>.self
+        )
+        return response.data
+    }
+
     /// Fetches all apps for the account, optionally filtering by app store version state.
     /// Pass `appStoreStateFilter: "READY_FOR_SALE"` to get only live apps.
     func fetchAllApps(appStoreStateFilter: String? = nil) async throws -> [ASCApp] {
@@ -290,6 +330,39 @@ final class AppStoreConnectService {
             URLQueryItem(name: "sort", value: "-uploadedDate"),
             URLQueryItem(name: "limit", value: "50")
         ], as: ASCListResponse<ASCBuild>.self)
+        return resp.data
+    }
+
+    func fetchBuild(id: String) async throws -> ASCBuild {
+        let resp = try await get("builds/\(id)", as: ASCSingleResponse<ASCBuild>.self)
+        return resp.data
+    }
+
+    func fetchBuildUploads(
+        appId: String,
+        shortVersion: String,
+        buildNumber: String,
+        platform: String,
+        limit: Int = 20
+    ) async throws -> [ASCBuildUpload] {
+        let resp = try await get("buildUploads", queryItems: [
+            URLQueryItem(name: "filter[app]", value: appId),
+            URLQueryItem(name: "filter[cfBundleShortVersionString]", value: shortVersion),
+            URLQueryItem(name: "filter[cfBundleVersion]", value: buildNumber),
+            URLQueryItem(name: "filter[platform]", value: platform),
+            URLQueryItem(name: "sort", value: "-uploadedDate"),
+            URLQueryItem(name: "limit", value: "\(limit)"),
+            URLQueryItem(name: "include", value: "build"),
+        ], as: ASCListResponse<ASCBuildUpload>.self)
+        return resp.data
+    }
+
+    func fetchBuildUpload(id: String) async throws -> ASCBuildUpload {
+        let resp = try await get(
+            "buildUploads/\(id)",
+            queryItems: [URLQueryItem(name: "include", value: "build")],
+            as: ASCSingleResponse<ASCBuildUpload>.self
+        )
         return resp.data
     }
 
@@ -518,36 +591,44 @@ final class AppStoreConnectService {
 
     // MARK: - Write: ReviewDetail
 
-    func createOrPatchReviewDetail(versionId: String, attributes: [String: Any]) async throws {
-        // Try to fetch existing
+    func createOrPatchReviewDetail(versionId: String, attributes: [String: Any]) async throws -> ASCReviewDetail {
+        let decodeResponse: (Data) throws -> ASCReviewDetail = { data in
+            try JSONDecoder().decode(ASCSingleResponse<ASCReviewDetail>.self, from: data).data
+        }
+
         do {
-            let existing = try await get(
-                "appStoreVersions/\(versionId)/appStoreReviewDetail",
-                as: ASCSingleResponse<ASCReviewDetail>.self
-            )
+            let existing = try await fetchReviewDetail(versionId: versionId)
             // PATCH existing
             let body: [String: Any] = [
                 "data": [
                     "type": "appStoreReviewDetails",
-                    "id": existing.data.id,
+                    "id": existing.id,
                     "attributes": attributes
                 ]
             ]
-            try await patch(path: "appStoreReviewDetails/\(existing.data.id)", body: body)
-        } catch {
-            // POST new
-            let body: [String: Any] = [
-                "data": [
-                    "type": "appStoreReviewDetails",
-                    "attributes": attributes,
-                    "relationships": [
-                        "appStoreVersion": [
-                            "data": ["type": "appStoreVersions", "id": versionId]
+            let data = try await patchData(path: "appStoreReviewDetails/\(existing.id)", body: body)
+            return try decodeResponse(data)
+        } catch let error as ASCError {
+            switch error {
+            case .notFound, .httpError(404, _):
+                let body: [String: Any] = [
+                    "data": [
+                        "type": "appStoreReviewDetails",
+                        "attributes": attributes,
+                        "relationships": [
+                            "appStoreVersion": [
+                                "data": ["type": "appStoreVersions", "id": versionId]
+                            ]
                         ]
                     ]
                 ]
-            ]
-            _ = try await post(path: "appStoreReviewDetails", body: body)
+                let data = try await post(path: "appStoreReviewDetails", body: body)
+                return try decodeResponse(data)
+            default:
+                throw error
+            }
+        } catch {
+            throw error
         }
     }
 
@@ -1426,11 +1507,24 @@ final class AppStoreConnectService {
     // MARK: - Fetch: ReviewDetail
 
     func fetchReviewDetail(versionId: String) async throws -> ASCReviewDetail {
-        let resp = try await get(
-            "appStoreVersions/\(versionId)/appStoreReviewDetail",
-            as: ASCSingleResponse<ASCReviewDetail>.self
+        let response = try await performRequest(
+            method: "GET",
+            path: "appStoreVersions/\(versionId)/appStoreReviewDetail",
+            headers: ["Accept": "application/json"]
         )
-        return resp.data
+        if response.statusCode == 404 {
+            throw ASCError.notFound("Review detail for version \(versionId)")
+        }
+        guard (200..<300).contains(response.statusCode) else {
+            let body = String(data: response.body, encoding: .utf8) ?? ""
+            throw ASCError.httpError(response.statusCode, body)
+        }
+        guard !response.body.isEmpty,
+              let decoded = try? JSONDecoder().decode(ASCSingleResponse<ASCReviewDetail>.self, from: response.body),
+              !decoded.data.isPlaceholder else {
+            throw ASCError.notFound("Review detail for version \(versionId)")
+        }
+        return decoded.data
     }
 
     // MARK: - Fetch: AppInfoLocalization

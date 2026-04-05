@@ -115,18 +115,9 @@ struct ASCOverview: View {
 
                 let live = asc.liveVersion
                 let pending = asc.currentUpdateVersion
-                let selectedVersion = asc.selectedVersion
-                let feedbackVersion = asc.feedbackDisplayVersion(from: asc.appStoreVersions)
-                let rejectionCardVersion: ASCAppStoreVersion? = {
-                    guard let selectedVersion else { return nil }
-                    if let feedbackVersion, feedbackVersion.id == selectedVersion.id {
-                        return feedbackVersion
-                    }
-                    if asc.latestSubmissionItems.contains(where: { $0.attributes.state == "REJECTED" }) {
-                        return feedbackVersion ?? selectedVersion
-                    }
-                    return nil
-                }()
+                let rejectionCardVersion = asc.rejectionCardVersionForSelectedVersion(
+                    from: asc.appStoreVersions
+                )
 
                 LazyVGrid(
                     columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())],

@@ -6,6 +6,20 @@ import ImageIO
 // Extension containing screenshot-related functionality for ASCManager
 
 extension ASCManager {
+    nonisolated private static let screenshotDimensionsByDisplayType: [String: [(width: Int, height: Int)]] = [
+        "APP_IPHONE_67": [
+            (1260, 2736), (1290, 2796), (1320, 2868),
+            (2736, 1260), (2796, 1290), (2868, 1320),
+        ],
+        "APP_IPAD_PRO_3GEN_129": [
+            (2048, 2732), (2064, 2752),
+            (2732, 2048), (2752, 2064),
+        ],
+        "APP_DESKTOP": [
+            (1280, 800), (1440, 900), (2560, 1600), (2880, 1800),
+        ],
+    ]
+
     // MARK: - Screenshot Data
 
     func screenshotCacheKey(versionId: String? = nil, locale: String) -> String {
@@ -88,6 +102,16 @@ extension ASCManager {
             }
         }
         return displayTypes
+    }
+
+    func orderedKnownScreenshotDisplayTypes(
+        for locale: String,
+        preferredOrder: [String] = ["APP_IPHONE_67", "APP_IPAD_PRO_3GEN_129", "APP_DESKTOP"]
+    ) -> [String] {
+        let known = trackDisplayTypes(for: locale)
+        let preferred = preferredOrder.filter { known.contains($0) }
+        let remaining = known.subtracting(preferred).sorted()
+        return preferred + remaining
     }
 
     private func displayType(fromTrackKey key: String, cacheKey: String) -> String? {
@@ -423,21 +447,43 @@ extension ASCManager {
     }
 
     /// Validate pixel dimensions for a display type. Returns nil if valid, or an error string.
-    static func validateDimensions(width: Int, height: Int, displayType: String) -> String? {
-        switch displayType {
+    nonisolated static func validateDimensions(width: Int, height: Int, displayType: String) -> String? {
+        let normalizedDisplayType = displayType.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let validDimensions = screenshotDimensionsByDisplayType[normalizedDisplayType] else {
+            return nil
+        }
+
+        if validDimensions.contains(where: { $0.width == width && $0.height == height }) {
+            return nil
+        }
+
+        let allowed = screenshotDimensionSummary(displayType: normalizedDisplayType) ?? "a supported screenshot size"
+        return "\(width)×\(height) — need \(allowed) for \(screenshotDisplayName(displayType: normalizedDisplayType))"
+    }
+
+    nonisolated static func screenshotDimensionSummary(displayType: String) -> String? {
+        switch displayType.trimmingCharacters(in: .whitespacesAndNewlines) {
         case "APP_IPHONE_67":
-            let validSizes: Set<String> = ["1290x2796", "1284x2778", "1242x2688", "1260x2736"]
-            if validSizes.contains("\(width)x\(height)") { return nil }
-            return "\(width)×\(height) — need 1290×2796, 1284×2778, 1242×2688, or 1260×2736 for iPhone"
+            return "1260×2736, 1290×2796, or 1320×2868 (portrait or landscape)"
         case "APP_IPAD_PRO_3GEN_129":
-            if width == 2048 && height == 2732 { return nil }
-            return "\(width)×\(height) — need 2048×2732 for iPad"
+            return "2048×2732 or 2064×2752 (portrait or landscape)"
         case "APP_DESKTOP":
-            let valid: Set<String> = ["1280x800", "1440x900", "2560x1600", "2880x1800"]
-            if valid.contains("\(width)x\(height)") { return nil }
-            return "\(width)×\(height) — need 1280×800, 1440×900, 2560×1600, or 2880×1800 for Mac"
+            return "1280×800, 1440×900, 2560×1600, or 2880×1800"
         default:
             return nil
+        }
+    }
+
+    nonisolated private static func screenshotDisplayName(displayType: String) -> String {
+        switch displayType {
+        case "APP_IPHONE_67":
+            return "iPhone"
+        case "APP_IPAD_PRO_3GEN_129":
+            return "iPad"
+        case "APP_DESKTOP":
+            return "Mac"
+        default:
+            return "this display type"
         }
     }
 }

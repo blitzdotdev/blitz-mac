@@ -563,8 +563,26 @@ extension ASCManager {
             "appId": appId,
         ])
         do {
-            inAppPurchases = try await service.fetchInAppPurchases(appId: appId)
-            subscriptionGroups = try await service.fetchSubscriptionGroups(appId: appId)
+            async let pricePointsTask = service.fetchAppPricePoints(appId: appId)
+            async let pricingStateTask = fetchAppPricingStateLogged(
+                service: service,
+                appId: appId,
+                context: "submission_readiness_refresh"
+            )
+            async let iapTask = service.fetchInAppPurchases(appId: appId)
+            async let groupsTask = service.fetchSubscriptionGroups(appId: appId)
+
+            appPricePoints = try await pricePointsTask
+            applyAppPricingState(
+                await pricingStateTask
+                    ?? ASCAppPricingState(
+                        currentPricePointId: nil,
+                        scheduledPricePointId: nil,
+                        scheduledEffectiveDate: nil
+                    )
+            )
+            inAppPurchases = try await iapTask
+            subscriptionGroups = try await groupsTask
             for group in subscriptionGroups {
                 subscriptionsPerGroup[group.id] = try await service.fetchSubscriptionsInGroup(groupId: group.id)
             }
@@ -572,6 +590,8 @@ extension ASCManager {
                 "appId": appId,
                 "inAppPurchaseCount": String(inAppPurchases.count),
                 "subscriptionGroupCount": String(subscriptionGroups.count),
+                "currentPricePointId": currentAppPricePointId ?? "nil",
+                "scheduledPricePointId": scheduledAppPricePointId ?? "nil",
             ])
         } catch {
             writeError = error.localizedDescription

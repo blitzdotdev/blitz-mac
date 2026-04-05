@@ -118,6 +118,33 @@ import Testing
 }
 
 @MainActor
+@Test func overviewRejectionCardDoesNotFallBackToUnrelatedSelectedVersion() {
+    let manager = ASCManager()
+    manager.appStoreVersions = [
+        makeVersion(id: "live", versionString: "2.0", state: "READY_FOR_SALE", createdDate: "2026-03-20T00:00:00Z"),
+        makeVersion(id: "draft", versionString: "2.1", state: "PREPARE_FOR_SUBMISSION", createdDate: "2026-03-21T00:00:00Z"),
+    ]
+    manager.selectedVersionId = "live"
+    manager.latestSubmissionItems = [
+        makeSubmissionItem(id: "item-1", state: "REJECTED")
+    ]
+
+    #expect(manager.rejectionCardVersionForSelectedVersion(from: manager.appStoreVersions) == nil)
+}
+
+@MainActor
+@Test func overviewRejectionCardUsesSelectedRejectedVersion() {
+    let manager = ASCManager()
+    manager.appStoreVersions = [
+        makeVersion(id: "rejected", versionString: "2.1", state: "REJECTED", createdDate: "2026-03-21T00:00:00Z"),
+        makeVersion(id: "live", versionString: "2.0", state: "READY_FOR_SALE", createdDate: "2026-03-20T00:00:00Z"),
+    ]
+    manager.selectedVersionId = "rejected"
+
+    #expect(manager.rejectionCardVersionForSelectedVersion(from: manager.appStoreVersions)?.id == "rejected")
+}
+
+@MainActor
 @Test func screenshotCacheSeparatesDifferentVersionsForSameLocale() {
     let manager = ASCManager()
     manager.appStoreVersions = [
@@ -232,6 +259,18 @@ private func makeBuild(id: String, version: String) -> ASCBuild {
             expired: false,
             minOsVersion: nil
         )
+    )
+}
+
+private func makeSubmissionItem(id: String, state: String) -> ASCReviewSubmissionItem {
+    ASCReviewSubmissionItem(
+        id: id,
+        attributes: ASCReviewSubmissionItem.Attributes(
+            state: state,
+            resolved: nil,
+            createdDate: nil
+        ),
+        relationships: nil
     )
 }
 

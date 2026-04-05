@@ -127,14 +127,25 @@ struct DashboardView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(DottedCanvasBackground())
         .overlay(alignment: .bottomTrailing) {
-            Button {
-                appState.showNewProjectSheet = true
-            } label: {
-                Label("Create App", systemImage: "plus")
-                    .font(.body.weight(.medium))
+            VStack(spacing: 8) {
+                Button {
+                    appState.showNewProjectSheet = true
+                } label: {
+                    Label("Create App", systemImage: "plus")
+                        .font(.body.weight(.medium))
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+
+                Button {
+                    appState.showImportProjectSheet = true
+                } label: {
+                    Label("Import App", systemImage: "square.and.arrow.down")
+                        .font(.body.weight(.medium))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
             .padding(20)
         }
         .overlay(alignment: .topTrailing) {

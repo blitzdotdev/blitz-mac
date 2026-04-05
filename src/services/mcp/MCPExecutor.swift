@@ -172,7 +172,8 @@ actor MCPExecutor {
             if !fieldMap.isEmpty {
                 let fieldMapCopy = fieldMap
                 await MainActor.run {
-                    appState.ascManager.pendingFormValues[tab] = fieldMapCopy
+                    let existing = appState.ascManager.pendingFormValues[tab] ?? [:]
+                    appState.ascManager.pendingFormValues[tab] = existing.merging(fieldMapCopy) { _, new in new }
                     appState.ascManager.pendingFormVersion += 1
                 }
             }
@@ -348,8 +349,16 @@ actor MCPExecutor {
 
     /// Check for ASC write error and return it, clearing pending form values.
     func checkASCWriteError(tab: String) async -> [String: Any]? {
-        guard let error = await MainActor.run(body: { appState.ascManager.writeError }) else { return nil }
-        _ = await MainActor.run { appState.ascManager.pendingFormValues.removeValue(forKey: tab) }
+        let error = await MainActor.run { () -> String? in
+            let asc = appState.ascManager
+            let current = asc.writeError
+            if current != nil {
+                asc.writeError = nil
+                asc.pendingFormValues.removeValue(forKey: tab)
+            }
+            return current
+        }
+        guard let error else { return nil }
         return mcpText("Error: \(error)")
     }
 

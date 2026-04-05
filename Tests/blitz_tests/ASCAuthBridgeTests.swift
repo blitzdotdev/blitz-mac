@@ -52,6 +52,11 @@ import Testing
     let managedLaunchPath = root.appendingPathComponent("projects/demo").path
     let env = bridge.environmentOverrides(forLaunchPath: managedLaunchPath)
     #expect(env["PATH"]?.hasPrefix(bridge.binDirectory.path + ":") == true)
+    let mergedEnv = bridge.environmentOverrides(
+        forLaunchPath: managedLaunchPath,
+        baseEnvironment: ["PATH": "/tmp/login-shell/bin:/usr/bin:/bin"]
+    )
+    #expect(mergedEnv["PATH"] == "\(bridge.binDirectory.path):/tmp/login-shell/bin:/usr/bin:/bin")
     #expect(FileManager.default.isExecutableFile(atPath: bridge.ascWrapperURL.path))
     #expect(FileManager.default.isExecutableFile(atPath: bridge.ascdShimURL.path))
 

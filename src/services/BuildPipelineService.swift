@@ -1,32 +1,111 @@
 import Foundation
 
-/// Thread-safe collector for the last N stderr lines
-private final class StderrCollector: @unchecked Sendable {
+/// Thread-safe collector that keeps enough process output to surface the
+/// meaningful failure context instead of only the last stderr lines.
+final class ProcessOutputCollector: @unchecked Sendable {
     private let lock = NSLock()
     private var lines: [String] = []
-    private let maxLines: Int
+    private let maxStoredLines: Int
+    private let maxSummaryLines: Int
 
-    init(maxLines: Int = 20) {
-        self.maxLines = maxLines
+    init(maxStoredLines: Int = 400, maxSummaryLines: Int = 60) {
+        self.maxStoredLines = maxStoredLines
+        self.maxSummaryLines = maxSummaryLines
     }
 
-    func append(_ line: String) {
+    func appendStdout(_ chunk: String) {
+        append(chunk)
+    }
+
+    func appendStderr(_ chunk: String) {
+        append(chunk)
+    }
+
+    private func append(_ chunk: String) {
+        let normalized = chunk.replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        let splitLines = normalized.components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !splitLines.isEmpty else { return }
+
         lock.lock()
-        lines.append(line)
-        if lines.count > maxLines { lines.removeFirst() }
+        lines.append(contentsOf: splitLines)
+        if lines.count > maxStoredLines {
+            lines.removeFirst(lines.count - maxStoredLines)
+        }
         lock.unlock()
+    }
+
+    var combinedText: String {
+        lock.lock()
+        defer { lock.unlock() }
+        return lines.joined(separator: "\n")
     }
 
     var summary: String {
         lock.lock()
+        let snapshot = lines
+        lock.unlock()
+
+        guard !snapshot.isEmpty else { return "" }
+
+        let interestingIndexes = snapshot.indices.filter { Self.isInteresting(snapshot[$0]) }
+        if interestingIndexes.isEmpty {
+            return Array(snapshot.suffix(maxSummaryLines)).joined(separator: "\n")
+        }
+
+        var selectedIndexes: [Int] = []
+        for index in interestingIndexes {
+            let start = max(snapshot.startIndex, index - 2)
+            let end = min(snapshot.index(before: snapshot.endIndex), index + 2)
+            selectedIndexes.append(contentsOf: start...end)
+        }
+        selectedIndexes.append(contentsOf: snapshot.indices.suffix(8))
+
+        var seen: Set<Int> = []
+        let filtered = selectedIndexes
+            .filter { seen.insert($0).inserted }
+            .sorted()
+            .suffix(maxSummaryLines)
+
+        return filtered.map { snapshot[$0] }.joined(separator: "\n")
+    }
+
+    private static func isInteresting(_ line: String) -> Bool {
+        let lowercased = line.lowercased()
+        return lowercased.contains("error:")
+            || lowercased.contains("compileassetcatalogvariant")
+            || lowercased.contains("asset catalog")
+            || lowercased.contains("appicon")
+            || lowercased.contains(".appiconset")
+            || lowercased.contains("icon set")
+            || lowercased.contains("app store icon")
+            || lowercased.contains("actool")
+            || lowercased.contains("invalid image")
+            || lowercased.contains("missing required icon")
+    }
+
+    var lastLogBundlePath: String? {
+        let text = combinedText
+        guard let range = text.range(of: "Created bundle at path \""),
+              let endQuote = text[range.upperBound...].firstIndex(of: "\"") else {
+            return nil
+        }
+        return String(text[range.upperBound..<endQuote])
+    }
+
+    var allLines: [String] {
+        lock.lock()
         defer { lock.unlock() }
-        return lines.joined(separator: "\n")
+        return lines
     }
 }
 
 /// Handles iOS code signing setup, archiving/exporting IPAs, and uploading to TestFlight.
 /// Each method is idempotent — re-running skips already-completed steps via cached signing state.
 actor BuildPipelineService {
+    private static let helperUploadVerifyTimeout = "15s"
 
     // MARK: - Signing State (persisted for idempotency)
 
@@ -653,15 +732,18 @@ actor BuildPipelineService {
             "PRODUCT_BUNDLE_IDENTIFIER=\(bundleId)"
         ]
 
-        let archiveStderr = StderrCollector()
+        let archiveOutput = ProcessOutputCollector()
         let managed = ProcessRunner.stream(
             "xcodebuild",
             arguments: archiveArgs,
             currentDirectory: xcodeDir,
-            onStdout: { line in onProgress(line) },
+            onStdout: { line in
+                onProgress(line)
+                archiveOutput.appendStdout(line)
+            },
             onStderr: { line in
                 onProgress(line)
-                archiveStderr.append(line)
+                archiveOutput.appendStderr(line)
             }
         )
 
@@ -676,7 +758,7 @@ actor BuildPipelineService {
         await managed.waitUntilExit()
 
         guard managed.process.terminationStatus == 0 else {
-            let stderrSummary = archiveStderr.summary
+            let stderrSummary = archiveOutput.summary
             throw ProcessRunner.ProcessError(
                 command: "xcodebuild archive",
                 exitCode: managed.process.terminationStatus,
@@ -712,7 +794,7 @@ actor BuildPipelineService {
 
         // Export IPA
         let exportPath = NSTemporaryDirectory() + "BlitzExport-\(Int(Date().timeIntervalSince1970))"
-        let exportStderr = StderrCollector()
+        let exportOutput = ProcessOutputCollector()
         let exportManaged = ProcessRunner.stream(
             "xcodebuild",
             arguments: [
@@ -723,10 +805,13 @@ actor BuildPipelineService {
                 "-allowProvisioningUpdates"
             ],
             currentDirectory: xcodeDir,
-            onStdout: { line in onProgress(line) },
+            onStdout: { line in
+                onProgress(line)
+                exportOutput.appendStdout(line)
+            },
             onStderr: { line in
                 onProgress(line)
-                exportStderr.append(line)
+                exportOutput.appendStderr(line)
             }
         )
 
@@ -741,18 +826,26 @@ actor BuildPipelineService {
         await exportManaged.waitUntilExit()
 
         guard exportManaged.process.terminationStatus == 0 else {
-            var stderrSummary = exportStderr.summary
+            var stderrSummary = exportOutput.summary
 
             // Extract real error from IDEDistribution log if available
             // xcodebuild prints "Created bundle at path <log_path>" on export failure
-            if let logPathRange = stderrSummary.range(of: "Created bundle at path \""),
-               let endQuote = stderrSummary[logPathRange.upperBound...].firstIndex(of: "\"") {
-                let logDir = String(stderrSummary[logPathRange.upperBound..<endQuote])
+            if let logDir = exportOutput.lastLogBundlePath {
                 let errorLogPath = logDir + "/IDEDistribution.standard-log.txt"
                 if let logContent = try? String(contentsOfFile: errorLogPath, encoding: .utf8) {
                     // Extract error lines from the log
                     let errorLines = logContent.components(separatedBy: "\n")
-                        .filter { $0.contains("error:") || $0.contains("Error Domain") || $0.contains("No profiles") || $0.contains("doesn't match") || $0.contains("provisioning") }
+                        .filter {
+                            let lowercased = $0.lowercased()
+                            return lowercased.contains("error:")
+                                || lowercased.contains("error domain")
+                                || lowercased.contains("no profiles")
+                                || lowercased.contains("doesn't match")
+                                || lowercased.contains("provisioning")
+                                || lowercased.contains("asset catalog")
+                                || lowercased.contains("appicon")
+                                || lowercased.contains(".appiconset")
+                        }
                     if !errorLines.isEmpty {
                         stderrSummary += "\n\n--- Distribution Log Errors ---\n" + errorLines.joined(separator: "\n")
                     }
@@ -789,10 +882,83 @@ actor BuildPipelineService {
 
     // MARK: - Upload to TestFlight
 
+    struct HelperBuildUploadResult: Decodable {
+        let uploadId: String
+        let fileId: String
+        let fileName: String?
+        let fileSize: Int64?
+        let uploaded: Bool?
+    }
+
     struct UploadResult {
         let buildVersion: String?
         let processingState: String?
+        let uploadId: String?
+        let fileId: String?
+        let uploadCommitted: Bool
         let log: [String]
+    }
+
+    static func buildsUploadCommandArguments(
+        appId: String,
+        artifactPath: String,
+        platform: ProjectPlatform,
+        skipPolling: Bool
+    ) -> [String] {
+        let isMacArtifact = platform == .macOS
+            || URL(fileURLWithPath: artifactPath).pathExtension.lowercased() == "pkg"
+        var args = ["builds", "upload", "--app", appId]
+        if isMacArtifact {
+            args += ["--pkg", artifactPath, "--platform", "MAC_OS"]
+        } else {
+            args += ["--ipa", artifactPath, "--platform", "IOS"]
+        }
+        if skipPolling {
+            args += ["--verify-timeout", helperUploadVerifyTimeout]
+        } else {
+            args.append("--wait")
+        }
+        args += ["--output", "json"]
+        return args
+    }
+
+    static func parseBuildUploadCLIResult(from stdout: String) throws -> HelperBuildUploadResult {
+        let trimmed = stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw ProcessRunner.ProcessError(
+                command: "asc builds upload",
+                exitCode: -1,
+                stderr: "ASC helper returned no JSON output for the build upload."
+            )
+        }
+        guard let data = trimmed.data(using: .utf8) else {
+            throw ProcessRunner.ProcessError(
+                command: "asc builds upload",
+                exitCode: -1,
+                stderr: "ASC helper returned non-UTF8 build upload output."
+            )
+        }
+        do {
+            return try JSONDecoder().decode(HelperBuildUploadResult.self, from: data)
+        } catch {
+            throw ProcessRunner.ProcessError(
+                command: "asc builds upload",
+                exitCode: -1,
+                stderr: "Failed to decode ASC helper build upload output: \(error.localizedDescription)"
+            )
+        }
+    }
+
+    static func validatedBuildUploadCLIResult(from stdout: String) throws -> HelperBuildUploadResult {
+        let result = try parseBuildUploadCLIResult(from: stdout)
+        guard result.uploaded == true else {
+            throw ProcessRunner.ProcessError(
+                command: "asc builds upload",
+                exitCode: -1,
+                stderr: "App Store Connect reserved upload \(result.uploadId), but file \(result.fileId) was not marked uploaded."
+            )
+        }
+        return result
     }
 
     func uploadToTestFlight(
@@ -813,6 +979,50 @@ actor BuildPipelineService {
             onProgress(msg)
         }
 
+        if let appId, let ascService {
+            emit("Uploading \(platform == .macOS ? "PKG" : "IPA") to App Store Connect...")
+            let cliArgs = Self.buildsUploadCommandArguments(
+                appId: appId,
+                artifactPath: ipaPath,
+                platform: platform,
+                skipPolling: skipPolling
+            )
+            let cliResult = try await ascService.cliExec(args: cliArgs)
+
+            let stderrLines = cliResult.stderr
+                .replacingOccurrences(of: "\r\n", with: "\n")
+                .replacingOccurrences(of: "\r", with: "\n")
+                .components(separatedBy: "\n")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            log.append(contentsOf: stderrLines)
+
+            guard cliResult.exitCode == 0 else {
+                let stderrSummary = stderrLines.isEmpty
+                    ? cliResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+                    : stderrLines.joined(separator: "\n")
+                throw ProcessRunner.ProcessError(
+                    command: "asc builds upload",
+                    exitCode: Int32(cliResult.exitCode),
+                    stderr: stderrSummary.isEmpty
+                        ? "Build upload failed with exit code \(cliResult.exitCode)"
+                        : stderrSummary
+                )
+            }
+
+            let helperResult = try Self.validatedBuildUploadCLIResult(from: cliResult.stdout)
+
+            emit("Upload committed in App Store Connect.")
+            return UploadResult(
+                buildVersion: nil,
+                processingState: skipPolling ? "UPLOAD_COMMITTED" : nil,
+                uploadId: helperResult.uploadId,
+                fileId: helperResult.fileId,
+                uploadCommitted: true,
+                log: log
+            )
+        }
+
         // Place .p8 key for altool/notarytool
         let keyDir = fm.homeDirectoryForCurrentUser
             .appendingPathComponent(".appstoreconnect/private_keys")
@@ -824,7 +1034,7 @@ actor BuildPipelineService {
         // Upload using xcrun altool
         let platformType = platform == .macOS ? "osx" : "ios"
         emit("Uploading \(platform == .macOS ? "PKG" : "IPA") to App Store Connect...")
-        let uploadStderr = StderrCollector()
+        let uploadOutput = ProcessOutputCollector()
         let uploadManaged = ProcessRunner.stream(
             "xcrun",
             arguments: [
@@ -834,10 +1044,13 @@ actor BuildPipelineService {
                 "--apiKey", keyId,
                 "--apiIssuer", issuerId
             ],
-            onStdout: { line in onProgress(line) },
+            onStdout: { line in
+                onProgress(line)
+                uploadOutput.appendStdout(line)
+            },
             onStderr: { line in
                 onProgress(line)
-                uploadStderr.append(line)
+                uploadOutput.appendStderr(line)
             }
         )
 
@@ -852,7 +1065,7 @@ actor BuildPipelineService {
         await uploadManaged.waitUntilExit()
 
         guard uploadManaged.process.terminationStatus == 0 else {
-            let stderrSummary = uploadStderr.summary
+            let stderrSummary = uploadOutput.summary
             throw ProcessRunner.ProcessError(
                 command: "xcrun altool --upload-app",
                 exitCode: uploadManaged.process.terminationStatus,
@@ -876,6 +1089,9 @@ actor BuildPipelineService {
                         return UploadResult(
                             buildVersion: build.attributes.version,
                             processingState: state,
+                            uploadId: nil,
+                            fileId: nil,
+                            uploadCommitted: true,
                             log: log
                         )
                     } else if state == "INVALID" {
@@ -883,6 +1099,9 @@ actor BuildPipelineService {
                         return UploadResult(
                             buildVersion: build.attributes.version,
                             processingState: state,
+                            uploadId: nil,
+                            fileId: nil,
+                            uploadCommitted: true,
                             log: log
                         )
                     }
@@ -894,6 +1113,9 @@ actor BuildPipelineService {
         return UploadResult(
             buildVersion: nil,
             processingState: skipPolling ? "SKIPPED_POLLING" : "TIMEOUT",
+            uploadId: nil,
+            fileId: nil,
+            uploadCommitted: true,
             log: log
         )
     }

@@ -3,6 +3,219 @@ import Foundation
 extension MCPExecutor {
     // MARK: - Tab State Tool
 
+    private static let ageRatingBooleanFieldReaders: [(String, (ASCAgeRatingDeclaration.Attributes) -> Bool?)] = [
+        ("gambling", { $0.gambling }),
+        ("messagingAndChat", { $0.messagingAndChat }),
+        ("unrestrictedWebAccess", { $0.unrestrictedWebAccess }),
+        ("userGeneratedContent", { $0.userGeneratedContent }),
+        ("advertising", { $0.advertising }),
+        ("lootBox", { $0.lootBox }),
+        ("healthOrWellnessTopics", { $0.healthOrWellnessTopics }),
+        ("parentalControls", { $0.parentalControls }),
+        ("ageAssurance", { $0.ageAssurance }),
+    ]
+
+    private static let ageRatingEnumFieldReaders: [(String, (ASCAgeRatingDeclaration.Attributes) -> String?)] = [
+        ("alcoholTobaccoOrDrugUseOrReferences", { $0.alcoholTobaccoOrDrugUseOrReferences }),
+        ("contests", { $0.contests }),
+        ("gamblingSimulated", { $0.gamblingSimulated }),
+        ("gunsOrOtherWeapons", { $0.gunsOrOtherWeapons }),
+        ("horrorOrFearThemes", { $0.horrorOrFearThemes }),
+        ("matureOrSuggestiveThemes", { $0.matureOrSuggestiveThemes }),
+        ("medicalOrTreatmentInformation", { $0.medicalOrTreatmentInformation }),
+        ("profanityOrCrudeHumor", { $0.profanityOrCrudeHumor }),
+        ("sexualContentGraphicAndNudity", { $0.sexualContentGraphicAndNudity }),
+        ("sexualContentOrNudity", { $0.sexualContentOrNudity }),
+        ("violenceCartoonOrFantasy", { $0.violenceCartoonOrFantasy }),
+        ("violenceRealistic", { $0.violenceRealistic }),
+        ("violenceRealisticProlongedGraphicOrSadistic", { $0.violenceRealisticProlongedGraphicOrSadistic }),
+    ]
+
+    private static let reviewContactFieldOrder = [
+        "contactFirstName",
+        "contactLastName",
+        "contactEmail",
+        "contactPhone",
+        "notes",
+        "demoAccountRequired",
+        "demoAccountName",
+        "demoAccountPassword",
+    ]
+
+    private static func overviewReviewDraftKey(for label: String) -> String? {
+        switch label {
+        case "Review Contact First Name":
+            return "contactFirstName"
+        case "Review Contact Last Name":
+            return "contactLastName"
+        case "Review Contact Email":
+            return "contactEmail"
+        case "Review Contact Phone":
+            return "contactPhone"
+        case "Demo Account Name":
+            return "demoAccountName"
+        case "Demo Account Password":
+            return "demoAccountPassword"
+        default:
+            return nil
+        }
+    }
+
+    static func ageRatingStatePayload(
+        ageRating: ASCAgeRatingDeclaration?,
+        isSaved: Bool,
+        pendingDraft: [String: String]?
+    ) -> [String: Any]? {
+        let hasPendingDraft = !(pendingDraft?.isEmpty ?? true)
+        guard ageRating != nil || hasPendingDraft else { return nil }
+
+        let attributes = ageRating?.attributes
+        var payload: [String: Any] = [
+            "isSaved": isSaved,
+            "hasPendingChanges": hasPendingDraft,
+        ]
+        if let ageRating {
+            payload["id"] = ageRating.id
+        }
+
+        var missingRequired: [String] = []
+        for (field, reader) in ageRatingBooleanFieldReaders {
+            if let attributes, let value = reader(attributes) {
+                payload[field] = value
+            } else {
+                payload[field] = NSNull()
+                missingRequired.append(field)
+            }
+        }
+        for (field, reader) in ageRatingEnumFieldReaders {
+            if let attributes, let value = reader(attributes), !value.isEmpty {
+                payload[field] = value
+            } else {
+                payload[field] = NSNull()
+                missingRequired.append(field)
+            }
+        }
+
+        payload["missingRequired"] = missingRequired
+        if let pendingDraft, !pendingDraft.isEmpty {
+            payload["draftValues"] = pendingDraft
+        }
+        return payload
+    }
+
+    static func reviewContactFieldPayload(from attributes: [String: Any]) -> [String: Any] {
+        var payload: [String: Any] = [:]
+        for field in reviewContactFieldOrder {
+            if field == "demoAccountRequired" {
+                payload[field] = attributes[field] as? Bool ?? false
+            } else {
+                payload[field] = reviewContactStringValue(attributes[field]) ?? ""
+            }
+        }
+        return payload
+    }
+
+    static func reviewContactStatePayload(
+        reviewDetail: ASCReviewDetail?,
+        pendingDraft: [String: String]?
+    ) -> [String: Any]? {
+        let hasPendingDraft = !(pendingDraft?.isEmpty ?? true)
+        guard reviewDetail != nil || hasPendingDraft else { return nil }
+
+        let persisted = mergedReviewContactAttributes(reviewDetail: reviewDetail, draft: [:])
+        let effective = mergedReviewContactAttributes(reviewDetail: reviewDetail, draft: pendingDraft ?? [:])
+        let persistedMissingRequired = missingRequiredReviewContactFields(from: persisted)
+
+        var payload = reviewContactFieldPayload(from: effective)
+        payload["savedToASC"] = !hasPendingDraft
+        payload["hasPendingChanges"] = hasPendingDraft
+        payload["missingRequired"] = missingRequiredReviewContactFields(from: effective)
+        payload["missingRequiredPersisted"] = persistedMissingRequired
+        if let reviewDetail {
+            payload["id"] = reviewDetail.id
+        }
+        payload["persisted"] = reviewContactFieldPayload(from: persisted)
+        if let pendingDraft, !pendingDraft.isEmpty {
+            payload["pendingDraft"] = pendingDraft
+        }
+        return payload
+    }
+
+    static func overviewSubmissionReadinessPayload(
+        readiness: SubmissionReadiness,
+        reviewDetail: ASCReviewDetail?,
+        pendingFormValues: [String: [String: String]]
+    ) -> [String: Any] {
+        let pendingReviewDraft = pendingFormValues["review.contact"] ?? [:]
+        let effectiveReviewContact = mergedReviewContactAttributes(
+            reviewDetail: reviewDetail,
+            draft: pendingReviewDraft
+        )
+        let effectiveDemoRequired = effectiveReviewContact["demoAccountRequired"] as? Bool == true
+
+        var effectiveFields = readiness.fields
+        if effectiveDemoRequired {
+            let existingLabels = Set(effectiveFields.map(\.label))
+            if !existingLabels.contains("Demo Account Name") {
+                effectiveFields.append(.init(label: "Demo Account Name", value: nil))
+            }
+            if !existingLabels.contains("Demo Account Password") {
+                effectiveFields.append(.init(label: "Demo Account Password", value: nil))
+            }
+        }
+
+        var fieldEntries: [[String: Any]] = []
+        var missingRequiredConsideringDrafts: [String] = []
+
+        for field in effectiveFields {
+            let draftKey = overviewReviewDraftKey(for: field.label)
+            let hasPendingChange = draftKey.map { pendingReviewDraft[$0] != nil } ?? false
+            let effectiveValue: String?
+            if let draftKey, let value = reviewContactStringValue(effectiveReviewContact[draftKey]) {
+                effectiveValue = value
+            } else {
+                effectiveValue = field.value
+            }
+
+            let persistedFilled = field.value != nil && !(field.value?.isEmpty ?? true)
+            let effectiveFilled = effectiveValue != nil && !(effectiveValue?.isEmpty ?? true)
+            if field.required && !field.isLoading && !effectiveFilled {
+                missingRequiredConsideringDrafts.append(field.label)
+            }
+
+            var entry: [String: Any] = [
+                "label": field.label,
+                "value": effectiveValue ?? NSNull(),
+                "required": field.required,
+                "filled": persistedFilled,
+                "isLoading": field.isLoading,
+                "savedToASC": !hasPendingChange,
+            ]
+            if hasPendingChange {
+                entry["source"] = "draft"
+                entry["hasPendingChanges"] = true
+                entry["persistedValue"] = field.value ?? NSNull()
+                entry["filledConsideringDrafts"] = effectiveFilled
+            }
+            if let hint = field.hint {
+                entry["hint"] = hint
+            }
+            fieldEntries.append(entry)
+        }
+
+        let missingRequiredPersisted = readiness.missingRequired.map(\.label)
+
+        return [
+            "isComplete": readiness.isComplete,
+            "isCompleteConsideringDrafts": missingRequiredConsideringDrafts.isEmpty,
+            "fields": fieldEntries,
+            "missingRequired": missingRequiredPersisted,
+            "missingRequiredPersisted": missingRequiredPersisted,
+            "missingRequiredConsideringDrafts": missingRequiredConsideringDrafts,
+            "hasPendingDrafts": !pendingFormValues.isEmpty,
+        ]
+    }
+
     @MainActor
     func versionStatePayload(_ version: ASCAppStoreVersion?) -> [String: Any]? {
         guard let version else { return nil }
@@ -35,6 +248,12 @@ extension MCPExecutor {
             tab = await MainActor.run { appState.activeTab }
         }
 
+        if tab == .app {
+            await appState.ascManager.syncOverviewSubmissionReadiness(forceRefresh: true)
+        } else if tab == .appDetails {
+            await appState.ascManager.refreshTabData(.appDetails)
+        }
+
         var result = await MainActor.run { () -> [String: Any] in
             let asc = appState.ascManager
             var value: [String: Any] = [
@@ -47,10 +266,6 @@ extension MCPExecutor {
                 value["app"] = ["id": app.id, "name": app.name, "bundleId": app.bundleId]
             }
             return value
-        }
-
-        if tab == .app {
-            await appState.ascManager.refreshSubmissionReadinessData()
         }
 
         let tabData = await MainActor.run { () -> [String: Any] in
@@ -99,26 +314,12 @@ extension MCPExecutor {
     @MainActor
     func tabStateASCOverview(_ asc: ASCManager) -> [String: Any] {
         let readiness = asc.submissionReadiness
-        var fields: [[String: Any]] = []
-        for field in readiness.fields {
-            let filled = field.value != nil && !(field.value?.isEmpty ?? true)
-            var entry: [String: Any] = [
-                "label": field.label,
-                "value": field.value as Any,
-                "required": field.required,
-                "filled": filled
-            ]
-            if let hint = field.hint {
-                entry["hint"] = hint
-            }
-            fields.append(entry)
-        }
         var result: [String: Any] = [
-            "submissionReadiness": [
-                "isComplete": readiness.isComplete,
-                "fields": fields,
-                "missingRequired": readiness.missingRequired.map { $0.label }
-            ],
+            "submissionReadiness": Self.overviewSubmissionReadinessPayload(
+                readiness: readiness,
+                reviewDetail: asc.reviewDetail,
+                pendingFormValues: asc.pendingFormValues
+            ),
             "totalVersions": asc.appStoreVersions.count,
             "isSubmitting": asc.isSubmitting,
             "canCreateUpdate": asc.canCreateUpdate,
@@ -224,46 +425,19 @@ extension MCPExecutor {
     func tabStateReview(_ asc: ASCManager) -> [String: Any] {
         var result: [String: Any] = [:]
 
-        if let ageRating = asc.ageRatingDeclaration {
-            let attrs = ageRating.attributes
-            var ageRatingDict: [String: Any] = ["id": ageRating.id]
-            ageRatingDict["gambling"] = attrs.gambling ?? false
-            ageRatingDict["messagingAndChat"] = attrs.messagingAndChat ?? false
-            ageRatingDict["unrestrictedWebAccess"] = attrs.unrestrictedWebAccess ?? false
-            ageRatingDict["userGeneratedContent"] = attrs.userGeneratedContent ?? false
-            ageRatingDict["advertising"] = attrs.advertising ?? false
-            ageRatingDict["lootBox"] = attrs.lootBox ?? false
-            ageRatingDict["healthOrWellnessTopics"] = attrs.healthOrWellnessTopics ?? false
-            ageRatingDict["parentalControls"] = attrs.parentalControls ?? false
-            ageRatingDict["ageAssurance"] = attrs.ageAssurance ?? false
-            ageRatingDict["alcoholTobaccoOrDrugUseOrReferences"] = attrs.alcoholTobaccoOrDrugUseOrReferences ?? "NONE"
-            ageRatingDict["contests"] = attrs.contests ?? "NONE"
-            ageRatingDict["gamblingSimulated"] = attrs.gamblingSimulated ?? "NONE"
-            ageRatingDict["gunsOrOtherWeapons"] = attrs.gunsOrOtherWeapons ?? "NONE"
-            ageRatingDict["horrorOrFearThemes"] = attrs.horrorOrFearThemes ?? "NONE"
-            ageRatingDict["matureOrSuggestiveThemes"] = attrs.matureOrSuggestiveThemes ?? "NONE"
-            ageRatingDict["medicalOrTreatmentInformation"] = attrs.medicalOrTreatmentInformation ?? "NONE"
-            ageRatingDict["profanityOrCrudeHumor"] = attrs.profanityOrCrudeHumor ?? "NONE"
-            ageRatingDict["sexualContentGraphicAndNudity"] = attrs.sexualContentGraphicAndNudity ?? "NONE"
-            ageRatingDict["sexualContentOrNudity"] = attrs.sexualContentOrNudity ?? "NONE"
-            ageRatingDict["violenceCartoonOrFantasy"] = attrs.violenceCartoonOrFantasy ?? "NONE"
-            ageRatingDict["violenceRealistic"] = attrs.violenceRealistic ?? "NONE"
-            ageRatingDict["violenceRealisticProlongedGraphicOrSadistic"] = attrs.violenceRealisticProlongedGraphicOrSadistic ?? "NONE"
-            result["ageRating"] = ageRatingDict
+        if let ageRating = Self.ageRatingStatePayload(
+            ageRating: asc.ageRatingDeclaration,
+            isSaved: asc.ageRatingIsConfigured,
+            pendingDraft: asc.pendingFormValues["review.ageRating"]
+        ) {
+            result["ageRating"] = ageRating
         }
 
-        if let reviewDetail = asc.reviewDetail {
-            let attrs = reviewDetail.attributes
-            result["reviewContact"] = [
-                "contactFirstName": attrs.contactFirstName ?? "",
-                "contactLastName": attrs.contactLastName ?? "",
-                "contactEmail": attrs.contactEmail ?? "",
-                "contactPhone": attrs.contactPhone ?? "",
-                "notes": attrs.notes ?? "",
-                "demoAccountRequired": attrs.demoAccountRequired ?? false,
-                "demoAccountName": attrs.demoAccountName ?? "",
-                "demoAccountPassword": attrs.demoAccountPassword ?? ""
-            ]
+        if let reviewContact = Self.reviewContactStatePayload(
+            reviewDetail: asc.reviewDetail,
+            pendingDraft: asc.pendingFormValues["review.contact"]
+        ) {
+            result["reviewContact"] = reviewContact
         }
 
         result["builds"] = asc.builds.prefix(10).map { build -> [String: Any] in

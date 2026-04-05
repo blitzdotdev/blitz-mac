@@ -28,29 +28,12 @@ private enum ScreenshotDeviceType: String, CaseIterable, Identifiable {
     }
 
     var dimensionLabel: String {
-        switch self {
-        case .iPhone: "1290\u{00d7}2796, 1284\u{00d7}2778, 1242\u{00d7}2688, or 1260\u{00d7}2736"
-        case .iPad: "2048 \u{00d7} 2732"
-        case .mac: "1280\u{00d7}800, 1440\u{00d7}900, 2560\u{00d7}1600, or 2880\u{00d7}1800"
-        }
+        ASCManager.screenshotDimensionSummary(displayType: ascDisplayType) ?? "Unsupported size"
     }
 
     /// Validate pixel dimensions for this device type
     func validateDimensions(width: Int, height: Int) -> Bool {
-        switch self {
-        case .iPhone:
-            let validSizes: Set<String> = [
-                "1290x2796", "1284x2778", "1242x2688", "1260x2736"
-            ]
-            return validSizes.contains("\(width)x\(height)")
-        case .iPad:
-            return width == 2048 && height == 2732
-        case .mac:
-            let validSizes: Set<String> = [
-                "1280x800", "1440x900", "2560x1600", "2880x1800"
-            ]
-            return validSizes.contains("\(width)x\(height)")
-        }
+        ASCManager.validateDimensions(width: width, height: height, displayType: ascDisplayType) == nil
     }
 
     /// Device types applicable for a given platform

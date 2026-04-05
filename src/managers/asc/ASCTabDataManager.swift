@@ -117,8 +117,19 @@ extension ASCManager {
     }
 
     func refreshSubmissionReadinessData() async {
+        await refreshCurrentApp()
         await refreshMonetization()
         await refreshAttachedSubmissionItemIDs()
+    }
+
+    func syncOverviewSubmissionReadiness(forceRefresh: Bool = false) async {
+        if forceRefresh {
+            await refreshTabData(.app)
+        } else {
+            await ensureTabData(.app)
+        }
+        await waitForBackgroundHydration(for: .app)
+        await refreshSubmissionReadinessData()
     }
 
     func startOverviewReadinessLoading(_ fields: Set<String>) {
@@ -132,6 +143,13 @@ extension ASCManager {
     func isCurrentProject(_ projectId: String?) -> Bool {
         guard let projectId else { return false }
         return loadedProjectId == projectId
+    }
+
+    private func refreshCurrentApp() async {
+        guard let service, let appId = app?.id else { return }
+        if let refreshedApp = try? await service.fetchApp(id: appId) {
+            app = refreshedApp
+        }
     }
 
     private struct OverviewPrimaryLocalization {
@@ -336,6 +354,7 @@ extension ASCManager {
                     .union(Self.overviewScreenshotFieldLabels)
             )
             async let versionsTask = service.fetchAppStoreVersions(appId: appId)
+            async let appTask: ASCApp? = try? service.fetchApp(id: appId)
             async let appInfoTask: ASCAppInfo? = try? service.fetchAppInfo(appId: appId)
             async let buildsTask = service.fetchBuilds(appId: appId)
 
@@ -343,6 +362,9 @@ extension ASCManager {
             appStoreVersions = versions
             syncSelectedVersion()
             finishOverviewReadinessLoading(Self.overviewVersionFieldLabels)
+            if let refreshedApp = await appTask {
+                app = refreshedApp
+            }
             appInfo = await appInfoTask
             finishOverviewReadinessLoading(Self.overviewAppInfoFieldLabels)
             builds = try await buildsTask
@@ -425,10 +447,14 @@ extension ASCManager {
 
         case .appDetails:
             async let versionsTask = service.fetchAppStoreVersions(appId: appId)
+            async let appTask: ASCApp? = try? service.fetchApp(id: appId)
             async let appInfoTask: ASCAppInfo? = try? await service.fetchAppInfo(appId: appId)
 
             appStoreVersions = try await versionsTask
             syncSelectedVersion()
+            if let refreshedApp = await appTask {
+                app = refreshedApp
+            }
             appInfo = await appInfoTask
 
         case .review:

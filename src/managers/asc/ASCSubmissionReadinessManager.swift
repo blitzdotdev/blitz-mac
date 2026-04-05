@@ -3,7 +3,7 @@ import Foundation
 extension ASCManager {
     /// ASC returns an age rating declaration object with nil fields by default.
     /// Submitting with nil fields later causes a 409.
-    private var ageRatingIsConfigured: Bool {
+    var ageRatingIsConfigured: Bool {
         guard let attributes = ageRatingDeclaration?.attributes else { return false }
         return attributes.alcoholTobaccoOrDrugUseOrReferences != nil
             && attributes.violenceCartoonOrFantasy != nil

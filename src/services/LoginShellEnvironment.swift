@@ -42,18 +42,36 @@ enum LoginShellEnvironment {
         let outputPipe = Pipe()
         process.standardOutput = outputPipe
         process.standardError = outputPipe
+        let outputHandle = outputPipe.fileHandleForReading
+        let outputLock = NSLock()
+        var outputData = Data()
+
+        outputHandle.readabilityHandler = { handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            outputLock.lock()
+            outputData.append(data)
+            outputLock.unlock()
+        }
 
         do {
             try process.run()
         } catch {
+            outputHandle.readabilityHandler = nil
             print("[LoginShellEnvironment] Failed to start \(shellPath): \(error)")
             return nil
         }
 
         process.waitUntilExit()
+        outputHandle.readabilityHandler = nil
 
-        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        guard let output = String(data: outputData, encoding: .utf8) else {
+        let trailingData = outputHandle.readDataToEndOfFile()
+        outputLock.lock()
+        outputData.append(trailingData)
+        let capturedOutput = outputData
+        outputLock.unlock()
+
+        guard let output = String(data: capturedOutput, encoding: .utf8) else {
             return nil
         }
 

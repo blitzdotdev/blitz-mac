@@ -4,6 +4,12 @@ import Foundation
 extension MCPExecutor {
     // MARK: - ASC Form Tools
 
+    private static let appDetailsFieldWriteOrder = [
+        "copyright",
+        "primaryCategory",
+        "contentRightsDeclaration",
+    ]
+
     static let validFieldsByTab: [String: Set<String>] = [
         "storeListing": ["title", "name", "subtitle", "description", "keywords", "promotionalText",
                          "marketingUrl", "supportUrl", "whatsNew", "privacyPolicyUrl"],
@@ -29,6 +35,132 @@ extension MCPExecutor {
         "email": "contactEmail",
         "phone": "contactPhone",
     ]
+
+    static let reviewContactRequiredFieldKeys = [
+        "contactFirstName",
+        "contactLastName",
+        "contactEmail",
+        "contactPhone",
+    ]
+
+    static func normalizedReviewContactDraft(_ fields: [String: String]) -> [String: String] {
+        var normalized: [String: String] = [:]
+        for (field, value) in fields {
+            if field == "contactPhone" {
+                let stripped = value.hasPrefix("+")
+                    ? "+" + value.dropFirst().filter(\.isNumber)
+                    : value.filter(\.isNumber)
+                normalized[field] = stripped
+            } else if field == "demoAccountRequired" {
+                normalized[field] = value == "true" ? "true" : "false"
+            } else {
+                normalized[field] = value
+            }
+        }
+        return normalized
+    }
+
+    static func reviewContactStringValue(_ value: Any?) -> String? {
+        guard let value = value as? String else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    static func missingRequiredReviewContactFields(from attributes: [String: Any]) -> [String] {
+        var missing = reviewContactRequiredFieldKeys.filter {
+            reviewContactStringValue(attributes[$0]) == nil
+        }
+
+        let demoRequired = attributes["demoAccountRequired"] as? Bool == true
+        if demoRequired {
+            if reviewContactStringValue(attributes["demoAccountName"]) == nil {
+                missing.append("demoAccountName")
+            }
+            if reviewContactStringValue(attributes["demoAccountPassword"]) == nil {
+                missing.append("demoAccountPassword")
+            }
+        }
+
+        return missing
+    }
+
+    static func mergedReviewContactAttributes(
+        reviewDetail: ASCReviewDetail?,
+        draft: [String: String]
+    ) -> [String: Any] {
+        var attributes: [String: Any] = [:]
+
+        if let existing = reviewDetail?.attributes {
+            if let contactFirstName = existing.contactFirstName, !contactFirstName.isEmpty {
+                attributes["contactFirstName"] = contactFirstName
+            }
+            if let contactLastName = existing.contactLastName, !contactLastName.isEmpty {
+                attributes["contactLastName"] = contactLastName
+            }
+            if let contactPhone = existing.contactPhone, !contactPhone.isEmpty {
+                attributes["contactPhone"] = contactPhone
+            }
+            if let contactEmail = existing.contactEmail, !contactEmail.isEmpty {
+                attributes["contactEmail"] = contactEmail
+            }
+            if let demoAccountRequired = existing.demoAccountRequired {
+                attributes["demoAccountRequired"] = demoAccountRequired
+            }
+            if let demoAccountName = existing.demoAccountName, !demoAccountName.isEmpty {
+                attributes["demoAccountName"] = demoAccountName
+            }
+            if let demoAccountPassword = existing.demoAccountPassword, !demoAccountPassword.isEmpty {
+                attributes["demoAccountPassword"] = demoAccountPassword
+            }
+            if let notes = existing.notes, !notes.isEmpty {
+                attributes["notes"] = notes
+            }
+        }
+
+        for (field, value) in draft {
+            if field == "demoAccountRequired" {
+                attributes[field] = value == "true"
+            } else {
+                attributes[field] = value
+            }
+        }
+
+        return attributes
+    }
+
+    static func missingRequiredReviewContactFieldsForInitialCreate(
+        reviewDetail: ASCReviewDetail?,
+        mergedAttributes: [String: Any]
+    ) -> [String] {
+        guard reviewDetail?.isPlaceholder != false else { return [] }
+        return missingRequiredReviewContactFields(from: mergedAttributes)
+    }
+
+    @MainActor
+    static func screenshotSaveDisplayTypes(
+        requestedDisplayType: String?,
+        locale: String,
+        projectDisplayTypes: [String],
+        asc: ASCManager
+    ) -> [String] {
+        if let requestedDisplayType {
+            let trimmed = requestedDisplayType.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return [trimmed]
+            }
+        }
+
+        let knownDisplayTypes = asc.orderedKnownScreenshotDisplayTypes(
+            for: locale,
+            preferredOrder: projectDisplayTypes
+        )
+        let candidateDisplayTypes = knownDisplayTypes.isEmpty ? projectDisplayTypes : knownDisplayTypes
+        let stagedDisplayTypes = candidateDisplayTypes.filter {
+            asc.hasTrackState(displayType: $0, locale: locale)
+                || asc.hasUnsavedChanges(displayType: $0, locale: locale)
+        }
+        return stagedDisplayTypes.isEmpty ? candidateDisplayTypes : stagedDisplayTypes
+    }
 
     private func screenshotsDisplayTypesForActiveProject() async -> [String] {
         await MainActor.run {
@@ -187,6 +319,8 @@ extension MCPExecutor {
             }
         }
 
+        var extraResponse: [String: Any] = [:]
+
         switch tab {
         case "storeListing":
             let appInfoLocFields: Set<String> = ["name", "title", "subtitle", "privacyPolicyUrl"]
@@ -216,10 +350,11 @@ extension MCPExecutor {
             if let err = await checkASCWriteError(tab: tab) { return err }
 
         case "appDetails":
-            for (field, value) in fieldMap {
+            for field in Self.appDetailsFieldWriteOrder {
+                guard let value = fieldMap[field] else { continue }
                 await appState.ascManager.updateAppInfoField(field, value: value)
+                if let err = await checkASCWriteError(tab: tab) { return err }
             }
-            if let err = await checkASCWriteError(tab: tab) { return err }
 
         case "monetization":
             guard let isFree = fieldMap["isFree"] else {
@@ -248,21 +383,74 @@ extension MCPExecutor {
             if let err = await checkASCWriteError(tab: tab) { return err }
 
         case "review.contact":
-            var attrs: [String: Any] = [:]
-            for (field, value) in fieldMap {
-                if field == "demoAccountRequired" {
-                    attrs[field] = value == "true"
-                } else if field == "contactPhone" {
-                    let stripped = value.hasPrefix("+")
-                        ? "+" + value.dropFirst().filter(\.isNumber)
-                        : value.filter(\.isNumber)
-                    attrs[field] = stripped
-                } else {
-                    attrs[field] = value
-                }
+            let normalizedDraft = await MainActor.run { () -> [String: String] in
+                let merged = (appState.ascManager.pendingFormValues[tab] ?? [:]).merging(fieldMap) { _, new in new }
+                let normalized = Self.normalizedReviewContactDraft(merged)
+                return normalized
             }
-            await appState.ascManager.updateReviewContact(attrs)
-            if let err = await checkASCWriteError(tab: tab) { return err }
+
+            let mergedAttributes = await MainActor.run {
+                Self.mergedReviewContactAttributes(
+                    reviewDetail: appState.ascManager.reviewDetail,
+                    draft: normalizedDraft
+                )
+            }
+
+            let missingInitialCreateFields = await MainActor.run {
+                Self.missingRequiredReviewContactFieldsForInitialCreate(
+                    reviewDetail: appState.ascManager.reviewDetail,
+                    mergedAttributes: mergedAttributes
+                )
+            }
+            if !missingInitialCreateFields.isEmpty {
+                await MainActor.run {
+                    if appState.ascManager.pendingFormValues.removeValue(forKey: tab) != nil {
+                        appState.ascManager.pendingFormVersion += 1
+                    }
+                    appState.ascManager.writeError = nil
+                }
+                return mcpText(
+                    "Error: App Store Connect requires \(missingInitialCreateFields.joined(separator: ", ")) "
+                        + "to create the initial review contact resource. Re-send the full required contact block together."
+                )
+            }
+
+            await appState.ascManager.updateReviewContact(mergedAttributes)
+
+            let reviewContactWriteError = await MainActor.run { () -> String? in
+                let asc = appState.ascManager
+                let error = asc.writeError
+                asc.writeError = nil
+
+                if error == nil {
+                    if asc.pendingFormValues.removeValue(forKey: tab) != nil {
+                        asc.pendingFormVersion += 1
+                    }
+                }
+
+                return error
+            }
+            if let reviewContactWriteError {
+                return mcpText("Error: \(reviewContactWriteError)")
+            }
+
+            let persistedMissingRequired = await MainActor.run {
+                Self.missingRequiredReviewContactFields(
+                    from: Self.mergedReviewContactAttributes(
+                        reviewDetail: appState.ascManager.reviewDetail,
+                        draft: [:]
+                    )
+                )
+            }
+            extraResponse["saved"] = true
+            extraResponse["pending"] = false
+            extraResponse["missingRequired"] = persistedMissingRequired
+            if persistedMissingRequired.isEmpty {
+                extraResponse["message"] = "Review contact was saved to ASC."
+            } else {
+                extraResponse["message"] =
+                    "Review contact was saved to ASC. Required fields still missing in App Store Connect: \(persistedMissingRequired.joined(separator: ", "))."
+            }
 
         case "settings.bundleId":
             if let bundleId = fieldMap["bundleId"] {
@@ -293,6 +481,9 @@ extension MCPExecutor {
         var response: [String: Any] = ["success": true, "tab": tab, "fieldsUpdated": fieldMap.count]
         if let resolvedStoreListingLocale {
             response["locale"] = resolvedStoreListingLocale
+        }
+        for (key, value) in extraResponse {
+            response[key] = value
         }
         return mcpJSON(response)
     }
@@ -612,8 +803,9 @@ extension MCPExecutor {
     }
 
     func executeScreenshotsSave(_ args: [String: Any]) async throws -> [String: Any] {
-        let displayType = args["displayType"] as? String ?? "APP_IPHONE_67"
+        let requestedDisplayType = args["displayType"] as? String
         let (locale, explicitlyRequestedLocale) = await resolveScreenshotsLocale(from: args)
+        let projectDisplayTypes = await screenshotsDisplayTypesForActiveProject()
 
         let selectedLocale = await MainActor.run {
             appState.ascManager.selectedScreenshotsLocale ?? appState.ascManager.localizations.first?.attributes.locale
@@ -625,38 +817,88 @@ extension MCPExecutor {
             )
         }
 
-        await MainActor.run {
-            let asc = appState.ascManager
-            if !asc.hasTrackState(displayType: displayType, locale: locale),
-               selectedLocale == locale {
-                asc.loadTrackFromASC(displayType: displayType, locale: locale)
+        let displayTypes = await MainActor.run {
+            Self.screenshotSaveDisplayTypes(
+                requestedDisplayType: requestedDisplayType,
+                locale: locale,
+                projectDisplayTypes: projectDisplayTypes,
+                asc: appState.ascManager
+            )
+        }
+
+        var syncedTracks: [[String: Any]] = []
+        var hadChanges = false
+        var preparedTrackCount = 0
+
+        for displayType in displayTypes {
+            await MainActor.run {
+                let asc = appState.ascManager
+                if !asc.hasTrackState(displayType: displayType, locale: locale),
+                   selectedLocale == locale {
+                    asc.loadTrackFromASC(displayType: displayType, locale: locale)
+                }
             }
+
+            let trackReady = await MainActor.run {
+                appState.ascManager.hasTrackState(displayType: displayType, locale: locale)
+            }
+            if !trackReady {
+                if requestedDisplayType != nil {
+                    return mcpText(
+                        "Error: screenshot locale '\(locale)' is not prepared in Blitz. "
+                            + "Call screenshots_switch_localization first."
+                    )
+                }
+                continue
+            }
+            preparedTrackCount += 1
+
+            let trackHasChanges = await MainActor.run {
+                appState.ascManager.hasUnsavedChanges(displayType: displayType, locale: locale)
+            }
+            if !trackHasChanges {
+                continue
+            }
+
+            hadChanges = true
+            await appState.ascManager.syncTrackToASC(displayType: displayType, locale: locale)
+
+            if let err = await checkASCWriteError(tab: "screenshots") { return err }
+
+            let slotCount = await MainActor.run {
+                appState.ascManager.trackSlotsForDisplayType(displayType, locale: locale).compactMap { $0 }.count
+            }
+            syncedTracks.append([
+                "displayType": displayType,
+                "synced": slotCount,
+            ])
         }
-        let trackReady = await MainActor.run {
-            appState.ascManager.hasTrackState(displayType: displayType, locale: locale)
-        }
-        guard trackReady else {
+
+        guard preparedTrackCount > 0 else {
             return mcpText(
                 "Error: screenshot locale '\(locale)' is not prepared in Blitz. "
                     + "Call screenshots_switch_localization first."
             )
         }
 
-        let hasChanges = await MainActor.run {
-            appState.ascManager.hasUnsavedChanges(displayType: displayType, locale: locale)
-        }
-        guard hasChanges else {
-            return mcpJSON(["success": true, "message": "No changes to save", "locale": locale])
+        guard hadChanges else {
+            return mcpJSON([
+                "success": true,
+                "message": "No changes to save",
+                "locale": locale,
+                "displayTypes": displayTypes,
+            ])
         }
 
-        await appState.ascManager.syncTrackToASC(displayType: displayType, locale: locale)
-
-        if let err = await checkASCWriteError(tab: "screenshots") { return err }
-
-        let slotCount = await MainActor.run {
-            appState.ascManager.trackSlotsForDisplayType(displayType, locale: locale).compactMap { $0 }.count
+        let totalSynced = syncedTracks.reduce(0) { partialResult, entry in
+            partialResult + (entry["synced"] as? Int ?? 0)
         }
-        return mcpJSON(["success": true, "synced": slotCount, "locale": locale])
+        return mcpJSON([
+            "success": true,
+            "synced": totalSynced,
+            "locale": locale,
+            "tracks": syncedTracks,
+        ])
     }
 
     func executeASCOpenSubmitPreview() async -> [String: Any] {
@@ -675,7 +917,7 @@ extension MCPExecutor {
             ])
         }
 
-        await appState.ascManager.refreshSubmissionReadinessData()
+        await appState.ascManager.syncOverviewSubmissionReadiness(forceRefresh: true)
 
         var readiness = await MainActor.run { appState.ascManager.submissionReadiness }
         let hasLockedUpdateOnly = await MainActor.run {
@@ -713,7 +955,7 @@ extension MCPExecutor {
                                 appState.ascManager.selectedVersionBuild = latestBuild
                             }
                         }
-                        await appState.ascManager.refreshTabData(.app)
+                        await appState.ascManager.syncOverviewSubmissionReadiness(forceRefresh: true)
                         readiness = await MainActor.run { appState.ascManager.submissionReadiness }
                         await ASCUpdateLogger.shared.event("mcp_open_submit_preview_auto_attached_build", metadata: [
                             "buildId": latestBuild.id,

@@ -326,6 +326,12 @@ extension ASCManager {
         }
     }
 
+    func waitForBackgroundHydration(for tab: AppTab) async {
+        if let task = tabHydrationTasks[tab] {
+            await task.value
+        }
+    }
+
     func resetProjectData(preserveCredentials: Bool) {
         cancelBackgroundHydrationTasks()
         overviewReadinessLoadingFields = []

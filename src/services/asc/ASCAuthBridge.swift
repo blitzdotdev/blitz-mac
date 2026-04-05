@@ -51,13 +51,18 @@ struct ASCAuthBridge {
         binDirectory.appendingPathComponent("ascd")
     }
 
-    func environmentOverrides(forLaunchPath launchPath: String?) -> [String: String] {
+    func environmentOverrides(
+        forLaunchPath launchPath: String?,
+        baseEnvironment: [String: String]? = nil
+    ) -> [String: String] {
         guard shouldInjectEnvironment(forLaunchPath: launchPath) else {
             return [:]
         }
 
         prepareEnvironment()
-        let currentPath = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+        let currentPath = baseEnvironment?["PATH"]
+            ?? ProcessInfo.processInfo.environment["PATH"]
+            ?? "/usr/bin:/bin:/usr/sbin:/sbin"
         return [
             "PATH": "\(binDirectory.path):\(currentPath)",
         ]
