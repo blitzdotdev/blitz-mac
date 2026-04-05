@@ -3,6 +3,8 @@
 ## 1.0.33
 - Fixed codex breaking in built-in terminal
 - Show Review messages only when the attached version is selected in Overview tab
+- Lots of bug fixes
+- Minimal usage analytics to improve Blitz - no personal info whatsoever logged
 
 ## 1.0.32
 Features
