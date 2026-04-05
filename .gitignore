@@ -26,14 +26,6 @@ xcuserdata/
 Packages/
 !packages/
 
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-._*
-.Spotlight-V100
-.Trashes
-
 # Node (for NodeSidecar)
 node_modules/
 npm-debug.log
@@ -46,17 +38,3 @@ yarn-error.log
 *.pem
 *.p8
 .mcpregistry_*
-.plans
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*~
-.claude/settings.local.json
-compose.dev.yaml
-.aibox
-.idea/workspace.xml
-
-.aibox
-compose.dev.yaml
