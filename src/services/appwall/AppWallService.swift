@@ -12,6 +12,46 @@ private extension Data {
     }
 }
 
+private enum BundledAppWallConfiguration {
+    private static func normalized(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return trimmed
+    }
+
+    private static func rawInfoPlistValue(for key: String, bundle: Bundle = .main) -> String? {
+        let infoPlistURL = bundle.bundleURL.appendingPathComponent("Contents/Info.plist")
+        guard let data = try? Data(contentsOf: infoPlistURL),
+              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil),
+              let dictionary = plist as? [String: Any] else {
+            return nil
+        }
+        return normalized(dictionary[key] as? String)
+    }
+
+    static func value(for key: String, bundle: Bundle = .main) -> String? {
+        if let value = normalized(bundle.object(forInfoDictionaryKey: key) as? String) {
+            return value
+        }
+        if let value = normalized(bundle.infoDictionary?[key] as? String) {
+            return value
+        }
+        return rawInfoPlistValue(for: key, bundle: bundle)
+    }
+
+    static func logStatus(bundle: Bundle = .main) {
+        let bundlePath = bundle.bundleURL.path
+        let objectValueFound = normalized(bundle.object(forInfoDictionaryKey: "BlitzAppWallToken") as? String) != nil
+        let infoDictionaryValueFound = normalized(bundle.infoDictionary?["BlitzAppWallToken"] as? String) != nil
+        let rawInfoPlistValueFound = rawInfoPlistValue(for: "BlitzAppWallToken", bundle: bundle) != nil
+        Log(
+            "[AppWall] config bundle=\(bundlePath) objectForInfoKey=\(objectValueFound) " +
+            "infoDictionary=\(infoDictionaryValueFound) rawInfoPlist=\(rawInfoPlistValueFound)"
+        )
+    }
+}
+
 // MARK: - AppWallService
 
 actor AppWallService {
@@ -27,6 +67,14 @@ actor AppWallService {
             return override
         }
         return defaultWallBaseURL
+    }
+
+    private var appWallIngestToken: String? {
+        BundledAppWallConfiguration.value(for: "BlitzAppWallToken")
+    }
+
+    static func logConfigurationStatus() {
+        BundledAppWallConfiguration.logStatus()
     }
 
     struct SyncFailure: Sendable {
@@ -125,10 +173,12 @@ actor AppWallService {
     /// Apps without version data are treated as failures and skipped so the wall
     /// does not regress app summaries back to stale/null state.
     func syncApps(
-        credentials: ASCCredentials,
         syncData: [AppWallSyncData]
     ) async throws -> SyncResult {
-        let jwt = try generateASCJWT(credentials: credentials)
+        guard let ingestToken = appWallIngestToken else {
+            Log("[AppWall] sync unavailable: missing BlitzAppWallToken in main bundle")
+            throw AppWallError.syncUnavailable
+        }
 
         // One iTunes call for all apps to get icon URLs and categories
         let itunesMeta = await fetchITunesMeta(appleIds: syncData.map(\.ascApp.id))
@@ -185,8 +235,8 @@ actor AppWallService {
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Bearer \(ingestToken)", forHTTPHeaderField: "Authorization")
             let requestBody: [String: Any] = [
-                "asc_jwt": jwt,
                 "app": appPayload,
                 "versions": versionsPayload,
                 "events": eventsPayload,
@@ -316,12 +366,14 @@ enum AppWallError: LocalizedError {
     case jwtGenerationFailed
     case invalidURL
     case fetchFailed(String)
+    case syncUnavailable
 
     var errorDescription: String? {
         switch self {
         case .jwtGenerationFailed: "Failed to generate ASC developer token"
         case .invalidURL: "Invalid URL"
         case .fetchFailed(let detail): "Failed to fetch from App Wall: \(detail)"
+        case .syncUnavailable: "App Wall sync is unavailable in this build"
         }
     }
 }

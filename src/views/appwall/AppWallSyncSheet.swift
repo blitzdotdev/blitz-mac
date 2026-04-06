@@ -140,7 +140,7 @@ struct AppWallSyncSheet: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Text("Syncing shares your app's public store listing info (name, icon, bundle ID) and submission history. To verify that you own each app before accepting a sync, Blitz also sends a short-lived App Store Connect JWT to the App Wall backend, which uses it to verify ownership with Apple. You can opt out at any time.")
+                Text("Syncing shares your app's public store listing info (name, icon, bundle ID) and submission history with the App Wall backend. Reviewer feedback is only included when sharing is enabled. You can opt out at any time.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 

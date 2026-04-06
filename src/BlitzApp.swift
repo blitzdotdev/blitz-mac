@@ -6,6 +6,7 @@ final class BlitzAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         LogClear()
         Log("launch_log=\(BlitzPaths.launchLogFile.path)")
+        AppWallService.logConfigurationStatus()
         AppRelaunchService.shared.clearPendingRestart()
         AnalyticsService.trackAppLaunch()
         if let fileMenu = NSApp.mainMenu?.item(withTitle: "File") {

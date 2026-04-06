@@ -184,7 +184,7 @@ enum MCPRegistry {
             description: "Fill one or more App Store Connect form fields. Navigates to the tab automatically if auto-nav is enabled. For `appInformation`, pass locale to target a specific localization safely. Legacy tabs `storeListing` and `appDetails` are still accepted. See CLAUDE.md for complete field reference.",
             properties: [
                 "tab": ["type": "string", "description": "Target form tab", "enum": [
-                    "appInformation", "monetization", "review.ageRating", "review.contact", "settings.bundleId"
+                    "appInformation", "storeListing", "appDetails", "monetization", "review.ageRating", "review.contact", "settings.bundleId"
                 ]],
                 "locale": ["type": "string", "description": "For appInformation only: locale code to target (for example en-US or ja)."],
                 "fields": [

@@ -151,6 +151,7 @@ jobs:
           APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
           BLITZ_ANALYTICS_ENDPOINT: ${{ secrets.BLITZ_ANALYTICS_ENDPOINT }}
           BLITZ_ANALYTICS_TOKEN: ${{ secrets.ANALYTICS_INGEST_TOKEN }}
+          APPWALL_INGEST_TOKEN: ${{ secrets.APPWALL_INGEST_TOKEN }}
         run: |
           [ -n "$APPLE_CERTIFICATE_BASE64" ] || { echo "Missing APPLE_CERTIFICATE_BASE64"; exit 1; }
           [ -n "$APPLE_CERTIFICATE_PASSWORD" ] || { echo "Missing APPLE_CERTIFICATE_PASSWORD"; exit 1; }
@@ -161,6 +162,7 @@ jobs:
           [ -n "$APPLE_API_KEY_BASE64" ] || { echo "Missing APPLE_API_KEY_BASE64"; exit 1; }
           [ -n "$BLITZ_ANALYTICS_ENDPOINT" ] || { echo "Missing BLITZ_ANALYTICS_ENDPOINT"; exit 1; }
           [ -n "$BLITZ_ANALYTICS_TOKEN" ] || { echo "Missing ANALYTICS_INGEST_TOKEN"; exit 1; }
+          [ -n "$APPWALL_INGEST_TOKEN" ] || { echo "Missing APPWALL_INGEST_TOKEN"; exit 1; }
 
       - name: Build release .app
         env:
@@ -168,6 +170,7 @@ jobs:
           BLITZ_REQUIRE_SIGNED_RELEASE: "1"
           BLITZ_ANALYTICS_ENDPOINT: ${{ secrets.BLITZ_ANALYTICS_ENDPOINT }}
           BLITZ_ANALYTICS_TOKEN: ${{ secrets.ANALYTICS_INGEST_TOKEN }}
+          APPWALL_INGEST_TOKEN: ${{ secrets.APPWALL_INGEST_TOKEN }}
         run: |
           swift build -c release
           bash scripts/bundle.sh release
@@ -326,12 +329,14 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           BLITZ_ANALYTICS_ENDPOINT: ${{ secrets.BLITZ_ANALYTICS_ENDPOINT }}
           BLITZ_ANALYTICS_TOKEN: ${{ secrets.ANALYTICS_INGEST_TOKEN }}
+          APPWALL_INGEST_TOKEN: ${{ secrets.APPWALL_INGEST_TOKEN }}
         run: |
           [ -n "$APPLE_CERTIFICATE_BASE64" ] || { echo "Missing APPLE_CERTIFICATE_BASE64"; exit 1; }
           [ -n "$APPLE_CERTIFICATE_PASSWORD" ] || { echo "Missing APPLE_CERTIFICATE_PASSWORD"; exit 1; }
           [ -n "$APPLE_SIGNING_IDENTITY" ] || { echo "Missing APPLE_SIGNING_IDENTITY"; exit 1; }
           [ -n "$BLITZ_ANALYTICS_ENDPOINT" ] || { echo "Missing BLITZ_ANALYTICS_ENDPOINT"; exit 1; }
           [ -n "$BLITZ_ANALYTICS_TOKEN" ] || { echo "Missing ANALYTICS_INGEST_TOKEN"; exit 1; }
+          [ -n "$APPWALL_INGEST_TOKEN" ] || { echo "Missing APPWALL_INGEST_TOKEN"; exit 1; }
 
       - name: Build x86_64 .app artifact
         env:
@@ -339,6 +344,7 @@ jobs:
           BLITZ_REQUIRE_SIGNED_RELEASE: "1"
           BLITZ_ANALYTICS_ENDPOINT: ${{ secrets.BLITZ_ANALYTICS_ENDPOINT }}
           BLITZ_ANALYTICS_TOKEN: ${{ secrets.ANALYTICS_INGEST_TOKEN }}
+          APPWALL_INGEST_TOKEN: ${{ secrets.APPWALL_INGEST_TOKEN }}
         run: |
           swift build -c release
           bash scripts/bundle.sh release

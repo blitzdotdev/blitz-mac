@@ -76,10 +76,7 @@ enum AppWallSyncRunner {
             }
         }
 
-        let result = try await AppWallService.shared.syncApps(
-            credentials: credentials,
-            syncData: syncDataItems
-        )
+        let result = try await AppWallService.shared.syncApps(syncData: syncDataItems)
 
         if !result.successfulBundleIds.isEmpty {
             AppWallSyncedBundleIds.add(result.successfulBundleIds)
