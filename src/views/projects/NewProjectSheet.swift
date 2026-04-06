@@ -102,8 +102,10 @@ struct NewProjectSheet: View {
         // shared appState, so if it stays true the main window's .sheet binding fires too.
         appState.showNewProjectSheet = false
 
-        // Select the new project — WelcomeWindow's onChange will open main window
-        // and close the welcome window.
+        // Open on App > Overview tab, then select the new project —
+        // WelcomeWindow's onChange will open main window and close the welcome window.
+        appState.activeTab = .app
+        appState.activeAppSubTab = .overview
         appState.activeProjectId = projectId
     }
 }

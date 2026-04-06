@@ -253,6 +253,8 @@ struct ImportProjectSheet: View {
             )
             AnalyticsService.trackProjectImport(projectType: projectType)
             await appState.projectManager.loadProjects()
+            appState.activeTab = .app
+            appState.activeAppSubTab = .overview
             appState.activeProjectId = projectId
             isPresented = false
         } catch {

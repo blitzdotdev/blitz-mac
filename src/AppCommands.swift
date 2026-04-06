@@ -79,11 +79,7 @@ struct AppCommands: Commands {
             }
             .keyboardShortcut("2", modifiers: .command)
 
-            Button("Database") {
-                appState.activeTab = .app
-                appState.activeAppSubTab = .database
-            }
-            .keyboardShortcut("3", modifiers: .command)
+            // Database tab hidden for now
         }
 
         // View > Terminal toggle

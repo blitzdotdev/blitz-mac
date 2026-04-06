@@ -9,11 +9,11 @@ struct AppTabView: View {
         let symbolAllowance: CGFloat = 14
         let buttonInnerSpacing: CGFloat = 4
         let buttonHorizontalPadding: CGFloat = 20
-        let interButtonSpacing: CGFloat = 2 * CGFloat(max(AppSubTab.allCases.count - 1, 0))
+        let interButtonSpacing: CGFloat = 2 * CGFloat(max(AppSubTab.visibleCases.count - 1, 0))
         let navbarHorizontalPadding: CGFloat = 32
         let safetyMargin: CGFloat = 24
 
-        let totalButtonWidth = AppSubTab.allCases.reduce(CGFloat.zero) { partial, tab in
+        let totalButtonWidth = AppSubTab.visibleCases.reduce(CGFloat.zero) { partial, tab in
             let textWidth = ceil((tab.label as NSString).size(withAttributes: [.font: textFont]).width)
             return partial + textWidth + symbolAllowance + buttonInnerSpacing + buttonHorizontalPadding
         }
@@ -41,7 +41,7 @@ struct AppTabView: View {
 
     private var topNavbar: some View {
         HStack(spacing: 2) {
-            ForEach(AppSubTab.allCases) { tab in
+            ForEach(AppSubTab.visibleCases) { tab in
                 Button {
                     appState.activeAppSubTab = tab
                 } label: {

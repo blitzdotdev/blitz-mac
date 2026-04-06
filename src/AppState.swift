@@ -122,6 +122,9 @@ enum AppSubTab: String, CaseIterable, Identifiable {
     case tests
     case icon
 
+    /// Tabs currently shown in the UI (database is hidden for now).
+    static let visibleCases: [AppSubTab] = allCases.filter { $0 != .database }
+
     var id: String { rawValue }
 
     var label: String {

@@ -110,16 +110,14 @@ struct OnboardingView: View {
     @State private var detectedTerminals: [TerminalApp] = []
     @State private var showCustomPicker = false
     @State private var showExternalTerminals = false
-    @State private var skipAgentPermissions: Bool
-    @State private var whitelistBlitzMCPTools: Bool
-    @State private var allowASCCLICalls: Bool
+    // These default to true and are no longer shown in onboarding UI
+    @State private var skipAgentPermissions: Bool = true
+    @State private var whitelistBlitzMCPTools: Bool = true
+    @State private var allowASCCLICalls: Bool = true
 
     init(appState: AppState, onComplete: @escaping () -> Void) {
         self.appState = appState
         self.onComplete = onComplete
-        _skipAgentPermissions = State(initialValue: appState.settingsStore.skipAgentPermissions)
-        _whitelistBlitzMCPTools = State(initialValue: appState.settingsStore.whitelistBlitzMCPTools)
-        _allowASCCLICalls = State(initialValue: appState.settingsStore.allowASCCLICalls)
     }
 
     // ASC setup state
@@ -283,33 +281,6 @@ struct OnboardingView: View {
                     .toggleStyle(.switch)
                     .controlSize(.small)
                 }
-
-                // Whitelist Blitz MCP tools
-                Toggle(isOn: $whitelistBlitzMCPTools) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Allow all Blitz MCP tool calls")
-                            .font(.callout)
-                        Text("AI agents run Blitz tools without asking. Blitz still shows its own approval for destructive actions.")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .toggleStyle(.switch)
-                .controlSize(.small)
-
-                Toggle(isOn: $allowASCCLICalls) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Allow all ASC CLI calls")
-                            .font(.callout)
-                        Text("Whitelists shell commands starting with `asc` for agents.")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .toggleStyle(.switch)
-                .controlSize(.small)
 
                 Divider()
 
@@ -738,12 +709,12 @@ struct OnboardingView: View {
     private var slideAskAI: some View {
         VStack(spacing: 6) {
             slideHeader(
-                title: "Ask AI from Any Tab",
-                subtitle: "Click \"Ask AI\" to launch \(selectedAgent.displayName) in \(selectedTerminal.isBuiltIn ? "the built-in terminal" : selectedTerminal.displayName)."
+                title: "Open \(selectedAgent.displayName) in Blitz",
+                subtitle: "Click the terminal icon anywhere to launch \(selectedAgent.displayName). Select your project in the dashboard and ask it to submit your app to the App Store."
             )
 
             // Demo video — transparent background, aspect fit
-            OnboardingVideoPlayer()
+            OnboardingVideoPlayer(resourceName: "OpenTerminal")
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .padding(.horizontal, 8)
                 .padding(.bottom, 4)

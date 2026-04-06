@@ -31,9 +31,8 @@ struct WelcomeWindow: View {
         })
         .task {
             // Show onboarding on first launch
-            if !appState.settingsStore.hasCompletedOnboarding {
-                showOnboarding = true
-            }
+            // TODO: revert — temporarily force onboarding for testing
+            showOnboarding = true
         }
         .task {
             if appState.projectManager.projects.isEmpty {
@@ -205,6 +204,8 @@ struct WelcomeWindow: View {
     private func selectProject(_ project: Project) {
         let storage = ProjectStorage()
         storage.updateLastOpened(projectId: project.id)
+        appState.activeTab = .app
+        appState.activeAppSubTab = .overview
         appState.activeProjectId = project.id
     }
 
