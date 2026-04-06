@@ -4,16 +4,20 @@ import Foundation
 extension MCPExecutor {
     // MARK: - ASC Form Tools
 
-    private static let appDetailsFieldWriteOrder = [
+    private static let appInformationDetailFieldWriteOrder = [
         "copyright",
         "primaryCategory",
         "contentRightsDeclaration",
     ]
 
+    private static let appInformationLocalizationFields: Set<String> = [
+        "title", "name", "subtitle", "description", "keywords", "promotionalText",
+        "marketingUrl", "supportUrl", "whatsNew", "privacyPolicyUrl",
+    ]
+
     static let validFieldsByTab: [String: Set<String>] = [
-        "storeListing": ["title", "name", "subtitle", "description", "keywords", "promotionalText",
-                         "marketingUrl", "supportUrl", "whatsNew", "privacyPolicyUrl"],
-        "appDetails": ["copyright", "primaryCategory", "contentRightsDeclaration"],
+        MCPAppInformationCompatibility.canonicalTab: appInformationLocalizationFields
+            .union(appInformationDetailFieldWriteOrder),
         "monetization": ["isFree"],
         "review.ageRating": ["gambling", "messagingAndChat", "unrestrictedWebAccess",
                              "userGeneratedContent", "advertising", "lootBox",
@@ -173,7 +177,7 @@ extension MCPExecutor {
         }
     }
 
-    private func resolveStoreListingLocale(from args: [String: Any]) async -> String {
+    private func resolveAppInformationLocale(from args: [String: Any]) async -> String {
         if let requestedLocale = (args["locale"] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines),
            !requestedLocale.isEmpty {
@@ -181,11 +185,11 @@ extension MCPExecutor {
         }
 
         return await MainActor.run {
-            appState.ascManager.activeStoreListingLocale() ?? "en-US"
+            appState.ascManager.activeAppInformationLocale() ?? "en-US"
         }
     }
 
-    private func prepareStoreListingLocale(
+    private func prepareAppInformationLocale(
         _ locale: String,
         forceRefresh: Bool = false
     ) async -> String? {
@@ -196,7 +200,7 @@ extension MCPExecutor {
 
         let needsRefresh = await MainActor.run { () -> Bool in
             let asc = appState.ascManager
-            asc.selectedStoreListingLocale = trimmedLocale
+            asc.selectedAppInformationLocale = trimmedLocale
             return forceRefresh
                 || asc.localizations.isEmpty
                 || !asc.localizations.contains(where: { $0.attributes.locale == trimmedLocale })
@@ -204,7 +208,7 @@ extension MCPExecutor {
         }
 
         if needsRefresh {
-            await appState.ascManager.refreshTabData(.storeListing)
+            await appState.ascManager.refreshTabData(.appInformation)
         }
 
         let availableLocales = await MainActor.run {
@@ -212,12 +216,12 @@ extension MCPExecutor {
         }
         guard availableLocales.contains(trimmedLocale) else {
             let availableText = availableLocales.isEmpty ? "none" : availableLocales.joined(separator: ", ")
-            return "Error: store listing localization '\(trimmedLocale)' was not found after refreshing from ASC. "
+            return "Error: app information localization '\(trimmedLocale)' was not found after refreshing from ASC. "
                 + "Available localizations: \(availableText)"
         }
 
         await MainActor.run {
-            appState.ascManager.selectedStoreListingLocale = trimmedLocale
+            appState.ascManager.selectedAppInformationLocale = trimmedLocale
         }
         return nil
     }
@@ -240,7 +244,7 @@ extension MCPExecutor {
     private func activeVersionScopedTabForRefresh() async -> AppTab {
         await MainActor.run {
             switch appState.activeTab {
-            case .storeListing, .screenshots, .appDetails, .review:
+            case .appInformation, .screenshots, .review:
                 return appState.activeTab
             default:
                 return .app
@@ -289,16 +293,17 @@ extension MCPExecutor {
     }
 
     func executeASCFillForm(_ args: [String: Any]) async throws -> [String: Any] {
-        guard let tab = args["tab"] as? String else {
+        guard let rawTab = args["tab"] as? String else {
             throw MCPServerService.MCPError.invalidToolArgs
         }
+        let tab = MCPAppInformationCompatibility.canonicalTabName(rawTab)
 
         let fieldMap = parseFieldMap(args["fields"], applyAliases: true)
         guard !fieldMap.isEmpty else {
             throw MCPServerService.MCPError.invalidToolArgs
         }
 
-        var resolvedStoreListingLocale: String?
+        var resolvedAppInformationLocale: String?
 
         if let validFields = Self.validFieldsByTab[tab] {
             let invalid = fieldMap.keys.filter { !validFields.contains($0) }
@@ -322,36 +327,44 @@ extension MCPExecutor {
         var extraResponse: [String: Any] = [:]
 
         switch tab {
-        case "storeListing":
+        case MCPAppInformationCompatibility.canonicalTab:
             let appInfoLocFields: Set<String> = ["name", "title", "subtitle", "privacyPolicyUrl"]
             var versionLocFields: [String: String] = [:]
             var infoLocFields: [String: String] = [:]
-            let locale = await resolveStoreListingLocale(from: args)
-            resolvedStoreListingLocale = locale
+            var detailFields: [String: String] = [:]
+            let hasLocalizedFields = fieldMap.keys.contains { Self.appInformationLocalizationFields.contains($0) }
 
-            if let localeError = await prepareStoreListingLocale(locale) {
-                _ = await MainActor.run { appState.ascManager.pendingFormValues.removeValue(forKey: tab) }
-                return mcpText(localeError)
+            if hasLocalizedFields {
+                let locale = await resolveAppInformationLocale(from: args)
+                resolvedAppInformationLocale = locale
+
+                if let localeError = await prepareAppInformationLocale(locale) {
+                    _ = await MainActor.run { appState.ascManager.pendingFormValues.removeValue(forKey: tab) }
+                    return mcpText(localeError)
+                }
             }
 
             for (field, value) in fieldMap {
                 if appInfoLocFields.contains(field) {
                     infoLocFields[field] = value
+                } else if Self.appInformationDetailFieldWriteOrder.contains(field) {
+                    detailFields[field] = value
                 } else {
                     versionLocFields[field] = value
                 }
             }
 
-            await appState.ascManager.updateStoreListingFields(
-                versionFields: versionLocFields,
-                appInfoFields: infoLocFields,
-                locale: locale
-            )
-            if let err = await checkASCWriteError(tab: tab) { return err }
+            if hasLocalizedFields, let locale = resolvedAppInformationLocale {
+                await appState.ascManager.updateAppInformationFields(
+                    versionFields: versionLocFields,
+                    appInfoFields: infoLocFields,
+                    locale: locale
+                )
+                if let err = await checkASCWriteError(tab: tab) { return err }
+            }
 
-        case "appDetails":
-            for field in Self.appDetailsFieldWriteOrder {
-                guard let value = fieldMap[field] else { continue }
+            for field in Self.appInformationDetailFieldWriteOrder {
+                guard let value = detailFields[field] else { continue }
                 await appState.ascManager.updateAppInfoField(field, value: value)
                 if let err = await checkASCWriteError(tab: tab) { return err }
             }
@@ -479,8 +492,8 @@ extension MCPExecutor {
 
         _ = await MainActor.run { appState.ascManager.pendingFormValues.removeValue(forKey: tab) }
         var response: [String: Any] = ["success": true, "tab": tab, "fieldsUpdated": fieldMap.count]
-        if let resolvedStoreListingLocale {
-            response["locale"] = resolvedStoreListingLocale
+        if let resolvedAppInformationLocale {
+            response["locale"] = resolvedAppInformationLocale
         }
         for (key, value) in extraResponse {
             response[key] = value
@@ -488,7 +501,7 @@ extension MCPExecutor {
         return mcpJSON(response)
     }
 
-    func executeStoreListingSwitchLocalization(_ args: [String: Any]) async throws -> [String: Any] {
+    func executeAppInformationSwitchLocalization(_ args: [String: Any]) async throws -> [String: Any] {
         guard let rawLocale = args["locale"] as? String else {
             throw MCPServerService.MCPError.invalidToolArgs
         }
@@ -498,13 +511,13 @@ extension MCPExecutor {
             throw MCPServerService.MCPError.invalidToolArgs
         }
 
-        if let localeError = await prepareStoreListingLocale(locale, forceRefresh: true) {
+        if let localeError = await prepareAppInformationLocale(locale, forceRefresh: true) {
             return mcpText(localeError)
         }
 
         let state = await MainActor.run { () -> [String: Any] in
             let asc = appState.ascManager
-            let versionLocalization = asc.storeListingLocalization(locale: locale)
+            let versionLocalization = asc.appInformationLocalization(locale: locale)
             let appInfoLocalization = asc.appInfoLocalizationForLocale(locale)
             let fields: [String: String] = [
                 "name": appInfoLocalization?.attributes.name ?? versionLocalization?.attributes.title ?? "",
@@ -521,7 +534,12 @@ extension MCPExecutor {
                 "success": true,
                 "locale": locale,
                 "availableLocales": asc.localizations.map(\.attributes.locale).sorted(),
-                "hasAppInfoLocalization": appInfoLocalization != nil
+                "hasAppInfoLocalization": appInfoLocalization != nil,
+                "details": [
+                    "copyright": asc.selectedVersion?.attributes.copyright ?? "",
+                    "primaryCategory": asc.appInfo?.primaryCategoryId ?? "",
+                    "contentRightsDeclaration": asc.app?.contentRightsDeclaration ?? "",
+                ],
             ]
             response["fields"] = fields
             return response

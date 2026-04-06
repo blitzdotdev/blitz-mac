@@ -667,7 +667,7 @@ Fill App Store Connect form fields. Auto-navigates to the tab (if auto-nav permi
 
 #### Tabs and fields
 
-**storeListing**
+**appInformation**
 | field | type | required | notes |
 |---|---|---|---|
 | title | string | yes | App name (max 30 chars) |
@@ -679,13 +679,11 @@ Fill App Store Connect form fields. Auto-navigates to the tab (if auto-nav permi
 | supportUrl | string | yes | |
 | whatsNew | string | no | first version must omit |
 | privacyPolicyUrl | string | yes | |
-
-**appDetails**
-| field | type | required | values |
-|---|---|---|---|
 | copyright | string | yes | e.g. "2026 Acme Inc" |
 | primaryCategory | string | yes | GAMES, UTILITIES, PRODUCTIVITY, SOCIAL_NETWORKING, PHOTO_AND_VIDEO, MUSIC, TRAVEL, SPORTS, HEALTH_AND_FITNESS, EDUCATION, BUSINESS, FINANCE, NEWS, FOOD_AND_DRINK, LIFESTYLE, SHOPPING, ENTERTAINMENT, REFERENCE, MEDICAL, NAVIGATION, WEATHER, DEVELOPER_TOOLS |
 | contentRightsDeclaration | string | yes | DOES_NOT_USE_THIRD_PARTY_CONTENT / USES_THIRD_PARTY_CONTENT |
+
+Legacy aliases accepted: `storeListing`, `appDetails`
 
 **monetization**
 | field | type | required | values |
@@ -726,7 +724,9 @@ Read the structured data state of any Blitz tab. Returns form field values, subm
 |---|---|---|---|
 | tab | string | no | Tab to query. Defaults to currently active tab. |
 
-Valid tabs: `ascOverview`, `storeListing`, `screenshots`, `appDetails`, `monetization`, `review`, `analytics`, `reviews`, `builds`, `groups`, `betaInfo`, `feedback`
+Valid tabs: `ascOverview`, `appInformation`, `screenshots`, `monetization`, `review`, `analytics`, `reviews`, `builds`, `groups`, `betaInfo`, `feedback`
+
+Legacy aliases accepted: `storeListing`, `appDetails`
 
 ### asc_open_submit_preview
 
@@ -799,8 +799,7 @@ Create an auto-renewable subscription. Creates or reuses a subscription group.
 0. Code the app in the pwd, using the current pwd's framework language
 1. Check submission readiness: call `get_tab_state` with `tab: "ascOverview"` — check `submissionReadiness.isComplete` and review `submissionReadiness.missingRequired` for any missing fields
 2. Fill all required ASC forms until submission readiness is complete:
-    - `asc_fill_form` tab `"storeListing"` — title, description, keywords, supportUrl, privacyPolicyUrl
-    - `asc_fill_form` tab `"appDetails"` — copyright, primaryCategory, contentRightsDeclaration
+    - `asc_fill_form` tab `"appInformation"` — title, description, keywords, supportUrl, privacyPolicyUrl, copyright, primaryCategory, contentRightsDeclaration
     - `asc_fill_form` tab `"monetization"` — isFree (use `asc_set_app_price` for paid pricing)
     - `asc_fill_form` tab `"review.ageRating"` — set all applicable content descriptors
     - `asc_fill_form` tab `"review.contact"` — contactFirstName, contactLastName, contactEmail, contactPhone

@@ -52,7 +52,7 @@ extension ASCManager {
         lines.append("  selectedVersionId: \(selectedVersionId ?? "nil")")
         lines.append("  selectedVersionBuildId: \(selectedVersionBuild?.id ?? "nil")")
         lines.append("  selectedVersionBuildNumber: \(selectedVersionBuild?.attributes.version ?? "nil")")
-        lines.append("  selectedStoreListingLocale: \(selectedStoreListingLocale ?? "nil")")
+        lines.append("  selectedAppInformationLocale: \(selectedAppInformationLocale ?? "nil")")
         lines.append("  selectedScreenshotsLocale: \(selectedScreenshotsLocale ?? "nil")")
         lines.append("  selectedBuildId: \(selectedBuildId ?? "nil")")
         lines.append("  app: \(renderApp())")

@@ -8,9 +8,8 @@ enum AppTab: String, CaseIterable, Identifiable {
     case app
 
     // Release group (ASC)
-    case storeListing
+    case appInformation  // Combined "App Information" tab (was Store Listing + App Details)
     case screenshots
-    case appDetails
     case monetization
     case review
 
@@ -31,7 +30,7 @@ enum AppTab: String, CaseIterable, Identifiable {
 
     var isASCTab: Bool {
         switch self {
-        case .storeListing, .screenshots, .appDetails, .monetization, .review,
+        case .appInformation, .screenshots, .monetization, .review,
              .analytics, .reviews, .builds, .groups, .betaInfo, .feedback:
             return true
         default:
@@ -43,9 +42,8 @@ enum AppTab: String, CaseIterable, Identifiable {
         switch self {
         case .dashboard: "Dashboard"
         case .app: "App"
-        case .storeListing: "Store Listing"
+        case .appInformation: "App Information"
         case .screenshots: "Screenshots"
-        case .appDetails: "App Details"
         case .monetization: "Monetization"
         case .review: "Review"
         case .analytics: "Analytics"
@@ -62,9 +60,8 @@ enum AppTab: String, CaseIterable, Identifiable {
         switch self {
         case .dashboard: "square.grid.2x2"
         case .app: "app"
-        case .storeListing: "text.page"
+        case .appInformation: "info.circle"
         case .screenshots: "photo.on.rectangle"
-        case .appDetails: "info.circle"
         case .monetization: "dollarsign.circle"
         case .review: "star"
         case .analytics: "chart.line.uptrend.xyaxis"
@@ -84,7 +81,7 @@ enum AppTab: String, CaseIterable, Identifiable {
 
         var tabs: [AppTab] {
             switch self {
-            case .release: [.storeListing, .screenshots, .appDetails, .monetization, .review]
+            case .release: [.appInformation, .screenshots, .monetization, .review]
             case .insights: [.analytics, .reviews]
             case .testFlight: [.builds, .groups, .betaInfo, .feedback]
             }

@@ -412,13 +412,19 @@ extension ASCManager {
                 )
             }
 
-        case .storeListing:
-            try await refreshStoreListingMetadata(
+        case .appInformation:
+            async let appInfoTask: ASCAppInfo? = try? await service.fetchAppInfo(appId: appId)
+            async let appRefreshTask: ASCApp? = try? service.fetchApp(id: appId)
+            try await refreshAppInformationMetadata(
                 service: service,
                 appId: appId,
                 preferredVersionId: selectedVersionId,
-                preferredLocale: selectedStoreListingLocale
+                preferredLocale: selectedAppInformationLocale
             )
+            appInfo = await appInfoTask
+            if let refreshedApp = await appRefreshTask {
+                app = refreshedApp
+            }
 
         case .screenshots:
             let versions = try await service.fetchAppStoreVersions(appId: appId)
@@ -444,18 +450,6 @@ extension ASCManager {
                 screenshotsByLocale = [:]
                 selectedScreenshotsLocale = nil
             }
-
-        case .appDetails:
-            async let versionsTask = service.fetchAppStoreVersions(appId: appId)
-            async let appTask: ASCApp? = try? service.fetchApp(id: appId)
-            async let appInfoTask: ASCAppInfo? = try? await service.fetchAppInfo(appId: appId)
-
-            appStoreVersions = try await versionsTask
-            syncSelectedVersion()
-            if let refreshedApp = await appTask {
-                app = refreshedApp
-            }
-            appInfo = await appInfoTask
 
         case .review:
             async let versionsTask = service.fetchAppStoreVersions(appId: appId)

@@ -71,7 +71,7 @@ actor MCPExecutor {
         // Pre-navigate for ASC form tools so the user sees the target tab before approving.
         var previousNavigation: NavigationState?
         if name == "asc_fill_form" || name == "asc_create_version" || name == "asc_open_submit_preview"
-            || name == "store_listing_switch_localization"
+            || MCPAppInformationCompatibility.isLocalizationTool(name)
             || name == "asc_create_iap" || name == "asc_create_subscription" || name == "asc_set_app_price"
             || name == "screenshots_switch_localization"
             || name == "screenshots_add_asset" || name == "screenshots_set_track" || name == "screenshots_save" {
@@ -113,12 +113,10 @@ actor MCPExecutor {
         let targetTab: AppTab?
         let targetAppSubTab: AppSubTab?
         if name == "asc_fill_form" {
-            let tab = arguments["tab"] as? String ?? ""
+            let tab = MCPAppInformationCompatibility.canonicalTabName(arguments["tab"] as? String ?? "")
             switch tab {
-            case "storeListing":
-                targetTab = .storeListing
-            case "appDetails":
-                targetTab = .appDetails
+            case MCPAppInformationCompatibility.canonicalTab:
+                targetTab = .appInformation
             case "monetization":
                 targetTab = .monetization
             case "review.ageRating", "review.contact":
@@ -129,8 +127,8 @@ actor MCPExecutor {
                 targetTab = nil
             }
             targetAppSubTab = nil
-        } else if name == "store_listing_switch_localization" {
-            targetTab = .storeListing
+        } else if MCPAppInformationCompatibility.isLocalizationTool(name) {
+            targetTab = .appInformation
             targetAppSubTab = nil
         } else if name == "asc_create_version" || name == "asc_open_submit_preview" {
             targetTab = .app
@@ -166,8 +164,9 @@ actor MCPExecutor {
         }
 
         if name == "asc_fill_form",
-           let tab = arguments["tab"] as? String {
+           let rawTab = arguments["tab"] as? String {
             let fieldMap = parseFieldMap(arguments["fields"], applyAliases: false)
+            let tab = MCPAppInformationCompatibility.canonicalTabName(rawTab)
 
             if !fieldMap.isEmpty {
                 let fieldMapCopy = fieldMap
@@ -271,8 +270,8 @@ actor MCPExecutor {
             return await executeASCSetCredentials(arguments)
         case "asc_fill_form":
             return try await executeASCFillForm(arguments)
-        case "store_listing_switch_localization":
-            return try await executeStoreListingSwitchLocalization(arguments)
+        case "app_information_switch_localization", "store_listing_switch_localization":
+            return try await executeAppInformationSwitchLocalization(arguments)
         case "asc_select_version":
             return try await executeASCSelectVersion(arguments)
         case "asc_create_version":

@@ -15,7 +15,7 @@ Additionally, the **`asc`** CLI (a bundled Go binary for App Store Connect) is a
 **Default to MCP tools.** They are opinionated, safe, and designed for common workflows with built-in approval prompts for mutating operations. **When MCP tools don't cover an operation, use `asc` CLI** — it has 60+ subcommands covering nearly every App Store Connect API endpoint. **Direct API calls (python scripts, curl to api.appstoreconnect.apple.com, urllib, etc.) should be an absolute last resort** — only when both MCP tools AND `asc` CLI genuinely cannot accomplish the task. The `asc` CLI already handles JWT auth, pagination, error handling, and retries; writing raw API scripts bypasses all of that and is fragile.
 
 ### Use MCP tools when:
-- **Filling ASC forms** — `asc_fill_form` handles store listing, app details, monetization, age rating, review contact with validation and auto-navigation
+- **Filling ASC forms** — `asc_fill_form` handles app information, monetization, age rating, review contact with validation and auto-navigation
 - **Reading app/tab state** — `get_tab_state` returns structured data (form values, submission readiness, builds, versions) without parsing CLI output
 - **Build pipeline** — `app_store_setup_signing` → `app_store_build` → `app_store_upload` is the standard flow with progress tracking in Blitz UI
 - **Creating IAPs/subscriptions** — `asc_create_iap` and `asc_create_subscription` handle the full creation flow (product + localization + pricing) in one call
@@ -50,7 +50,7 @@ The `asc` CLI covers 60+ command groups — it almost certainly has what you nee
 
 | Task | MCP tool (preferred) | `asc` CLI (fallback/advanced) |
 |---|---|---|
-| Set app title & description | `asc_fill_form` tab="storeListing" | `asc metadata update --locale en-US --name "..." --description "..."` |
+| Set app title & description | `asc_fill_form` tab="appInformation" | `asc metadata update --locale en-US --name "..." --description "..."` |
 | Check if ready to submit | `get_tab_state` tab="ascOverview" | `asc versions list` + manual field checks |
 | Create a subscription | `asc_create_subscription` (one call) | `asc subscriptions create` + `asc subscriptions add-localization` + `asc pricing set` (three steps) |
 | List all builds | Not available via MCP | `asc builds list` |

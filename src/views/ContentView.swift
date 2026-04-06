@@ -328,12 +328,10 @@ struct DetailView: View {
             DashboardView(appState: appState)
         case .app:
             AppTabView(appState: appState)
-        case .storeListing:
-            StoreListingView(appState: appState)
+        case .appInformation:
+            AppInformationView(appState: appState)
         case .screenshots:
             ScreenshotsView(appState: appState)
-        case .appDetails:
-            AppDetailsView(appState: appState)
         case .monetization:
             EmptyView() // handled above
         case .review:

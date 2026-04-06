@@ -66,7 +66,7 @@ extension MCPExecutor {
             return mcpText("Switched to App > \(subTab.label)")
         }
 
-        guard let tab = AppTab(rawValue: tabStr) else {
+        guard let tab = MCPAppInformationCompatibility.resolveAppTab(tabStr) else {
             throw MCPServerService.MCPError.invalidToolArgs
         }
         await MainActor.run { appState.activeTab = tab }

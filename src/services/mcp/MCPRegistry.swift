@@ -18,12 +18,12 @@ enum MCPRegistry {
         // -- Navigation --
         tools.append(tool(
             name: "nav_switch_tab",
-            description: "Switch the active sidebar tab",
+            description: "Switch the active sidebar tab. Legacy aliases `storeListing` and `appDetails` map to `appInformation`.",
             properties: [
                 "tab": ["type": "string", "description": "Tab name. Use 'dashboard' or 'app' for top-level tabs. Legacy names (simulator, database, tests, assets, ascOverview) map to App sub-tabs.", "enum": [
                     "dashboard", "app",
                     "simulator", "database", "tests", "assets", "overview", "ascOverview",
-                    "storeListing", "screenshots", "appDetails", "monetization", "review",
+                    "appInformation", "screenshots", "monetization", "review",
                     "analytics", "reviews",
                     "builds", "groups", "betaInfo", "feedback",
                     "settings"
@@ -155,11 +155,11 @@ enum MCPRegistry {
         // -- Tab State --
         tools.append(tool(
             name: "get_tab_state",
-            description: "Get the structured data state of any Blitz tab. Returns form field values, submission readiness, versions, builds, localizations, etc. Use this instead of screenshots to read UI state.",
+            description: "Get the structured data state of any Blitz tab. Returns form field values, submission readiness, versions, builds, localizations, etc. Use this instead of screenshots to read UI state. Legacy aliases `storeListing` and `appDetails` map to `appInformation`.",
             properties: [
                 "tab": ["type": "string", "description": "Tab to read state from (defaults to currently active tab). 'app' or 'ascOverview' returns overview/submission readiness.", "enum": [
                     "app", "ascOverview", "overview",
-                    "storeListing", "screenshots", "appDetails", "monetization", "review",
+                    "appInformation", "screenshots", "monetization", "review",
                     "analytics", "reviews", "builds", "groups", "betaInfo", "feedback"
                 ]]
             ],
@@ -181,12 +181,12 @@ enum MCPRegistry {
         // -- ASC Form Tools --
         tools.append(tool(
             name: "asc_fill_form",
-            description: "Fill one or more App Store Connect form fields. Navigates to the tab automatically if auto-nav is enabled. For storeListing, pass locale to target a specific localization safely. See CLAUDE.md for complete field reference.",
+            description: "Fill one or more App Store Connect form fields. Navigates to the tab automatically if auto-nav is enabled. For `appInformation`, pass locale to target a specific localization safely. Legacy tabs `storeListing` and `appDetails` are still accepted. See CLAUDE.md for complete field reference.",
             properties: [
                 "tab": ["type": "string", "description": "Target form tab", "enum": [
-                    "storeListing", "appDetails", "monetization", "review.ageRating", "review.contact", "settings.bundleId"
+                    "appInformation", "monetization", "review.ageRating", "review.contact", "settings.bundleId"
                 ]],
-                "locale": ["type": "string", "description": "For storeListing only: locale code to target (for example en-US or ja)."],
+                "locale": ["type": "string", "description": "For appInformation only: locale code to target (for example en-US or ja)."],
                 "fields": [
                     "type": "array",
                     "items": [
@@ -203,10 +203,19 @@ enum MCPRegistry {
         ))
 
         tools.append(tool(
-            name: "store_listing_switch_localization",
-            description: "Refresh store-listing localizations from App Store Connect and switch the Blitz store-listing tab to the requested locale.",
+            name: "app_information_switch_localization",
+            description: "Refresh app-information localizations from App Store Connect and switch the Blitz app-information tab to the requested locale.",
             properties: [
-                "locale": ["type": "string", "description": "Locale code to select in the store-listing tab (for example en-US or ja)"]
+                "locale": ["type": "string", "description": "Locale code to select in the app-information tab (for example en-US or ja)"]
+            ],
+            required: ["locale"]
+        ))
+
+        tools.append(tool(
+            name: "store_listing_switch_localization",
+            description: "Deprecated alias for `app_information_switch_localization`.",
+            properties: [
+                "locale": ["type": "string", "description": "Locale code to select in the app-information tab (for example en-US or ja)"]
             ],
             required: ["locale"]
         ))
@@ -394,7 +403,7 @@ enum MCPRegistry {
             return .query
         case "asc_fill_form":
             return .ascFormMutation
-        case "store_listing_switch_localization":
+        case "app_information_switch_localization", "store_listing_switch_localization":
             return .ascFormMutation
         case "asc_select_version":
             return .query

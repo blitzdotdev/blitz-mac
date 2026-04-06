@@ -6,9 +6,8 @@ import Foundation
 extension ASCManager {
     private static let versionScopedTabs: Set<AppTab> = [
         .app,
-        .storeListing,
+        .appInformation,
         .screenshots,
-        .appDetails,
         .review,
     ]
 
@@ -139,7 +138,7 @@ extension ASCManager {
         selectedVersionId = trimmedVersionId
         selectedVersionBuild = nil
         localizations = []
-        selectedStoreListingLocale = nil
+        selectedAppInformationLocale = nil
         screenshotSetsByLocale = [:]
         screenshotsByLocale = [:]
         selectedScreenshotsLocale = nil
@@ -451,8 +450,8 @@ extension ASCManager {
         guard let service else { return }
         let appInfoLocFieldNames: Set<String> = ["name", "title", "subtitle", "privacyPolicyUrl"]
         for (tab, fields) in pendingFormValues {
-            if tab == "storeListing" {
-                let locale = activeStoreListingLocale()
+            if tab == "appInformation" {
+                let locale = activeAppInformationLocale()
                 var versionLocFields: [String: String] = [:]
                 var infoLocFields: [String: String] = [:]
                 for (field, value) in fields {
@@ -463,7 +462,7 @@ extension ASCManager {
                         versionLocFields[field] = value
                     }
                 }
-                if !versionLocFields.isEmpty, let locId = storeListingLocalization(locale: locale)?.id {
+                if !versionLocFields.isEmpty, let locId = appInformationLocalization(locale: locale)?.id {
                     try? await service.patchLocalization(id: locId, fields: versionLocFields)
                 }
                 if !infoLocFields.isEmpty, let infoLocId = appInfoLocalizationForLocale(locale)?.id {

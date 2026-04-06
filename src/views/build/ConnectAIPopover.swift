@@ -91,12 +91,10 @@ struct ConnectAIPopover: View {
             return nil
         case .app:
             return "Help me complete all the steps needed to submit my app to the App Store."
-        case .storeListing:
-            return "Help me write a compelling App Store listing — name, subtitle, description, and keywords."
+        case .appInformation:
+            return "Help me fill in my app information — name, description, keywords, category, and links."
         case .screenshots:
             return "Help me take and upload App Store screenshots for my app."
-        case .appDetails:
-            return "Help me fill in my app's details — category, copyright, and content rights."
         case .monetization:
             return "Help me set up monetization — pricing, subscriptions, or in-app purchases."
         case .review:

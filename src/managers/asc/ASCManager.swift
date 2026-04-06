@@ -25,7 +25,7 @@ final class ASCManager {
     // Per-tab data
     var appStoreVersions: [ASCAppStoreVersion] = []
     var localizations: [ASCVersionLocalization] = []
-    var selectedStoreListingLocale: String?
+    var selectedAppInformationLocale: String?
     var appInfoLocalizationsByLocale: [String: ASCAppInfoLocalization] = [:]
     var screenshotSetsByLocale: [String: [ASCScreenshotSet]] = [:]
     var screenshotsByLocale: [String: [String: [ASCScreenshot]]] = [:]

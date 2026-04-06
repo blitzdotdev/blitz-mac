@@ -158,9 +158,8 @@ extension ASCManager {
 
         private static let cachedProjectTabs: Set<AppTab> = [
             .app,
-            .storeListing,
+            .appInformation,
             .screenshots,
-            .appDetails,
             .monetization,
             .review,
             .analytics,
@@ -348,7 +347,7 @@ extension ASCManager {
         isLoadingApp = false
         appStoreVersions = []
         localizations = []
-        selectedStoreListingLocale = nil
+        selectedAppInformationLocale = nil
         appInfoLocalizationsByLocale = [:]
         screenshotSetsByLocale = [:]
         screenshotsByLocale = [:]

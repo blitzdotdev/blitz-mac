@@ -239,7 +239,7 @@ extension MCPExecutor {
         if let tabStr {
             if tabStr == "ascOverview" || tabStr == "overview" {
                 tab = .app
-            } else if let parsed = AppTab(rawValue: tabStr) {
+            } else if let parsed = MCPAppInformationCompatibility.resolveAppTab(tabStr) {
                 tab = parsed
             } else {
                 tab = await MainActor.run { appState.activeTab }
@@ -250,8 +250,6 @@ extension MCPExecutor {
 
         if tab == .app {
             await appState.ascManager.syncOverviewSubmissionReadiness(forceRefresh: true)
-        } else if tab == .appDetails {
-            await appState.ascManager.refreshTabData(.appDetails)
         }
 
         var result = await MainActor.run { () -> [String: Any] in
@@ -288,10 +286,8 @@ extension MCPExecutor {
                 asc.checkAppIcon(projectId: projectId)
             }
             return tabStateASCOverview(asc)
-        case .storeListing:
-            return tabStateStoreListing(asc)
-        case .appDetails:
-            return tabStateAppDetails(asc)
+        case .appInformation:
+            return tabStateAppInformation(asc, projectId: projectId)
         case .review:
             return tabStateReview(asc)
         case .screenshots:
@@ -368,9 +364,9 @@ extension MCPExecutor {
     }
 
     @MainActor
-    func tabStateStoreListing(_ asc: ASCManager) -> [String: Any] {
-        let selectedLocale = asc.activeStoreListingLocale() ?? ""
-        let localization = asc.storeListingLocalization(locale: selectedLocale)
+    func tabStateAppInformation(_ asc: ASCManager, projectId: String?) -> [String: Any] {
+        let selectedLocale = asc.activeAppInformationLocale() ?? ""
+        let localization = asc.appInformationLocalization(locale: selectedLocale)
         let infoLoc = asc.appInfoLocalizationForLocale(selectedLocale)
         let localizationState: [String: Any] = [
             "locale": localization?.attributes.locale ?? "",
@@ -381,7 +377,13 @@ extension MCPExecutor {
             "promotionalText": localization?.attributes.promotionalText ?? "",
             "marketingUrl": localization?.attributes.marketingUrl ?? "",
             "supportUrl": localization?.attributes.supportUrl ?? "",
-            "whatsNew": localization?.attributes.whatsNew ?? ""
+            "whatsNew": localization?.attributes.whatsNew ?? "",
+            "privacyPolicyUrl": infoLoc?.attributes.privacyPolicyUrl ?? "",
+        ]
+        let detailsState: [String: Any] = [
+            "copyright": asc.selectedVersion?.attributes.copyright ?? "",
+            "primaryCategory": asc.appInfo?.primaryCategoryId ?? "",
+            "contentRightsDeclaration": asc.app?.contentRightsDeclaration ?? "",
         ]
 
         var result: [String: Any] = [
@@ -389,30 +391,24 @@ extension MCPExecutor {
             "availableLocales": asc.localizations.map(\.attributes.locale),
             "localization": localizationState,
             "privacyPolicyUrl": infoLoc?.attributes.privacyPolicyUrl ?? "",
+            "details": detailsState,
+            "appInfo": [
+                "primaryCategory": detailsState["primaryCategory"] ?? "",
+                "contentRightsDeclaration": detailsState["contentRightsDeclaration"] ?? "",
+            ],
             "hasAppInfoLocalization": infoLoc != nil,
             "localeCount": asc.localizations.count,
-            "canCreateUpdate": asc.canCreateUpdate,
-        ]
-        if let selectedVersion = versionStatePayload(asc.selectedVersion) {
-            result["selectedVersion"] = selectedVersion
-        }
-        return result
-    }
-
-    @MainActor
-    func tabStateAppDetails(_ asc: ASCManager) -> [String: Any] {
-        var result: [String: Any] = [
-            "appInfo": [
-                "primaryCategory": asc.appInfo?.primaryCategoryId ?? "",
-                "contentRightsDeclaration": asc.app?.contentRightsDeclaration ?? ""
-            ],
             "versionCount": asc.appStoreVersions.count,
             "canCreateUpdate": asc.canCreateUpdate,
         ]
-        if let version = asc.appStoreVersions.first {
+        if let projectId {
+            let metadata = ProjectStorage().readMetadata(projectId: projectId)
+            result["teamId"] = metadata?.teamId ?? ""
+        }
+        if let latestVersion = asc.appStoreVersions.first {
             result["latestVersion"] = [
-                "versionString": version.attributes.versionString,
-                "state": version.attributes.appStoreState ?? "unknown"
+                "versionString": latestVersion.attributes.versionString,
+                "state": latestVersion.attributes.appStoreState ?? "unknown"
             ]
         }
         if let selectedVersion = versionStatePayload(asc.selectedVersion) {

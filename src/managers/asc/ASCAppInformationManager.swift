@@ -1,13 +1,14 @@
 import Foundation
 
-// MARK: - Store Listing Manager
-// Extension containing store listing-related functionality for ASCManager
+// MARK: - App Information Manager
+// Extension containing merged app-information functionality for ASCManager
 
 extension ASCManager {
     // MARK: - Locale Selection
 
-    /// Primary store-listing locale from ASC app settings, falling back to the first loaded localization.
-    func primaryLocalizationLocale() -> String? {
+    /// Primary app-information locale from ASC app settings, falling back to
+    /// the first loaded version localization.
+    func primaryAppInformationLocale() -> String? {
         if let primaryLocale = app?.primaryLocale,
            localizations.contains(where: { $0.attributes.locale == primaryLocale }) {
             return primaryLocale
@@ -34,14 +35,15 @@ extension ASCManager {
         return candidates?.first ?? appInfoLocalization
     }
 
-    /// Active store-listing locale for the UI/editor, preferring the user's selected locale when it is still valid.
-    func activeStoreListingLocale() -> String? {
-        selectedStoreListingLocale.flatMap { locale in
+    /// Active app-information locale for the UI/editor, preferring the user's
+    /// selected locale when it is still valid.
+    func activeAppInformationLocale() -> String? {
+        selectedAppInformationLocale.flatMap { locale in
             localizations.contains(where: { $0.attributes.locale == locale }) ? locale : nil
-        } ?? primaryLocalizationLocale()
+        } ?? primaryAppInformationLocale()
     }
 
-    func storeListingLocalization(locale: String? = nil) -> ASCVersionLocalization? {
+    func appInformationLocalization(locale: String? = nil) -> ASCVersionLocalization? {
         if let locale {
             return localizations.first(where: { $0.attributes.locale == locale })
         }
@@ -49,7 +51,7 @@ extension ASCManager {
     }
 
     func appInfoLocalizationForLocale(_ locale: String? = nil) -> ASCAppInfoLocalization? {
-        if let resolvedLocale = locale ?? activeStoreListingLocale() {
+        if let resolvedLocale = locale ?? activeAppInformationLocale() {
             return appInfoLocalizationsByLocale[resolvedLocale]
         }
         return primaryAppInfoLocalization()
@@ -81,7 +83,7 @@ extension ASCManager {
             }
     }
 
-    func refreshStoreListingMetadata(
+    func refreshAppInformationMetadata(
         service: AppStoreConnectService,
         appId: String,
         preferredVersionId: String? = nil,
@@ -112,7 +114,7 @@ extension ASCManager {
         }
 
         if let preferredLocale {
-            selectedStoreListingLocale = preferredLocale
+            selectedAppInformationLocale = preferredLocale
         }
 
         localizations = versionLocalizations
@@ -121,10 +123,10 @@ extension ASCManager {
         })
 
         appInfoLocalization = primaryAppInfoLocalization(in: fetchedAppInfoLocalizations)
-        selectedStoreListingLocale = activeStoreListingLocale()
+        selectedAppInformationLocale = activeAppInformationLocale()
     }
 
-    // MARK: - Localization Updates
+    // MARK: - App Information Updates
 
     private func mappedAppInfoLocalizationFields(_ fields: [String: String]) -> [String: String] {
         var mapped: [String: String] = [:]
@@ -134,15 +136,15 @@ extension ASCManager {
         return mapped
     }
 
-    func updateLocalizationField(_ field: String, value: String, locale: String) async {
-        await updateStoreListingFields(
+    func updateVersionLocalizationField(_ field: String, value: String, locale: String) async {
+        await updateAppInformationFields(
             versionFields: [field: value],
             appInfoFields: [:],
             locale: locale
         )
     }
 
-    func updateStoreListingFields(
+    func updateAppInformationFields(
         versionFields: [String: String],
         appInfoFields rawAppInfoFields: [String: String],
         locale: String
@@ -150,7 +152,7 @@ extension ASCManager {
         guard let service else { return }
         let trimmedLocale = locale.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedLocale.isEmpty else {
-            writeError = "No store listing locale selected."
+            writeError = "No app information locale selected."
             return
         }
 
@@ -159,7 +161,7 @@ extension ASCManager {
 
         do {
             if !versionFields.isEmpty {
-                guard let locId = storeListingLocalization(locale: trimmedLocale)?.id else {
+                guard let locId = appInformationLocalization(locale: trimmedLocale)?.id else {
                     throw ASCError.notFound("Version localization for locale '\(trimmedLocale)'")
                 }
                 try await service.patchLocalization(id: locId, fields: versionFields)
@@ -183,24 +185,112 @@ extension ASCManager {
             }
 
             guard let appId = app?.id else { return }
-            try await refreshStoreListingMetadata(
+            try await refreshAppInformationMetadata(
                 service: service,
                 appId: appId,
                 preferredVersionId: selectedVersion?.id,
                 preferredLocale: trimmedLocale
             )
             AnalyticsService.trackBlitzManagedASCUsage(
-                commandType: "store_listing.update",
+                commandType: "app_information.update",
                 success: true,
                 startedAt: startedAt
             )
         } catch {
             writeError = error.localizedDescription
             AnalyticsService.trackBlitzManagedASCUsage(
-                commandType: "store_listing.update",
+                commandType: "app_information.update",
                 success: false,
                 startedAt: startedAt
             )
         }
+    }
+
+    func updateAppInfoField(_ field: String, value: String) async {
+        guard let service else { return }
+        let startedAt = Date()
+        writeError = nil
+
+        // Fields live on different ASC resources:
+        // - copyright -> appStoreVersions
+        // - contentRightsDeclaration -> apps
+        // - primaryCategory -> appInfos
+        if field == "copyright" {
+            guard let versionId = selectedVersion?.id else { return }
+            do {
+                try await service.patchVersion(id: versionId, fields: [field: value])
+                if let appId = app?.id {
+                    appStoreVersions = try await service.fetchAppStoreVersions(appId: appId)
+                    syncSelectedVersion(preferredVersionId: versionId)
+                }
+                AnalyticsService.trackBlitzManagedASCUsage(
+                    commandType: "app_information.update",
+                    success: true,
+                    startedAt: startedAt
+                )
+            } catch {
+                writeError = error.localizedDescription
+                AnalyticsService.trackBlitzManagedASCUsage(
+                    commandType: "app_information.update",
+                    success: false,
+                    startedAt: startedAt
+                )
+            }
+        } else if field == "contentRightsDeclaration" {
+            guard let appId = app?.id else { return }
+            do {
+                try await service.patchApp(id: appId, fields: [field: value])
+                app = try await service.fetchApp(id: appId)
+                AnalyticsService.trackBlitzManagedASCUsage(
+                    commandType: "app_information.update",
+                    success: true,
+                    startedAt: startedAt
+                )
+            } catch {
+                writeError = error.localizedDescription
+                AnalyticsService.trackBlitzManagedASCUsage(
+                    commandType: "app_information.update",
+                    success: false,
+                    startedAt: startedAt
+                )
+            }
+        } else if let infoId = appInfo?.id {
+            do {
+                try await service.patchAppInfo(id: infoId, fields: [field: value])
+                appInfo = try? await service.fetchAppInfo(appId: app?.id ?? "")
+                AnalyticsService.trackBlitzManagedASCUsage(
+                    commandType: "app_information.update",
+                    success: true,
+                    startedAt: startedAt
+                )
+            } catch {
+                writeError = error.localizedDescription
+                AnalyticsService.trackBlitzManagedASCUsage(
+                    commandType: "app_information.update",
+                    success: false,
+                    startedAt: startedAt
+                )
+            }
+        }
+    }
+
+    func updatePrivacyPolicyUrl(_ url: String) async {
+        await updateAppInfoLocalizationField("privacyPolicyUrl", value: url)
+    }
+
+    /// Update a field on app-info localizations (`name`, `subtitle`,
+    /// `privacyPolicyUrl`) for the active app-information locale.
+    func updateAppInfoLocalizationField(_ field: String, value: String, locale: String? = nil) async {
+        let targetLocale = locale ?? activeAppInformationLocale()
+        guard let targetLocale else {
+            writeError = "No app info localization selected."
+            return
+        }
+
+        await updateAppInformationFields(
+            versionFields: [:],
+            appInfoFields: [field: value],
+            locale: targetLocale
+        )
     }
 }

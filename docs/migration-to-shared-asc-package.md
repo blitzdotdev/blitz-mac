@@ -424,15 +424,14 @@ thing.attributes.appStoreState == "X"        thing.state == .x     (for comparis
 thing.attributes.processingState == "VALID"  thing.processingState == .valid
 ```
 
-### Files to update (23 files)
+### Files to update (22 files)
 
 **Release views:**
 - `src/views/release/ASCOverview.swift` — version state filtering, rejection display
-- `src/views/release/StoreListingView.swift` — localization field access
+- `src/views/release/AppInformationView.swift` — localization field access
 - `src/views/release/ScreenshotsView.swift` — screenshot set/screenshot types
 - `src/views/release/ReviewView.swift` — age rating, review detail, build selection, state checks
 - `src/views/release/SubmitPreviewSheet.swift` — nonSubmittableStates → `!version.isEditable`
-- `src/views/release/AppDetailsView.swift` — app info localization fields
 - `src/views/release/PricingView.swift` — IAP/subscription state checks
 
 **TestFlight views:**
