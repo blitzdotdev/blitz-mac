@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.34
+- Security updates
+- Onboarding Improvements
+- Simplified UI: Merge app details and store listing tab into one
+
 ## 1.0.33
 - Fixed codex breaking in built-in terminal
 - Show Review messages only when the attached version is selected in Overview tab
