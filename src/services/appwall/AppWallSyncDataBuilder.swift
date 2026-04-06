@@ -63,6 +63,7 @@ struct AppWallSyncFeedbackPayload {
             "occurred_at": occurredAt,
             "is_public": isPublic,
         ]
+        guard isPublic else { return payload }
         if !rejectionReasons.isEmpty { payload["rejection_reasons"] = rejectionReasons }
         if let reviewerMessage, !reviewerMessage.isEmpty { payload["reviewer_message"] = reviewerMessage }
         if !guidelineIds.isEmpty { payload["guideline_ids"] = guidelineIds }

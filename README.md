@@ -112,10 +112,11 @@ All release binaries are built by the public [GitHub Actions workflow](.github/w
 
 ## Security and privacy
 
-- **Minimal telemetry in official releases only.** GitHub release builds may send anonymous product telemetry. Source builds, forks, and debug builds stay off by default unless you explicitly embed analytics config while bundling.
-- **What Blitz records.** App launches, Blitz project type inventory/create/import events, and App Store Connect usage events with only `source` (`blitz_managed` or `agent_direct`), normalized action name, success, and duration.
-- **What Blitz never records.** No project names, paths, bundle IDs, CLI args, App Store Connect form values, file names, prompts, terminal contents, or user content.
-- **No broad phone-home.** Beyond the optional anonymous telemetry above, network requests are limited to Apple's App Store Connect API (when you use ASC features) and GitHub's releases API for update checks.
+- **Minimal telemetry in official releases only.** GitHub release builds may embed a build-time analytics endpoint and token and send anonymous product telemetry. Source builds, forks, and debug builds stay off by default unless you explicitly embed analytics config while bundling.
+- **What official telemetry records.** App launches, Blitz project type inventory/create/import events, and App Store Connect usage events. Each event includes an anonymous device ID stored at `~/.blitz/analytics/device-id`, app version, OS version, event name, timestamp, and when applicable `source` (`blitz_managed` or `agent_direct`), normalized command type, success, and duration.
+- **What official telemetry never records.** No project names, paths, bundle IDs, CLI args, App Store Connect form values, file names, prompts, terminal contents, or user content.
+- **App Wall sync is opt-in.** If you enable App Wall sync, Blitz sends the selected apps' public store listing metadata and submission history to the App Wall backend. Blitz also sends a short-lived App Store Connect JWT so the backend can verify that the app owner initiated the sync. Reviewer feedback is only sent when `Share reviewer feedback` is enabled.
+- **Network requests depend on the features you use.** Beyond the optional anonymous telemetry above, Blitz may talk to a build-time-configured analytics ingest endpoint in official release builds, Apple's App Store Connect API, Apple's iTunes Lookup API during App Wall sync, GitHub's releases API for update checks, the npm registry on launch to update `@blitzdev/iphone-mcp`, and the App Wall backend when App Wall sync is enabled.
 - **MCP server is localhost-only.** The built-in MCP server binds to `127.0.0.1` and is never exposed to the network.
 - **No access to sensitive data.** The app does not access your contacts, photos, location, or any personal data. Screen capture is limited to the iOS Simulator window.
 
