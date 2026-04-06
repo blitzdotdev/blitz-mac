@@ -11,6 +11,7 @@ struct ProjectBundleIDSelectorView: View {
 
     @State private var discoveredBundleIds: [String] = []
     @State private var selectedBundleId = ""
+    @State private var manualBundleId = ""
     @State private var isSaving = false
     @State private var isResolvingCandidates = false
     @State private var isASCFilteredSelection = false
@@ -23,6 +24,10 @@ struct ProjectBundleIDSelectorView: View {
 
     private var currentBundleId: String? {
         normalized(appState.activeProject?.metadata.bundleIdentifier)
+    }
+
+    private var effectiveBundleId: String? {
+        normalized(manualBundleId) ?? normalized(selectedBundleId)
     }
 
     private var isImportedProject: Bool {
@@ -58,13 +63,13 @@ struct ProjectBundleIDSelectorView: View {
 
         if asc.app == nil {
             if let currentBundleId {
-                return "No App Store Connect app was found for \(currentBundleId). Select another discovered bundle ID or register a new one."
+                return "No App Store Connect app was found for \(currentBundleId). Select or enter another bundle ID, or register a new one."
             }
 
-            return "Choose which discovered bundle ID Blitz should use for this project before loading App Store Connect data."
+            return "Choose or enter which bundle ID Blitz should use for this project before loading App Store Connect data."
         }
 
-        return "Switch which bundle ID this project uses for App Store Connect. You can return here later if you need to point the project at a different target."
+        return "Switch which bundle ID this project uses for App Store Connect. You can select a detected value or enter one manually."
     }
 
     private var discoveryDescription: String {
@@ -94,7 +99,17 @@ struct ProjectBundleIDSelectorView: View {
     }
 
     private var canSubmitSelection: Bool {
-        normalized(selectedBundleId) != nil && !isSaving
+        effectiveBundleId != nil && !isSaving
+    }
+
+    private var pickerSelection: Binding<String> {
+        Binding(
+            get: { selectedBundleId },
+            set: { newValue in
+                selectedBundleId = newValue
+                manualBundleId = ""
+            }
+        )
     }
 
     private var discoveryTaskKey: String {
@@ -149,7 +164,7 @@ struct ProjectBundleIDSelectorView: View {
             Divider()
 
             if selectionOptions.isEmpty {
-                Text("No saved or discovered bundle IDs are available yet. Register a new bundle ID to continue.")
+                Text("No saved or discovered bundle IDs are available yet. Enter one manually or register a new bundle ID to continue.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             } else {
@@ -157,7 +172,7 @@ struct ProjectBundleIDSelectorView: View {
                     Text("Bundle ID")
                         .font(.callout.weight(.medium))
 
-                    Picker("Bundle ID", selection: $selectedBundleId) {
+                    Picker("Bundle ID", selection: pickerSelection) {
                         Text("Select a bundle ID").tag("")
                         ForEach(selectionOptions, id: \.self) { bundleId in
                             Text(bundleId).tag(bundleId)
@@ -169,6 +184,20 @@ struct ProjectBundleIDSelectorView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(selectionOptions.isEmpty ? "Bundle ID" : "Custom Bundle ID")
+                    .font(.callout.weight(.medium))
+
+                TextField("com.example.app", text: $manualBundleId)
+                    .textFieldStyle(.roundedBorder)
+
+                Text(selectionOptions.isEmpty
+                    ? "Enter a bundle ID manually if Blitz cannot detect one from the project."
+                    : "Manual entry overrides the picker when filled in.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             if let currentBundleId,
@@ -262,8 +291,8 @@ struct ProjectBundleIDSelectorView: View {
             return
         }
 
-        guard let bundleId = normalized(selectedBundleId) else {
-            error = "Select a bundle ID before continuing."
+        guard let bundleId = effectiveBundleId else {
+            error = "Select or enter a bundle ID before continuing."
             return
         }
 

@@ -19,6 +19,10 @@ final class BlitzAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidBecomeActive(_ notification: Notification) {
         AppRelaunchService.shared.clearPendingRestartAfterReturningToApp()
+        guard let appState else { return }
+        Task { @MainActor in
+            appState.ascManager.refreshAppIconStatusIfNeeded(for: appState.activeProjectId)
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

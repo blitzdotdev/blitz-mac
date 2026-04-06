@@ -8,6 +8,8 @@ private enum ProjectAppIconLookupState {
 }
 
 enum ProjectAppIconLoader {
+    static let didInvalidateNotification = Notification.Name("ProjectAppIconLoader.didInvalidate")
+
     private static let imageCache = NSCache<NSString, NSImage>()
     private static let lock = NSLock()
     private static var pathCache: [String: ProjectAppIconLookupState] = [:]
@@ -38,6 +40,16 @@ enum ProjectAppIconLoader {
         return image
     }
 
+    static func refreshImage(for projectId: String, projectPath: String) async -> NSImage? {
+        resetCache(for: projectId)
+        return await loadImage(for: projectId, projectPath: projectPath)
+    }
+
+    static func invalidate(for projectId: String) {
+        resetCache(for: projectId)
+        NotificationCenter.default.post(name: didInvalidateNotification, object: projectId)
+    }
+
     private static func loadPath(for projectId: String, projectPath: String) async -> String? {
         switch cachedPath(for: projectId) {
         case .resolved(let path):
@@ -66,6 +78,13 @@ enum ProjectAppIconLoader {
         lock.lock()
         defer { lock.unlock() }
         pathCache[projectId] = path.map(ProjectAppIconLookupState.resolved) ?? .missing
+    }
+
+    private static func resetCache(for projectId: String) {
+        lock.lock()
+        pathCache.removeValue(forKey: projectId)
+        lock.unlock()
+        imageCache.removeObject(forKey: projectId as NSString)
     }
 
     private static func findIconPath(projectPath: String) -> String? {
@@ -166,16 +185,33 @@ struct ProjectAppIconView<Placeholder: View>: View {
         .task(id: project.id) {
             await loadIcon()
         }
+        .onReceive(NotificationCenter.default.publisher(for: ProjectAppIconLoader.didInvalidateNotification)) { notification in
+            guard let invalidatedProjectId = notification.object as? String,
+                  invalidatedProjectId == project.id else { return }
+            Task { await loadIcon(forceRefresh: true) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            guard icon == nil else { return }
+            Task { await loadIcon(forceRefresh: true) }
+        }
     }
 
     @MainActor
-    private func loadIcon() async {
-        if let cached = ProjectAppIconLoader.cachedImage(for: project.id) {
+    private func loadIcon(forceRefresh: Bool = false) async {
+        if !forceRefresh, let cached = ProjectAppIconLoader.cachedImage(for: project.id) {
             icon = cached
             return
         }
 
         icon = nil
+        if forceRefresh {
+            icon = await ProjectAppIconLoader.refreshImage(
+                for: project.id,
+                projectPath: project.path
+            )
+            return
+        }
+
         icon = await ProjectAppIconLoader.loadImage(
             for: project.id,
             projectPath: project.path

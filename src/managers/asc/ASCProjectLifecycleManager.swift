@@ -178,9 +178,13 @@ extension ASCManager {
         let home = fm.homeDirectoryForCurrentUser.path
         let iconDir = "\(home)/.blitz/projects/\(projectId)/assets/AppIcon"
         let icon1024 = "\(iconDir)/icon_1024.png"
+        let previousStatus = appIconStatus
 
         if fm.fileExists(atPath: icon1024) {
             appIconStatus = "1024px"
+            if previousStatus != appIconStatus {
+                ProjectAppIconLoader.invalidate(for: projectId)
+            }
             return
         }
 
@@ -199,12 +203,18 @@ extension ASCManager {
                 }
                 if images.contains(where: { $0["filename"] != nil }) {
                     appIconStatus = "Configured"
+                    if previousStatus != appIconStatus {
+                        ProjectAppIconLoader.invalidate(for: projectId)
+                    }
                     return
                 }
             }
         }
 
         appIconStatus = nil
+        if previousStatus != appIconStatus {
+            ProjectAppIconLoader.invalidate(for: projectId)
+        }
     }
 
     func prepareForProjectSwitch(to projectId: String, bundleId: String?) {
