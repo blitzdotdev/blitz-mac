@@ -20,6 +20,14 @@ struct AppShotsView: View {
     @State private var headline: String = "Your Headline"
     @State private var subtitle: String = ""
 
+    // Bezel
+    @State private var withFrame = false
+    @State private var selectedDevice: String = "iPhone 16 Pro Max"
+    @State private var availableDevices: [String] = []
+    @State private var frameInsets: [String: FrameInset] = [:]
+
+    @State private var framedPreviewImage: NSImage?
+
     @State private var isGenerating = false
     @State private var generatedImage: NSImage?
     @State private var generatedImagePath: String?
@@ -107,6 +115,11 @@ struct AppShotsView: View {
 
                 Divider()
 
+                // Bezel
+                bezelToggle
+
+                Divider()
+
                 // Theme
                 themePicker
 
@@ -156,8 +169,8 @@ struct AppShotsView: View {
 
     private var dropZone: some View {
         ZStack {
-            if let image = sourceImage {
-                Image(nsImage: image)
+            if let displayImage = withFrame ? (framedPreviewImage ?? sourceImage) : sourceImage {
+                Image(nsImage: displayImage)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -190,6 +203,37 @@ struct AppShotsView: View {
             handleDrop(providers)
             return true
         }
+    }
+
+    private var bezelToggle: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle(isOn: $withFrame) {
+                Text("With Device Frame")
+                    .font(.caption.weight(.medium))
+            }
+            .toggleStyle(.checkbox)
+            .onChange(of: withFrame) { _, _ in updateFramedPreview() }
+
+            if withFrame && !availableDevices.isEmpty {
+                Picker("Device", selection: $selectedDevice) {
+                    ForEach(availableDevices, id: \.self) { device in
+                        Text(device).tag(device)
+                    }
+                }
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .onChange(of: selectedDevice) { _, _ in updateFramedPreview() }
+            }
+        }
+    }
+
+    private func updateFramedPreview() {
+        guard withFrame, let path = sourceImagePath,
+              let framedPath = compositeBezel(screenshotPath: path) else {
+            framedPreviewImage = nil
+            return
+        }
+        framedPreviewImage = NSImage(contentsOfFile: framedPath)
     }
 
     private var themePicker: some View {
@@ -389,10 +433,35 @@ struct AppShotsView: View {
             themes = (try? await themesResult) ?? []
 
             galleryHTML = buildGalleryHTML()
+
+            // Load device frames
+            loadFrameInsets()
         } catch {
             generationError = "Failed to load: \(error.localizedDescription)"
         }
         isLoadingGallery = false
+    }
+
+    private func loadFrameInsets() {
+        guard let url = Bundle.main.url(forResource: "insets", withExtension: "json", subdirectory: "frames"),
+              let data = try? Data(contentsOf: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: [String: Int]] else { return }
+        var insets: [String: FrameInset] = [:]
+        for (name, vals) in json {
+            // Only include devices that have a frame PNG bundled
+            guard Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "frames") != nil else { continue }
+            insets[name] = FrameInset(
+                outputWidth: vals["outputWidth"] ?? 0,
+                outputHeight: vals["outputHeight"] ?? 0,
+                screenInsetX: vals["screenInsetX"] ?? 0,
+                screenInsetY: vals["screenInsetY"] ?? 0
+            )
+        }
+        frameInsets = insets
+        availableDevices = insets.keys.sorted()
+        if !availableDevices.isEmpty && !availableDevices.contains(selectedDevice) {
+            selectedDevice = availableDevices.first(where: { $0.contains("16 Pro Max") }) ?? availableDevices[0]
+        }
     }
 
     // MARK: - Gallery HTML
@@ -520,10 +589,11 @@ struct AppShotsView: View {
         generatedImagePath = nil
         generationError = nil
         showResult = false
+        updateFramedPreview()
     }
 
     private func generate() async {
-        guard let screenshotPath = sourceImagePath,
+        guard var screenshotPath = sourceImagePath,
               let templateId = selectedTemplateId else { return }
 
         isGenerating = true
@@ -533,6 +603,11 @@ struct AppShotsView: View {
 
         if let dir = outputDir {
             try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        }
+
+        // Composite bezel onto source screenshot if enabled
+        if withFrame, let framedPath = compositeBezel(screenshotPath: screenshotPath) {
+            screenshotPath = framedPath
         }
 
         let timestamp = Int(Date().timeIntervalSince1970)
@@ -569,6 +644,71 @@ struct AppShotsView: View {
 
         isGenerating = false
     }
+
+    // MARK: - Bezel Compositing
+
+    /// Composite a device frame bezel onto the source screenshot, returning the path to the composited image.
+    private func compositeBezel(screenshotPath: String) -> String? {
+        guard let inset = frameInsets[selectedDevice] else { return nil }
+
+        // Find frame PNG from bundle
+        guard let frameURL = Bundle.main.url(forResource: selectedDevice, withExtension: "png", subdirectory: "frames"),
+              let frameImage = NSImage(contentsOf: frameURL),
+              let frameCG = frameImage.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              let screenshotImage = NSImage(contentsOfFile: screenshotPath),
+              let screenshotCG = screenshotImage.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        else { return nil }
+
+        let fw = inset.outputWidth
+        let fh = inset.outputHeight
+        let ix = inset.screenInsetX
+        let iy = inset.screenInsetY
+        let sw = fw - ix * 2
+        let sh = fh - iy * 2
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let ctx = CGContext(
+            data: nil, width: fw, height: fh,
+            bitsPerComponent: 8, bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        // CoreGraphics has origin at bottom-left, so flip Y
+        // Draw screenshot into the screen area
+        let screenRect = CGRect(x: ix, y: fh - iy - sh, width: sw, height: sh)
+
+        // Clip to rounded rect for screen corners
+        let cornerRadius = CGFloat(fw) * 0.055
+        let roundedPath = CGPath(roundedRect: screenRect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+        ctx.saveGState()
+        ctx.addPath(roundedPath)
+        ctx.clip()
+        ctx.draw(screenshotCG, in: screenRect)
+        ctx.restoreGState()
+
+        // Draw frame on top
+        ctx.draw(frameCG, in: CGRect(x: 0, y: 0, width: fw, height: fh))
+
+        guard let composited = ctx.makeImage() else { return nil }
+
+        // Save to temp file
+        let tmpPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("blitz-framed-\(Int(Date().timeIntervalSince1970)).png").path
+        let bitmap = NSBitmapImageRep(cgImage: composited)
+        guard let pngData = bitmap.representation(using: .png, properties: [:]) else { return nil }
+        try? pngData.write(to: URL(fileURLWithPath: tmpPath))
+        return tmpPath
+    }
+}
+
+// MARK: - Frame Inset Model
+
+struct FrameInset {
+    let outputWidth: Int
+    let outputHeight: Int
+    let screenInsetX: Int
+    let screenInsetY: Int
 }
 
 // MARK: - WKWebView Wrapper
