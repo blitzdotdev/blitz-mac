@@ -32,7 +32,7 @@ bash scripts/build-pkg.sh
 
 ## Architecture
 
-**Blitz** is a native macOS SwiftUI app (requires macOS 14+) for iOS development. It provides simulator management, screen capture, database browsing, App Store Connect integration, and an MCP server for Claude Code integration. Built with Swift Package Manager (no Xcode project). Source bundling also depends on the pinned ASC helper submodule in `deps/App-Store-Connect-CLI-helper` and a local Go toolchain.
+**Blitz** is a native macOS SwiftUI app (requires macOS 14+) for iOS development. It provides simulator management, screen capture, App Store Connect integration, and an MCP server for Claude Code integration. Built with Swift Package Manager (no Xcode project). Source bundling also depends on the pinned ASC helper submodule in `deps/App-Store-Connect-CLI-helper` and a local Go toolchain.
 
 ### Single-target structure
 
@@ -44,13 +44,12 @@ Single `AppState` (`@Observable`) object at `AppState.swift` holds all app state
 - `ProjectManager` — project list and loading
 - `SimulatorManager` — simulator lifecycle (boot/shutdown via `SimctlClient`)
 - `SimulatorStreamManager` — screen capture via `ScreenCaptureKit` + Metal rendering
-- `DatabaseManager` — Teenybase DB connection, schema, CRUD
 - `ASCManager` — App Store Connect API integration
 - `ProjectSetupManager` — project scaffolding for different project types
 
 ### Navigation
 
-`AppTab` enum defines all tabs, grouped into Build (simulator, database, tests, assets), Release (ASC tabs), Insights, TestFlight, and Settings. `ContentView` uses `NavigationSplitView` with `SidebarView` + `DetailView` that switches on `appState.activeTab`.
+`AppTab` enum defines all tabs, grouped into Build (simulator, tests, assets), Release (ASC tabs), Insights, TestFlight, and Settings. `ContentView` uses `NavigationSplitView` with `SidebarView` + `DetailView` that switches on `appState.activeTab`.
 
 ### MCP Server (Claude Code Integration)
 
@@ -59,7 +58,7 @@ Claude Code ←stdio→ Bridge Script (~/.blitz/blitz-mcp-bridge.sh) ←HTTP→ 
 ```
 
 - `MCPServerService` — Raw TCP HTTP server on a dynamic port. Writes port to `~/.blitz/mcp-port`. Handles JSON-RPC requests at `/mcp`.
-- `MCPToolRegistry` — Static definitions of all MCP tools (~35 tools covering navigation, projects, simulator, database, settings, device interaction, ASC forms, build pipeline).
+- `MCPToolRegistry` — Static definitions of all MCP tools (~35 tools covering navigation, projects, simulator, settings, device interaction, ASC forms, build pipeline).
 - `MCPToolExecutor` — Executes tool calls. Read-only tools execute immediately; mutating tools go through an approval flow (continuation-based) that shows a native macOS alert.
 - `ApprovalRequest` — Model with `ToolCategory` enum that determines whether user approval is required.
 

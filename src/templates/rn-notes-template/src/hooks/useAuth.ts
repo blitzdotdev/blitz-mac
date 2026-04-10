@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { auth, loadTokens, setTokens, getAuthToken, getStoredUser, User } from '../api'
+import { auth, loadTokens, setTokens, getAuthToken, User } from '../api'
 
 export interface AuthState {
   user: User | null
@@ -19,7 +19,7 @@ export function useAuth() {
   // Check auth status on mount
   useEffect(() => {
     const checkAuth = async () => {
-      loadTokens()
+      await loadTokens()
       if (getAuthToken()) {
         try {
           const user = await auth.getCurrentUser()

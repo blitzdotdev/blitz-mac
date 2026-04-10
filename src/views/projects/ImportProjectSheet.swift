@@ -244,7 +244,6 @@ struct ImportProjectSheet: View {
                 whitelistBlitzMCP: appState.settingsStore.whitelistBlitzMCPTools,
                 allowASCCLICalls: appState.settingsStore.allowASCCLICalls
             )
-            storage.ensureTeenybaseBackend(projectId: projectId, projectType: projectType)
             storage.ensureClaudeFiles(
                 projectId: projectId,
                 projectType: projectType,

@@ -43,43 +43,6 @@ After making code changes:
 3. Use `blitz-iphone` `device_action` to interact (tap buttons, enter text, navigate)
 4. Use `blitz-iphone` `describe_screen` again to verify the result
 
-### Database (Teenybase)
-
-The database runs as a local Teenybase server. Get the URL via `app_get_state` (returns `database.url` when running). Then use `curl` directly:
-
-```bash
-# Get schema
-curl -s "$DB_URL/api/v1/settings?raw=true" -H "Authorization: Bearer $TOKEN"
-
-# List records
-curl -s -X POST "$DB_URL/api/v1/table/TABLE_NAME/list" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"limit": 50, "offset": 0}'
-
-# Insert record
-curl -s -X POST "$DB_URL/api/v1/table/TABLE_NAME/insert" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"values": {"field": "value"}, "returning": "*"}'
-
-# Update record
-curl -s -X POST "$DB_URL/api/v1/table/TABLE_NAME/edit/RECORD_ID?returning=*" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"field": "newValue"}'
-
-# Delete record
-curl -s -X POST "$DB_URL/api/v1/table/TABLE_NAME/delete" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"where": "id='\''RECORD_ID'\''"}'
-```
-
-The `ADMIN_SERVICE_TOKEN` is in the project's `.dev.vars` file.
-
----
-
 ## App Store Connect Tools
 
 ### asc_fill_form

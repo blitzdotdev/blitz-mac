@@ -78,8 +78,6 @@ struct AppCommands: Commands {
                 appState.activeAppSubTab = .simulator
             }
             .keyboardShortcut("2", modifiers: .command)
-
-            // Database tab hidden for now
         }
 
         // View > Terminal toggle
@@ -96,7 +94,7 @@ struct AppCommands: Commands {
         // Build menu
         CommandMenu("Build") {
             Button("Run") {
-                guard let project = appState.activeProject else { return }
+                guard appState.activeProject != nil else { return }
                 Task {
                     await appState.simulatorManager.bootIfNeeded()
                     await appState.simulatorStream.startStreaming(

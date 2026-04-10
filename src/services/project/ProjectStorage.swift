@@ -14,10 +14,6 @@ struct ProjectStorage {
         ProjectAgentConfigService(baseDirectory: baseDirectory)
     }
 
-    private var teenybaseScaffolder: ProjectTeenybaseScaffolder {
-        ProjectTeenybaseScaffolder(baseDirectory: baseDirectory)
-    }
-
     init(baseDirectory: URL = BlitzPaths.projects) {
         self.baseDirectory = baseDirectory
     }
@@ -106,9 +102,5 @@ struct ProjectStorage {
             whitelistBlitzMCP: whitelistBlitzMCP,
             allowASCCLICalls: allowASCCLICalls
         )
-    }
-
-    func ensureTeenybaseBackend(projectId: String, projectType: ProjectType) {
-        teenybaseScaffolder.ensureTeenybaseBackend(projectId: projectId, projectType: projectType)
     }
 }

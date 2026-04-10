@@ -9,28 +9,7 @@
     "build": "vite build",
     "start:native": "react-native start",
     "ios": "react-native run-ios",
-    "preview": "vite preview --port 4173",
-    "generate:backend": "teeny generate --local",
-    "migrate:backend": "teeny migrate --local",
-    "backup:backend:local": "teeny backup --local",
-    "dev:backend": "teeny dev --local",
-    "build:backend": "teeny build --local",
-    "exec:backend": "teeny exec --local",
-    "get-notes": "teeny exec --local \"notes/select?select=title||':'||content||tags=>full,owner_id(id,name,email)\"",
-    "search-notes": "teeny exec --local \"notes/select?select=concat(title,content,tags)=>content&where=notes@@'test OR asd'\"",
-    "explain-search-notes": "teeny exec --local --explain \"notes/select?select=concat(title,content,tags)=>content&where=notes@@'test OR asd'\"",
-    "list-users": "teeny exec --local users/select?select=email",
-    "list-notes": "teeny exec --local notes/select?select=*",
-    "create-guest": "teeny exec --local -y -m post users/auth/sign-up -b '{\"username\":\"guest\",\"email\":\"guest@example.com\",\"password\":\"12345678\",\"passwordConfirm\":\"12345678\",\"name\":\"Guest User\"}'",
-    "exec-sql": "npx wrangler d1 execute PRIMARY_DB --local --persist-to \"./.local-persist\" --json --command \"select * from sqlite_master\"",
-    "deploy:backend:remote": "teeny deploy --migrate --remote",
-    "secrets-upload:remote": "teeny secrets --remote --upload",
-    "build:backend:remote": "teeny build --remote",
-    "backup:backend:remote": "teeny backup --remote",
-    "generate:backend:remote": "teeny generate --remote",
-    "migrate:backend:remote": "teeny migrate --remote",
-    "dev:backend:remote": "teeny dev --remote",
-    "delete-public-notes:remote": "teeny exec --remote -m post notes/delete -b '{\"where\":\"is_public = true\",\"returning\":[\"title\"]}'"
+    "preview": "vite preview --port 4173"
   },
   "dependencies": {
     "@babel/runtime": "^7.26.0",
@@ -49,7 +28,6 @@
     "@types/react-dom": "^19.0.0",
     "@types/react-native-vector-icons": "^6.4.18",
     "@vitejs/plugin-react": "^4.2.1",
-    "teenybase": "0.0.10",
     "typescript": "~5.4.5",
     "vite": "^5.4.11"
   }

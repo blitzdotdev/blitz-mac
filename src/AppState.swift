@@ -115,12 +115,10 @@ enum DashboardSubTab: String, CaseIterable, Identifiable {
 enum AppSubTab: String, CaseIterable, Identifiable {
     case overview
     case simulator
-    case database
     case tests
     case icon
 
-    /// Tabs currently shown in the UI (database is hidden for now).
-    static let visibleCases: [AppSubTab] = allCases.filter { $0 != .database }
+    static let visibleCases: [AppSubTab] = allCases
 
     var id: String { rawValue }
 
@@ -128,7 +126,6 @@ enum AppSubTab: String, CaseIterable, Identifiable {
         switch self {
         case .overview: "Overview"
         case .simulator: "Simulator"
-        case .database: "Database"
         case .tests: "Tests"
         case .icon: "Icon"
         }
@@ -138,7 +135,6 @@ enum AppSubTab: String, CaseIterable, Identifiable {
         switch self {
         case .overview: "chart.bar"
         case .simulator: "iphone"
-        case .database: "cylinder"
         case .tests: "checkmark.circle"
         case .icon: "photo.badge.plus"
         }
@@ -162,7 +158,6 @@ final class AppState {
     var simulatorStream = SimulatorStreamManager()
     var gestureVisualization = GestureVisualizationSocketService()
     var settingsStore = SettingsService.shared
-    var databaseManager = DatabaseManager()
     var projectSetup = ProjectSetupManager()
     var ascManager = ASCManager()
     var autoUpdate = AutoUpdateManager()

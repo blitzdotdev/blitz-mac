@@ -8,8 +8,8 @@ When using `NavigationSplitView` with a `switch` statement to render different t
 struct DetailView: View {
     var body: some View {
         switch activeTab {
-        case .database: DatabaseView(appState: appState)
         case .simulator: SimulatorView(appState: appState)
+        case .tests: TestsView(appState: appState)
         // ...
         }
     }
@@ -26,15 +26,15 @@ struct DetailView: View {
 ## The Anti-Pattern
 
 ```swift
-// BAD: This re-triggers the entire connection flow on every tab switch
-struct DatabaseView: View {
+// BAD: This re-triggers expensive setup on every tab switch
+struct ResourceHeavyView: View {
     var body: some View {
         content
             .task(id: appState.activeProjectId) {
-                await db.startAndConnect(projectPath: path) // runs migrations, starts server
+                await sessionManager.start(projectId: project.id)
             }
             .onDisappear {
-                db.disconnect() // kills server when switching away
+                sessionManager.stop()
             }
     }
 }
@@ -48,9 +48,9 @@ The manager lives on `AppState`, which persists for the app's lifetime. It survi
 
 ```swift
 @Observable
-final class DatabaseManager {
-    private(set) var connectedProjectId: String?
-    var connectionStatus: ConnectionStatus = .disconnected
+final class SessionManager {
+    private(set) var activeProjectId: String?
+    var isActive = false
     // ...
 }
 ```
@@ -58,17 +58,14 @@ final class DatabaseManager {
 ### 2. Guard against re-entry in the manager
 
 ```swift
-func startAndConnect(projectId: String, projectPath: String) async {
-    // Already connected to this project — no-op
-    if connectedProjectId == projectId && connectionStatus == .connected { return }
-    // Already connecting — no-op
-    if connectedProjectId == projectId && connectionStatus == .connecting { return }
-    // Different project — tear down old
-    if connectedProjectId != nil && connectedProjectId != projectId {
-        disconnect()
+func start(projectId: String) async {
+    if activeProjectId == projectId && isActive { return }
+    if activeProjectId != nil && activeProjectId != projectId {
+        stop()
     }
-    connectedProjectId = projectId
-    // ... proceed with connection
+    activeProjectId = projectId
+    isActive = true
+    // ... proceed with startup
 }
 ```
 
@@ -77,27 +74,26 @@ func startAndConnect(projectId: String, projectPath: String) async {
 ```swift
 .onAppear {
     guard let project = appState.activeProject else { return }
-    // Already connected — skip
-    guard db.connectedProjectId != project.id || db.connectionStatus != .connected else { return }
+    guard sessionManager.activeProjectId != project.id || !sessionManager.isActive else { return }
     Task {
-        await db.startAndConnect(projectId: project.id, projectPath: project.path)
+        await sessionManager.start(projectId: project.id)
     }
 }
 ```
 
 ### 4. Never use `.onDisappear` to tear down shared resources
 
-Tab switches destroy the view. Only disconnect when the *project* changes, not when the *tab* changes. The manager handles this internally via `connectedProjectId` tracking.
+Tab switches destroy the view. Only tear down when the *project* changes, not when the *tab* changes. The manager handles this internally via `activeProjectId` tracking.
 
 ## Summary
 
 | Concern | Where it lives | Why |
 |---------|---------------|-----|
-| Connection state | `@Observable` manager on `AppState` | Survives view destruction |
-| "Am I already connected?" | `connectedProjectId` in manager | Single source of truth |
-| Trigger connection | `.onAppear` + guard | Fires on tab switch but guard prevents re-work |
-| Tear down old connection | Inside `startAndConnect()` when projectId changes | Manager owns lifecycle |
-| Never | `.onDisappear { disconnect() }` | View destruction != intent to disconnect |
+| Session state | `@Observable` manager on `AppState` | Survives view destruction |
+| "Am I already active?" | `activeProjectId` in manager | Single source of truth |
+| Trigger startup | `.onAppear` + guard | Fires on tab switch but guard prevents re-work |
+| Tear down old session | Inside `start()` when projectId changes | Manager owns lifecycle |
+| Never | `.onDisappear { stop() }` | View destruction != intent to stop shared work |
 
 ## Second Anti-Pattern: `@State` for Long-Lived Resources
 
@@ -156,14 +152,13 @@ If a resource should survive tab switches, it cannot live in `@State`. Move it t
 | Use `@State` for | Use `AppState` manager for |
 |---|---|
 | Text input fields | Capture streams |
-| Sheet/alert presentation | Process lifecycles (backend servers) |
+| Sheet/alert presentation | Process lifecycles |
 | Local UI toggles | Network connections |
 | Animation state | Renderers, timers, polling tasks |
 
 ## Applies To
 
 Any view in the `DetailView` switch that manages expensive or long-lived resources:
-- Database connections (`DatabaseManager` + `TeenybaseProcessService`)
 - Simulator capture streams (`SimulatorStreamManager` + `SimulatorCaptureService`)
 - WebSocket connections
 - Background polling tasks

@@ -83,8 +83,6 @@ struct AppTabView: View {
             ASCOverview(appState: appState)
         case .simulator:
             SimulatorView(appState: appState)
-        case .database:
-            DatabaseView(appState: appState)
         case .tests:
             TestsView(appState: appState)
         case .icon:

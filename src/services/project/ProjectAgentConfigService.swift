@@ -478,9 +478,10 @@ struct ProjectAgentConfigService {
         let blitzRules = rulesDir.appendingPathComponent("blitz.md")
         try? Self.blitzRulesContent().write(to: blitzRules, atomically: true, encoding: .utf8)
 
-        let teenybaseRules = rulesDir.appendingPathComponent("teenybase.md")
-        try? Self.teenybaseRulesContent(projectDir: projectDir)
-            .write(to: teenybaseRules, atomically: true, encoding: .utf8)
+        if let teenybaseRulesContent = Self.teenybaseRulesContent() {
+            let teenybaseRules = rulesDir.appendingPathComponent("teenybase.md")
+            try? teenybaseRulesContent.write(to: teenybaseRules, atomically: true, encoding: .utf8)
+        }
 
         ensureReviewerAgent(projectDir: projectDir)
         ensureProjectSkills(projectDir: projectDir)
@@ -705,11 +706,10 @@ struct ProjectAgentConfigService {
         return content
     }
 
-    private static func teenybaseRulesContent(projectDir: URL) -> String {
-
+    private static func teenybaseRulesContent() -> String? {
         guard let url = Bundle.appResources.url(forResource: "teenybase-rules", withExtension: "md"),
-              var content = try? String(contentsOf: url, encoding: .utf8) else {
-            return "For backend, run npm i -g teenybase and run teenybase docs to get started adding teenybase backend to this project"
+              let content = try? String(contentsOf: url, encoding: .utf8) else {
+            return nil
         }
 
         return content

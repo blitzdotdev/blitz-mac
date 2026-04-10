@@ -97,7 +97,6 @@ struct ContentView: View {
                 whitelistBlitzMCP: whitelistBlitzMCP,
                 allowASCCLICalls: allowASCCLICalls
             )
-            storage.ensureTeenybaseBackend(projectId: projectId, projectType: projectType)
             storage.ensureClaudeFiles(
                 projectId: projectId,
                 projectType: projectType,

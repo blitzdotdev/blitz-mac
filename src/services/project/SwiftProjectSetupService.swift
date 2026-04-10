@@ -43,7 +43,6 @@ struct SwiftProjectSetupService {
                 "__APP_NAME__": appName,
                 "__BUNDLE_ID__": bundleId
             ],
-            sampleDevVars: nil,
             cleanupPaths: [],
             logPrefix: "swift-setup"
         )

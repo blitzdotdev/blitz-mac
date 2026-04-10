@@ -29,7 +29,7 @@ struct DetailView: View {
     var body: some View {
         switch appState.activeTab {
         case .simulator: SimulatorView(appState: appState)  // has its own .toolbar
-        case .database:  DatabaseView(appState: appState)   // has its own .toolbar
+        case .tests: TestsView(appState: appState)          // has its own .toolbar
         case .settings:  SettingsView(settings: ...)        // no .toolbar — empty bar
         }
     }
@@ -76,31 +76,6 @@ struct SimulatorView: View {
                 Button(action: { /* start/stop */ }) {
                     Image(systemName: stream.isCapturing ? "stop.fill" : "play.fill")
                 }
-            }
-        }
-    }
-}
-```
-
-## Example: Database Tab
-
-```swift
-struct DatabaseView: View {
-    var body: some View {
-        VStack(spacing: 0) {
-            // ... content (connection toolbar removed from inline)
-        }
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                HStack(spacing: 6) {
-                    Circle().fill(statusColor).frame(width: 8, height: 8)
-                    Text("Connected").font(.caption).foregroundStyle(.green)
-                }
-            }
-
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button("Disconnect") { db.disconnect() }
-                    .controlSize(.small)
             }
         }
     }

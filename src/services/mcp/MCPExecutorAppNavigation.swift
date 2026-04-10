@@ -21,13 +21,6 @@ extension MCPExecutor {
             if let udid = appState.simulatorManager.bootedDeviceId {
                 result["bootedSimulator"] = udid
             }
-            let db = appState.databaseManager
-            if db.connectionStatus == .connected || db.backendProcess.isRunning {
-                result["database"] = [
-                    "url": db.backendProcess.baseURL,
-                    "status": db.connectionStatus == .connected ? "connected" : "running"
-                ]
-            }
             return result
         }
         return mcpJSON(state)
@@ -42,7 +35,6 @@ extension MCPExecutor {
 
         let legacySubTabMap: [String: AppSubTab] = [
             "simulator": .simulator,
-            "database": .database,
             "tests": .tests,
             "assets": .icon,
             "icon": .icon,
@@ -54,13 +46,6 @@ extension MCPExecutor {
             await MainActor.run {
                 appState.activeTab = .app
                 appState.activeAppSubTab = subTab
-            }
-
-            if subTab == .database {
-                let status = await MainActor.run { appState.databaseManager.connectionStatus }
-                if status != .connected, let project = await MainActor.run(body: { appState.activeProject }) {
-                    await appState.databaseManager.startAndConnect(projectId: project.id, projectPath: project.path)
-                }
             }
 
             return mcpText("Switched to App > \(subTab.label)")

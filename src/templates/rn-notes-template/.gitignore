@@ -1,9 +1,4 @@
-.local-persist
-.teeny
 dist
-.wrangler
-.dev.vars
-.prod.vars
 
 /.pnp
 .pnp.js

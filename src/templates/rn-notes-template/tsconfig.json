@@ -10,14 +10,7 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": [
-      "vite/client",
-      "@cloudflare/workers-types/2023-07-01"
-    ],
+    "types": ["vite/client"]
   },
-  "include": [
-    "src",
-    "src-backend",
-    "teenybase.ts",
-  ]
+  "include": ["src"]
 }

@@ -1,1 +1,1 @@
-App wall - see ranking of longest and shortest submission, see your global ranking lol. heavily tested changes made to both backend ~/superapp/utils/teenybase and engagement focused model parser & view logic here. We can do a LOT better on view 
+App wall - see ranking of longest and shortest submission, see your global ranking lol. Heavily tested changes made to the backend and engagement-focused model parser and view logic here. We can do a LOT better on view.

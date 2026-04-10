@@ -2,7 +2,7 @@
 
 ## Context
 
-Blitz macOS is a SwiftUI app with a basic HTTP MCP server (`MCPServerService.swift`) that currently only exposes 5 device-interaction tools. The goal is to expose **every interactive UI element** as an MCP tool (navigation, project CRUD, settings, database, simulator controls, recording) and add an **interactive approval flow** where destructive operations show a native macOS popup in Blitz that the user must approve/deny before execution proceeds.
+Blitz macOS is a SwiftUI app with a basic HTTP MCP server (`MCPServerService.swift`) that currently only exposes 5 device-interaction tools. The goal is to expose **every interactive UI element** as an MCP tool (navigation, project CRUD, settings, simulator controls, recording) and add an **interactive approval flow** where destructive operations show a native macOS popup in Blitz that the user must approve/deny before execution proceeds.
 
 Claude Code connects to MCP servers via stdio transport (spawns a child process). Since Blitz is already running as a GUI app, we need a **thin stdio→HTTP bridge** that Claude Code spawns, which forwards JSON-RPC to Blitz's HTTP endpoint.
 
@@ -33,7 +33,6 @@ struct ApprovalRequest: Identifiable {
     enum ToolCategory: String {
         case navigation, query           // Auto-approved (read-only)
         case projectMutation             // Create/import/delete project
-        case databaseMutation            // Insert/update/delete records
         case settingsMutation            // Change settings
         case simulatorControl            // Boot/shutdown/streaming
         case recording                   // Start/stop recording
@@ -57,7 +56,7 @@ Static definitions for all ~31 MCP tools. Returns `[[String: Any]]` for the `too
 | Tool                      | Description                                                     | Approval? |
 |---------------------------|-----------------------------------------------------------------|-----------|
 | `app_get_state`           | Get current project, tab, streaming status                      | No        |
-| `nav_switch_tab`          | Switch sidebar tab (simulator, database, tests, settings, etc.) | No        |
+| `nav_switch_tab`          | Switch sidebar tab (simulator, tests, settings, etc.)           | No        |
 | `nav_list_tabs`           | List all available tabs with groups                             | No        |
 | `project_list`            | List all projects                                               | No        |
 | `project_get_active`      | Get active project details                                      | No        |
@@ -72,14 +71,6 @@ Static definitions for all ~31 MCP tools. Returns `[[String: Any]]` for the `too
 | `simulator_press_home`    | Press home button                                               | No        |
 | `simulator_send_text`     | Send keyboard text to simulator                                 | No        |
 | `simulator_toggle_keyboard` | Toggle keyboard input bar                                     | No        |
-| `db_connect`              | Connect to project's Teenybase                                  | No        |
-| `db_disconnect`           | Disconnect from database                                        | **Yes**   |
-| `db_list_tables`          | List database tables                                            | No        |
-| `db_select_table`         | Select active table                                             | No        |
-| `db_query_rows`           | Query rows (pagination, sorting, search)                        | No        |
-| `db_insert_record`        | Insert new record                                               | **Yes**   |
-| `db_update_record`        | Update existing record                                          | **Yes**   |
-| `db_delete_record`        | Delete record                                                   | **Yes**   |
 | `settings_get`            | Get current settings                                            | No        |
 | `settings_update`         | Update settings (FPS, cursor, format)                           | **Yes**   |
 | `settings_save`           | Save settings to disk                                           | **Yes**   |

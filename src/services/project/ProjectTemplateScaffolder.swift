@@ -4,7 +4,6 @@ struct ProjectTemplateSpec {
     let templateName: String
     let missingTemplateMessage: String
     let replacements: [String: String]
-    let sampleDevVars: String?
     let cleanupPaths: [String]
     let logPrefix: String
 }
@@ -56,18 +55,6 @@ enum ProjectTemplateScaffolder {
         }
         if let data = metadataData {
             try data.write(to: URL(fileURLWithPath: metadataPath))
-        }
-
-        if let sampleDevVars = spec.sampleDevVars {
-            let devVarsPath = projectPath + "/.dev.vars"
-            if !fm.fileExists(atPath: devVarsPath) {
-                let sampleVarsPath = projectPath + "/sample.vars"
-                if fm.fileExists(atPath: sampleVarsPath) {
-                    try fm.copyItem(atPath: sampleVarsPath, toPath: devVarsPath)
-                } else {
-                    try sampleDevVars.write(toFile: devVarsPath, atomically: true, encoding: .utf8)
-                }
-            }
         }
 
         await onStep(.ready)
