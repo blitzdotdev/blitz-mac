@@ -146,7 +146,13 @@ except urllib.error.HTTPError as e:
 "
 ```
 
-### 5. Report results
+### 5. Auto-confirm the Blitz bundle-ID setup flow
+
+After the iris API call succeeds, call the `asc_confirm_created_app` MCP tool immediately. This tool polls App Store Connect up to 10 times and, once the app is visible, programmatically triggers the same confirmation path as the `Confirm` button in Blitz's bundle-ID setup UI.
+
+If the tool reports success, the manual confirmation step in Blitz is complete. If it fails after 10 retries, report that clearly to the user.
+
+### 6. Report results
 
 After success, report the App ID, bundle ID, name, and SKU to the user.
 

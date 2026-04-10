@@ -531,6 +531,7 @@ struct BundleIDSetupView: View {
                 createdBundleId = bundleId
                 createdAppName = bundleName.trimmingCharacters(in: .whitespacesAndNewlines)
                 capabilitiesEnabled = enabled
+                asc.beginPendingBundleIDSetup(bundleId: bundleId, tab: tab)
                 phase = .manual
 
             } catch let ascError as ASCError {
@@ -553,7 +554,7 @@ struct BundleIDSetupView: View {
         let expectedBundleId = createdBundleId.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !expectedBundleId.isEmpty else {
-            error = "The registered bundle ID is missing. Register the bundle ID again before confirming."
+            error = ASCManager.BundleIDSetupConfirmationError.missingBundleId.localizedDescription
             phase = .manual
             return
         }
@@ -561,20 +562,8 @@ struct BundleIDSetupView: View {
         phase = .confirming
 
         Task {
-            guard let service = asc.service else {
-                error = "ASC service not configured"
-                phase = .manual
-                return
-            }
-
             do {
-                // Avoid asc.fetchApp here: it toggles isLoadingApp, which can remount the
-                // parent fallback view and reset this setup flow's phase state.
-                let app = try await service.fetchApp(bundleId: expectedBundleId)
-                asc.app = app
-                asc.credentialsError = nil
-                asc.resetTabState()
-                await asc.fetchTabData(tab)
+                _ = try await asc.confirmBundleIDSetupAppCreated(bundleId: expectedBundleId)
             } catch let ascError as ASCError {
                 if ascError.isProgramLicenseAgreementRequired {
                     presentProgramLicenseAgreementAlert(ascError)
@@ -592,6 +581,7 @@ struct BundleIDSetupView: View {
 
     private func goBackToBundleRegistrationForm() {
         error = nil
+        asc.clearPendingBundleIDSetup()
         let bundleId = createdBundleId.trimmingCharacters(in: .whitespacesAndNewlines)
         if !bundleId.isEmpty {
             applyBundleIdToForm(bundleId)

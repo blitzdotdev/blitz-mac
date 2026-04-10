@@ -333,6 +333,15 @@ enum MCPRegistry {
         ))
 
         tools.append(tool(
+            name: "asc_confirm_created_app",
+            description: "Poll App Store Connect for the app record created from the current bundle-ID setup flow, then programmatically run the same confirmation path as the Confirm button in BundleIDSetupView. Retries up to 10 times before giving up.",
+            properties: [
+                "bundleId": ["type": "string", "description": "Optional bundle ID override. If omitted, uses the pending bundle-ID setup flow in Blitz."]
+            ],
+            required: []
+        ))
+
+        tools.append(tool(
             name: "asc_set_app_price",
             description: "Set the app's price on the App Store. Use \"0\" for free. Optionally schedule a future price change with effectiveDate.",
             properties: [
@@ -415,6 +424,8 @@ enum MCPRegistry {
             return .ascSubmitMutation
         case "asc_web_auth":
             return .query  // user-interactive (Apple ID login) — no approval needed
+        case "asc_confirm_created_app":
+            return .query
         case "asc_create_iap", "asc_create_subscription", "asc_set_app_price":
             return .ascFormMutation
 

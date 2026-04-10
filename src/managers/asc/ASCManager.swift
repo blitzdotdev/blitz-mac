@@ -128,6 +128,7 @@ final class ASCManager {
     var overviewReadinessLoadingFields: Set<String> = []
     var loadingFeedbackBuildIds: Set<String> = []
     var loadedProjectId: String?
+    var pendingBundleIDSetup: PendingBundleIDSetupContext?
 
     // Submission readiness labels used by both the view model and background hydration.
     static let overviewWhatsNewFieldLabel = "What's New"

@@ -292,6 +292,48 @@ extension MCPExecutor {
         return mcpText("Credentials pre-filled. The user can verify and click 'Save Credentials'.")
     }
 
+    func executeASCConfirmCreatedApp(_ args: [String: Any]) async -> [String: Any] {
+        let rawBundleId = (args["bundleId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let bundleId = rawBundleId?.isEmpty == false ? rawBundleId : nil
+
+        for attempt in 1...10 {
+            do {
+                let app = try await appState.ascManager.confirmBundleIDSetupAppCreated(bundleId: bundleId)
+                return mcpJSON([
+                    "success": true,
+                    "attempts": attempt,
+                    "appId": app.id,
+                    "bundleId": app.bundleId,
+                    "name": app.attributes.name,
+                ])
+            } catch let ascError as ASCError {
+                if case .notFound = ascError {
+                    if attempt < 10 {
+                        try? await Task.sleep(for: .seconds(2))
+                        continue
+                    }
+
+                    let pendingBundleId = await MainActor.run {
+                        appState.ascManager.pendingBundleIDSetup?.bundleId ?? ""
+                    }
+                    let missingBundleId = bundleId ?? pendingBundleId
+                    if missingBundleId.isEmpty {
+                        return mcpText("Error: app was not found in App Store Connect after 10 checks.")
+                    }
+                    return mcpText(
+                        "Error: app with bundle ID '\(missingBundleId)' was not found in App Store Connect after 10 checks."
+                    )
+                }
+
+                return mcpText("Error: \(ascError.localizedDescription)")
+            } catch {
+                return mcpText("Error: \(error.localizedDescription)")
+            }
+        }
+
+        return mcpText("Error: app was not found in App Store Connect after 10 checks.")
+    }
+
     func executeASCFillForm(_ args: [String: Any]) async throws -> [String: Any] {
         guard let rawTab = args["tab"] as? String else {
             throw MCPServerService.MCPError.invalidToolArgs

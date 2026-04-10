@@ -403,6 +403,7 @@ extension ASCManager {
         tabError = [:]
         loadedTabs = []
         tabLoadedAt = [:]
+        pendingBundleIDSetup = nil
         if !preserveCredentials {
             loadedProjectId = nil
         }
