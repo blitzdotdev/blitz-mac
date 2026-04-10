@@ -73,6 +73,38 @@ extension ASCManager {
         return parseImageOutputPath(from: output, fallback: imageOutput)
     }
 
+    /// Get a single template's preview HTML via `asc app-shots templates get --id <id> --preview`.
+    nonisolated static func appShotsTemplatePreviewHTML(templateId: String) async throws -> String {
+        try await ProcessRunner.run(
+            "asc",
+            arguments: ["app-shots", "templates", "get", "--id", templateId, "--preview"],
+            timeout: 30
+        )
+    }
+
+    /// Apply a template to a screenshot, returning composed HTML (not PNG).
+    nonisolated static func appShotsTemplatesApplyHTML(
+        templateId: String,
+        screenshot: String,
+        headline: String,
+        subtitle: String? = nil,
+        tagline: String? = nil,
+        appName: String? = nil
+    ) async throws -> String {
+        var args = [
+            "app-shots", "templates", "apply",
+            "--id", templateId,
+            "--screenshot", screenshot,
+            "--headline", headline,
+            "--preview", "html",
+        ]
+        if let subtitle { args += ["--subtitle", subtitle] }
+        if let tagline { args += ["--tagline", tagline] }
+        if let appName { args += ["--app-name", appName] }
+
+        return try await ProcessRunner.run("asc", arguments: args, timeout: 60)
+    }
+
     // MARK: - Themes
 
     /// List available visual themes from `asc app-shots themes list`.

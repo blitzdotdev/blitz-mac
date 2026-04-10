@@ -1,30 +1,34 @@
 import SwiftUI
+import WebKit
 import AppKit
 import UniformTypeIdentifiers
+
+// MARK: - Main View
 
 struct AppShotsView: View {
     var appState: AppState
 
-    // Source screenshot
     @State private var sourceImage: NSImage?
     @State private var sourceImagePath: String?
-    @State private var sourceImageName: String?
     @State private var isDropTargeted = false
 
-    // Templates & themes
     @State private var templates: [ASCManager.AppShotTemplate] = []
     @State private var themes: [ASCManager.AppShotTheme] = []
+    @State private var templatePreviews: [String: String] = [:]
     @State private var selectedTemplateId: String?
     @State private var selectedThemeId: String?
     @State private var headline: String = "Your Headline"
     @State private var subtitle: String = ""
 
-    // Generation state
     @State private var isGenerating = false
     @State private var generatedImage: NSImage?
     @State private var generatedImagePath: String?
     @State private var generationError: String?
     @State private var importError: String?
+    @State private var showResult = false
+
+    @State private var galleryHTML: String = ""
+    @State private var isLoadingGallery = true
 
     private var projectId: String? { appState.activeProjectId }
 
@@ -43,7 +47,7 @@ struct AppShotsView: View {
             sourcePanel
                 .frame(width: 240)
             Divider()
-            previewPanel
+            rightPanel
         }
         .task { await loadCatalog() }
         .alert("Error", isPresented: Binding(
@@ -60,11 +64,15 @@ struct AppShotsView: View {
 
     private var sourcePanel: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                Text("Source Screenshot")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(spacing: 14) {
+                // Header
+                HStack {
+                    Text("App Shots")
+                        .font(.headline)
+                    Spacer()
+                }
 
+                // Drop zone
                 dropZone
 
                 Button {
@@ -74,35 +82,77 @@ struct AppShotsView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
+                .controlSize(.small)
 
                 Divider()
 
-                headlineFields
+                // Text fields
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Headline")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    TextField("Your Headline", text: $headline)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.callout)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Subtitle")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    TextField("Optional", text: $subtitle)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.callout)
+                }
 
                 Divider()
 
-                templatePicker
-
-                Divider()
-
+                // Theme
                 themePicker
 
                 Divider()
 
-                generateButton
+                // Generate
+                Button {
+                    Task { await generate() }
+                } label: {
+                    HStack(spacing: 6) {
+                        if isGenerating {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                        Text(isGenerating ? "Generating\u{2026}" : "Generate Screenshot")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+                .disabled(!canGenerate)
 
                 if let generationError {
                     Text(generationError)
                         .font(.caption)
                         .foregroundStyle(.red)
+                        .lineLimit(3)
+                }
+
+                // Selected template info
+                if let tid = selectedTemplateId,
+                   let template = templates.first(where: { $0.id == tid }) {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 6, height: 6)
+                        Text(template.name)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
-            .padding(16)
+            .padding(14)
         }
         .background(.background.secondary)
     }
-
-    // MARK: - Drop Zone
 
     private var dropZone: some View {
         ZStack {
@@ -110,28 +160,27 @@ struct AppShotsView: View {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .padding(8)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .padding(6)
             } else {
-                VStack(spacing: 8) {
+                VStack(spacing: 6) {
                     Image(systemName: "iphone.gen3")
-                        .font(.system(size: 28))
+                        .font(.system(size: 24))
                         .foregroundStyle(.secondary)
-                    Text("Drop screenshot here")
+                    Text("Drop screenshot")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
                 }
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 200)
+        .frame(height: 140)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 12)
                 .fill(isDropTargeted ? Color.accentColor.opacity(0.1) : Color(.controlBackgroundColor))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 12)
                 .strokeBorder(
                     isDropTargeted ? Color.accentColor : Color.secondary.opacity(0.3),
                     style: StrokeStyle(lineWidth: 2, dash: sourceImage == nil ? [6, 4] : [])
@@ -143,93 +192,15 @@ struct AppShotsView: View {
         }
     }
 
-    // MARK: - Headline Fields
-
-    private var headlineFields: some View {
-        VStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Headline")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                TextField("Your Headline", text: $headline)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.callout)
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Subtitle")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                TextField("Optional subtitle", text: $subtitle)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.callout)
-            }
-        }
-    }
-
-    // MARK: - Template Picker
-
-    private var templatePicker: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Template")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-
-            if templates.isEmpty {
-                Text("Loading\u{2026}")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            } else {
-                ForEach(orderedCategories(), id: \.self) { category in
-                    templateCategorySection(category)
-                }
-            }
-        }
-    }
-
-    private func templateCategorySection(_ category: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(category.capitalized)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.tertiary)
-                .padding(.top, 4)
-
-            ForEach(templates.filter { $0.category == category }) { template in
-                templateRow(template)
-            }
-        }
-    }
-
-    private func templateRow(_ template: ASCManager.AppShotTemplate) -> some View {
-        let isSelected = selectedTemplateId == template.id
-        return Button {
-            selectedTemplateId = template.id
-        } label: {
-            HStack {
-                Text(template.name)
-                    .font(.caption)
-                Spacer()
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.caption)
-                        .foregroundStyle(Color.accentColor)
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(isSelected ? Color.accentColor.opacity(0.1) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-        }
-        .buttonStyle(.plain)
-    }
-
-    // MARK: - Theme Picker
-
     private var themePicker: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("Theme")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
+                Text("optional")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
                 Spacer()
                 if selectedThemeId != nil {
                     Button("Clear") { selectedThemeId = nil }
@@ -238,10 +209,6 @@ struct AppShotsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-
-            Text("Optional \u{2014} AI-powered styling")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
 
             ForEach(themes) { theme in
                 themeRow(theme)
@@ -256,158 +223,253 @@ struct AppShotsView: View {
         } label: {
             HStack(spacing: 6) {
                 Text(theme.icon)
-                    .font(.callout)
+                    .font(.caption)
                 Text(theme.name)
                     .font(.caption)
                 Spacer()
                 if isSelected {
                     Image(systemName: "checkmark")
-                        .font(.caption)
+                        .font(.caption2)
                         .foregroundStyle(Color.accentColor)
                 }
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .padding(.vertical, 3)
             .background(isSelected ? Color.accentColor.opacity(0.1) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: 5))
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: - Generate Button
-
-    private var generateButton: some View {
-        Button {
-            Task { await generate() }
-        } label: {
-            HStack {
-                if isGenerating {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-                Text(isGenerating ? "Generating\u{2026}" : "Generate")
-            }
-            .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.borderedProminent)
-        .disabled(!canGenerate)
-    }
-
-    // MARK: - Preview Panel (Right)
-
-    private var previewPanel: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                previewHeader
-                previewContent
-            }
-            .padding(24)
-        }
-    }
-
-    private var previewHeader: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("App Shots")
-                .font(.title2.weight(.semibold))
-
-            if let tid = selectedTemplateId,
-               let template = templates.first(where: { $0.id == tid }) {
-                HStack(spacing: 8) {
-                    Text(template.name)
-                        .font(.callout.weight(.medium))
-                    if let thId = selectedThemeId,
-                       let theme = themes.first(where: { $0.id == thId }) {
-                        Text("\(theme.icon) \(theme.name)")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-        }
-    }
+    // MARK: - Right Panel
 
     @ViewBuilder
-    private var previewContent: some View {
-        if isGenerating {
-            generatingPlaceholder
-        } else if let generatedImage {
-            generatedPreview(generatedImage)
+    private var rightPanel: some View {
+        if showResult, let generatedImage {
+            resultView(generatedImage)
         } else {
-            emptyPlaceholder
+            galleryView
         }
     }
 
-    private var generatingPlaceholder: some View {
-        VStack(spacing: 12) {
-            ProgressView()
-                .controlSize(.regular)
-            Text("Generating screenshot\u{2026}")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 60)
-    }
+    // MARK: - Gallery View
 
-    private func generatedPreview(_ image: NSImage) -> some View {
-        VStack(spacing: 12) {
-            Image(nsImage: image)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
-                .frame(maxWidth: 400)
-
-            if let path = generatedImagePath {
-                HStack(spacing: 8) {
-                    Text(URL(fileURLWithPath: path).lastPathComponent)
-                        .font(.caption)
+    private var galleryView: some View {
+        ZStack {
+            if isLoadingGallery {
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .controlSize(.regular)
+                    Text("Loading templates\u{2026}")
+                        .font(.callout)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                }
+            } else {
+                AppShotsGalleryWebView(
+                    html: galleryHTML,
+                    selectedTemplateId: selectedTemplateId,
+                    onSelectTemplate: { id in
+                        selectedTemplateId = id
+                    }
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 
+    // MARK: - Result View
+
+    private func resultView(_ image: NSImage) -> some View {
+        VStack(spacing: 0) {
+            // Toolbar
+            HStack {
+                Button {
+                    showResult = false
+                } label: {
+                    Label("Templates", systemImage: "chevron.left")
+                        .font(.callout)
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                if let path = generatedImagePath {
                     Button {
                         NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: "")
                     } label: {
-                        Image(systemName: "folder")
-                            .font(.caption)
+                        Label("Show in Finder", systemImage: "folder")
+                            .font(.callout)
                     }
-                    .buttonStyle(.plain)
-                    .help("Show in Finder")
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
             }
-        }
-    }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
 
-    private var emptyPlaceholder: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "photo.on.rectangle.angled")
-                .font(.system(size: 48))
-                .foregroundStyle(.quaternary)
-            Text("Drop a screenshot, pick a template,\nand click Generate")
-                .font(.callout)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
+            Divider()
+
+            // Large preview
+            ScrollView {
+                VStack(spacing: 16) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .shadow(color: .black.opacity(0.2), radius: 12, y: 6)
+                        .frame(maxWidth: 500)
+                        .padding(.top, 20)
+
+                    if let path = generatedImagePath {
+                        Text(URL(fileURLWithPath: path).lastPathComponent)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(24)
+            }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 60)
     }
 
     // MARK: - Data Loading
 
     private func loadCatalog() async {
+        isLoadingGallery = true
         do {
-            async let t = ASCManager.appShotsTemplatesList()
-            async let th = ASCManager.appShotsThemesList()
-            let (loadedTemplates, loadedThemes) = try await (t, th)
-            templates = loadedTemplates
-            themes = loadedThemes
-            if selectedTemplateId == nil, let first = loadedTemplates.first {
+            let output = try await ProcessRunner.run(
+                "asc",
+                arguments: ["app-shots", "templates", "list", "--output", "json"],
+                timeout: 30
+            )
+            let json = extractJSON(from: output)
+            let data = Data(json.utf8)
+
+            guard let wrapper = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let items = wrapper["data"] as? [[String: Any]] else {
+                throw NSError(domain: "AppShots", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid template data"])
+            }
+
+            var parsedTemplates: [ASCManager.AppShotTemplate] = []
+            var previews: [String: String] = [:]
+
+            for item in items {
+                guard let id = item["id"] as? String,
+                      let name = item["name"] as? String,
+                      let category = item["category"] as? String else { continue }
+
+                var palette: ASCManager.AppShotTemplate.Palette?
+                if let p = item["palette"] as? [String: Any] {
+                    palette = ASCManager.AppShotTemplate.Palette(
+                        id: p["id"] as? String ?? id,
+                        name: p["name"] as? String ?? name,
+                        background: p["background"] as? String
+                    )
+                }
+
+                parsedTemplates.append(ASCManager.AppShotTemplate(
+                    id: id, name: name, category: category,
+                    description: item["description"] as? String ?? "",
+                    deviceCount: item["deviceCount"] as? Int ?? 1,
+                    palette: palette
+                ))
+
+                if let html = item["previewHTML"] as? String {
+                    previews[id] = html
+                }
+            }
+
+            templates = parsedTemplates
+            templatePreviews = previews
+            if selectedTemplateId == nil, let first = parsedTemplates.first {
                 selectedTemplateId = first.id
             }
+
+            async let themesResult = ASCManager.appShotsThemesList()
+            themes = (try? await themesResult) ?? []
+
+            galleryHTML = buildGalleryHTML()
         } catch {
-            generationError = "Failed to load catalog: \(error.localizedDescription)"
+            generationError = "Failed to load: \(error.localizedDescription)"
         }
+        isLoadingGallery = false
+    }
+
+    // MARK: - Gallery HTML
+
+    private func buildGalleryHTML() -> String {
+        let categories = orderedCategories()
+        var sections = ""
+
+        for category in categories {
+            let catTemplates = templates.filter { $0.category == category }
+            var cards = ""
+            for t in catTemplates {
+                let escaped = escapeForSrcdoc(templatePreviews[t.id] ?? "")
+                let bg = t.palette?.background ?? "#222"
+                let devLabel = t.deviceCount > 1 ? "\(t.deviceCount) devices" : ""
+                cards += """
+                <div class="c" data-id="\(t.id)" onclick="sel('\(t.id)')">
+                  <div class="p" style="background:\(bg)">
+                    <iframe srcdoc="\(escaped)" sandbox="allow-same-origin" scrolling="no"></iframe>
+                  </div>
+                  <div class="i"><div class="n">\(t.name)</div>\(devLabel.isEmpty ? "" : "<div class=\"m\">\(devLabel)</div>")</div>
+                </div>
+                """
+            }
+            sections += """
+            <div class="cat" data-cat="\(category)">
+              <div class="ct">\(category.capitalized)</div>
+              <div class="g">\(cards)</div>
+            </div>
+            """
+        }
+
+        let catsJSON = "[" + categories.map { "'\($0)'" }.joined(separator: ",") + "]"
+
+        return """
+        <!DOCTYPE html><html><head><meta charset="utf-8">
+        <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#1a1a1a;color:#fff;padding:16px 20px;-webkit-user-select:none}
+        .pills{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;position:sticky;top:0;z-index:10;background:#1a1a1a;padding:4px 0 12px}
+        .pill{padding:5px 14px;border:1px solid rgba(255,255,255,0.1);border-radius:20px;font-size:11px;font-weight:500;cursor:pointer;background:transparent;color:rgba(255,255,255,0.55);transition:all 0.15s}
+        .pill:hover{border-color:#3b82f6;color:#3b82f6}
+        .pill.on{background:#2563EB;color:#fff;border-color:#2563EB}
+        .cat{margin-bottom:20px}
+        .ct{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:rgba(255,255,255,0.35);margin-bottom:8px}
+        .g{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+        .c{border-radius:10px;overflow:hidden;cursor:pointer;border:2px solid rgba(255,255,255,0.06);transition:all 0.15s;background:#111}
+        .c:hover{border-color:rgba(255,255,255,0.2);transform:translateY(-1px);box-shadow:0 4px 16px rgba(0,0,0,0.4)}
+        .c.on{border-color:#2563EB;box-shadow:0 0 0 1px #2563EB,0 4px 16px rgba(37,99,235,0.25)}
+        .p{width:100%;aspect-ratio:9/19.5;position:relative;overflow:hidden}
+        .p iframe{width:100%;height:100%;border:none;pointer-events:none}
+        .i{padding:7px 9px}
+        .n{font-size:11px;font-weight:600;color:rgba(255,255,255,0.85)}
+        .m{font-size:9px;color:rgba(255,255,255,0.35);margin-top:1px}
+        </style></head><body>
+        <div class="pills" id="pp"></div>
+        <div id="gl">\(sections)</div>
+        <script>
+        var ac='all',cats=['all'].concat(\(catsJSON));
+        var pp=document.getElementById('pp');
+        pp.innerHTML=cats.map(function(c){return '<button class=\"pill'+(c==='all'?' on':'')+
+          '\" onclick=\"fc(\\''+c+'\\')\">'+(c==='all'?'All':c.charAt(0).toUpperCase()+c.slice(1))+'</button>'}).join('');
+        function fc(c){ac=c;pp.querySelectorAll('.pill').forEach(function(p){
+          p.classList.toggle('on',p.textContent.toLowerCase()===c||(c==='all'&&p.textContent==='All'))});
+          document.querySelectorAll('.cat').forEach(function(e){e.style.display=(c==='all'||e.dataset.cat===c)?'':'none'})}
+        function sel(id){document.querySelectorAll('.c').forEach(function(c){c.classList.toggle('on',c.dataset.id===id)});
+          window.webkit.messageHandlers.templateSelected.postMessage(id)}
+        function setSelected(id){document.querySelectorAll('.c').forEach(function(c){c.classList.toggle('on',c.dataset.id===id)})}
+        </script></body></html>
+        """
+    }
+
+    private func escapeForSrcdoc(_ html: String) -> String {
+        html.replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
     }
 
     private func orderedCategories() -> [String] {
@@ -418,6 +480,14 @@ struct AppShotsView: View {
         return ordered + remaining
     }
 
+    private func extractJSON(from output: String) -> String {
+        for line in output.split(separator: "\n", omittingEmptySubsequences: false).reversed() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("{") { return trimmed }
+        }
+        return output.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     // MARK: - Actions
 
     private func openScreenshotPicker() {
@@ -426,7 +496,6 @@ struct AppShotsView: View {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.message = "Select a screenshot"
-
         guard panel.runModal() == .OK, let url = panel.url else { return }
         loadSourceScreenshot(from: url)
     }
@@ -436,9 +505,7 @@ struct AppShotsView: View {
         provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier) { data, _ in
             guard let data = data as? Data,
                   let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
-            DispatchQueue.main.async {
-                loadSourceScreenshot(from: url)
-            }
+            DispatchQueue.main.async { loadSourceScreenshot(from: url) }
         }
     }
 
@@ -449,10 +516,10 @@ struct AppShotsView: View {
         }
         sourceImage = image
         sourceImagePath = url.path
-        sourceImageName = url.lastPathComponent
         generatedImage = nil
         generatedImagePath = nil
         generationError = nil
+        showResult = false
     }
 
     private func generate() async {
@@ -475,19 +542,15 @@ struct AppShotsView: View {
             let resultPath: String
             if let themeId = selectedThemeId {
                 resultPath = try await ASCManager.appShotsThemesApply(
-                    themeId: themeId,
-                    templateId: templateId,
-                    screenshot: screenshotPath,
+                    themeId: themeId, templateId: templateId, screenshot: screenshotPath,
                     headline: headline.isEmpty ? nil : headline,
                     subtitle: subtitle.isEmpty ? nil : subtitle,
                     imageOutput: outputPath
                 )
             } else {
                 resultPath = try await ASCManager.appShotsTemplatesApply(
-                    templateId: templateId,
-                    screenshot: screenshotPath,
-                    headline: headline,
-                    subtitle: subtitle.isEmpty ? nil : subtitle,
+                    templateId: templateId, screenshot: screenshotPath,
+                    headline: headline, subtitle: subtitle.isEmpty ? nil : subtitle,
                     imageOutput: outputPath
                 )
             }
@@ -496,13 +559,51 @@ struct AppShotsView: View {
             if let image = NSImage(contentsOfFile: expandedPath) {
                 generatedImage = image
                 generatedImagePath = expandedPath
+                showResult = true
             } else {
-                generationError = "Generated file not found at: \(expandedPath)"
+                generationError = "File not found: \(expandedPath)"
             }
         } catch {
             generationError = error.localizedDescription
         }
 
         isGenerating = false
+    }
+}
+
+// MARK: - WKWebView Wrapper
+
+struct AppShotsGalleryWebView: NSViewRepresentable {
+    let html: String
+    let selectedTemplateId: String?
+    let onSelectTemplate: (String) -> Void
+
+    func makeNSView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        config.userContentController.add(context.coordinator, name: "templateSelected")
+        let webView = WKWebView(frame: .zero, configuration: config)
+        webView.setValue(false, forKey: "drawsBackground")
+        context.coordinator.webView = webView
+        webView.loadHTMLString(html, baseURL: nil)
+        return webView
+    }
+
+    func updateNSView(_ webView: WKWebView, context: Context) {
+        if let id = selectedTemplateId {
+            webView.evaluateJavaScript("if(typeof setSelected==='function')setSelected('\(id)')") { _, _ in }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(onSelect: onSelectTemplate) }
+
+    class Coordinator: NSObject, WKScriptMessageHandler {
+        weak var webView: WKWebView?
+        let onSelect: (String) -> Void
+        init(onSelect: @escaping (String) -> Void) { self.onSelect = onSelect }
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            if message.name == "templateSelected", let id = message.body as? String {
+                DispatchQueue.main.async { self.onSelect(id) }
+            }
+        }
     }
 }
