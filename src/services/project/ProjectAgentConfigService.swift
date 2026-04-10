@@ -479,7 +479,7 @@ struct ProjectAgentConfigService {
         try? Self.blitzRulesContent().write(to: blitzRules, atomically: true, encoding: .utf8)
 
         let teenybaseRules = rulesDir.appendingPathComponent("teenybase.md")
-        try? Self.teenybaseRulesContent(projectDir: projectDir, projectType: projectType)
+        try? Self.teenybaseRulesContent(projectDir: projectDir)
             .write(to: teenybaseRules, atomically: true, encoding: .utf8)
 
         ensureReviewerAgent(projectDir: projectDir)
@@ -705,37 +705,13 @@ struct ProjectAgentConfigService {
         return content
     }
 
-    private static func teenybaseRulesContent(projectDir: URL, projectType: ProjectType) -> String {
-        let fm = FileManager.default
+    private static func teenybaseRulesContent(projectDir: URL) -> String {
 
-        let backendDir: URL
-        let schemaPath: String
-        let commandPrefix: String
-        switch projectType {
-        case .reactNative:
-            backendDir = projectDir
-            schemaPath = "teenybase.ts"
-            commandPrefix = ""
-        case .swift, .flutter:
-            backendDir = projectDir.appendingPathComponent("backend")
-            schemaPath = "backend/teenybase.ts"
-            commandPrefix = "cd backend && "
-        }
-
-        let hasBackend = fm.fileExists(atPath: backendDir.appendingPathComponent("teenybase.ts").path)
-        let templateName = hasBackend ? "teenybase-rules-backend" : "teenybase-rules-no-backend"
-
-        guard let url = Bundle.appResources.url(forResource: templateName, withExtension: "md"),
+        guard let url = Bundle.appResources.url(forResource: "teenybase-rules", withExtension: "md"),
               var content = try? String(contentsOf: url, encoding: .utf8) else {
-            return "# Teenybase Backend\n"
+            return "For backend, run npm i -g teenybase and run teenybase docs to get started adding teenybase backend to this project"
         }
 
-        content = content.replacingOccurrences(
-            of: "{{DEVVARS_PATH}}",
-            with: backendDir.appendingPathComponent(".dev.vars").path
-        )
-        content = content.replacingOccurrences(of: "{{SCHEMA_PATH}}", with: schemaPath)
-        content = content.replacingOccurrences(of: "{{COMMAND_PREFIX}}", with: commandPrefix)
         return content
     }
 }
