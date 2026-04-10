@@ -286,13 +286,40 @@ struct AppShotsView: View {
     }
 
     // MARK: - Right Panel
+    //
+    // Three states:
+    //   1. Gallery — browsing templates (default)
+    //   2. Preview — showing source screenshot while generating, with overlay
+    //   3. Result — showing generated screenshot
+    //
+    // "Templates" / cancel → back to gallery.
 
-    @ViewBuilder
+    private enum RightPanelMode {
+        case gallery
+        case preview   // generating — shows source screenshot + overlay
+        case result    // done — shows generated screenshot
+    }
+
+    private var rightPanelMode: RightPanelMode {
+        if showResult && generatedImage != nil { return .result }
+        if isGenerating || generationError != nil { return .preview }
+        return .gallery
+    }
+
     private var rightPanel: some View {
-        if showResult, let generatedImage {
-            resultView(generatedImage)
-        } else {
+        ZStack {
+            // Gallery always exists underneath to keep WKWebView alive
             galleryView
+                .opacity(rightPanelMode == .gallery ? 1 : 0)
+                .allowsHitTesting(rightPanelMode == .gallery)
+
+            if rightPanelMode == .preview {
+                previewView
+            }
+
+            if rightPanelMode == .result {
+                resultView
+            }
         }
     }
 
@@ -317,63 +344,69 @@ struct AppShotsView: View {
                     }
                 )
             }
-
-            // Loading overlay during generation
-            if isGenerating || generationError != nil {
-                ZStack {
-                    Color.black.opacity(0.6)
-                        .ignoresSafeArea()
-
-                    VStack(spacing: 16) {
-                        if isGenerating {
-                            ProgressView()
-                                .controlSize(.large)
-                                .tint(.white)
-                            Text("Generating\u{2026}")
-                                .font(.title3.weight(.medium))
-                                .foregroundStyle(.white)
-                            if selectedThemeId != nil {
-                                Text("AI theme styling may take a moment")
-                                    .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.6))
-                            }
-                        } else if let error = generationError {
-                            Image(systemName: "exclamationmark.triangle")
-                                .font(.system(size: 32))
-                                .foregroundStyle(.orange)
-                            Text("Generation Failed")
-                                .font(.title3.weight(.medium))
-                                .foregroundStyle(.white)
-                            Text(error)
-                                .font(.caption)
-                                .foregroundStyle(.white.opacity(0.7))
-                                .multilineTextAlignment(.center)
-                                .frame(maxWidth: 300)
-                            Button("Dismiss") {
-                                generationError = nil
-                            }
-                            .buttonStyle(.bordered)
-                            .tint(.white)
-                        }
-                    }
-                    .padding(32)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-                }
-                .transition(.opacity)
-                .animation(.easeInOut(duration: 0.2), value: isGenerating)
-            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: - Result View
+    // MARK: - Preview View (generating — shows source screenshot + overlay)
 
-    private func resultView(_ image: NSImage) -> some View {
+    private var previewView: some View {
+        ZStack {
+            Color(.windowBackgroundColor)
+
+            // Show source screenshot as background
+            if let src = sourceImage {
+                Image(nsImage: src)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .frame(maxWidth: 500)
+                    .opacity(0.4)
+            }
+
+            // Overlay
+            VStack(spacing: 16) {
+                if isGenerating {
+                    ProgressView()
+                        .controlSize(.large)
+                    Text("Generating\u{2026}")
+                        .font(.title3.weight(.medium))
+                    if selectedThemeId != nil {
+                        Text("AI theme styling may take a moment")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else if let error = generationError {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 32))
+                        .foregroundStyle(.orange)
+                    Text("Generation Failed")
+                        .font(.title3.weight(.medium))
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 300)
+                    Button("Back to Templates") {
+                        generationError = nil
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+            .padding(32)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Result View (done — shows generated screenshot)
+
+    private var resultView: some View {
         VStack(spacing: 0) {
             // Toolbar
             HStack {
                 Button {
                     showResult = false
+                    generatedImage = nil
                 } label: {
                     Label("Templates", systemImage: "chevron.left")
                         .font(.callout)
@@ -398,16 +431,17 @@ struct AppShotsView: View {
 
             Divider()
 
-            // Large preview
             ScrollView {
                 VStack(spacing: 16) {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .shadow(color: .black.opacity(0.2), radius: 12, y: 6)
-                        .frame(maxWidth: 500)
-                        .padding(.top, 20)
+                    if let image = generatedImage {
+                        Image(nsImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                            .shadow(color: .black.opacity(0.2), radius: 12, y: 6)
+                            .frame(maxWidth: 500)
+                            .padding(.top, 20)
+                    }
 
                     if let path = generatedImagePath {
                         Text(URL(fileURLWithPath: path).lastPathComponent)
@@ -419,6 +453,7 @@ struct AppShotsView: View {
                 .padding(24)
             }
         }
+        .background(Color(.windowBackgroundColor))
     }
 
     // MARK: - Data Loading
@@ -676,18 +711,23 @@ struct AppShotsView: View {
             }
 
             let expandedPath = (resultPath as NSString).expandingTildeInPath
+            Log("[AppShots] resultPath=\(resultPath) expanded=\(expandedPath) exists=\(FileManager.default.fileExists(atPath: expandedPath))")
             if let image = NSImage(contentsOfFile: expandedPath) {
                 generatedImage = image
                 generatedImagePath = expandedPath
                 showResult = true
+                Log("[AppShots] success showResult=true")
             } else {
                 generationError = "File not found: \(expandedPath)"
+                Log("[AppShots] file not loadable at \(expandedPath)")
             }
         } catch {
             generationError = error.localizedDescription
+            Log("[AppShots] error: \(error)")
         }
 
         isGenerating = false
+        Log("[AppShots] done showResult=\(showResult) hasImage=\(generatedImage != nil) error=\(generationError ?? "nil")")
     }
 
     // MARK: - Bezel Compositing
