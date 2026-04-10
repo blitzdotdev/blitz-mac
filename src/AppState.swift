@@ -118,6 +118,7 @@ enum AppSubTab: String, CaseIterable, Identifiable {
     case database
     case tests
     case icon
+    case appShots
 
     /// Tabs currently shown in the UI (database is hidden for now).
     static let visibleCases: [AppSubTab] = allCases.filter { $0 != .database }
@@ -131,6 +132,7 @@ enum AppSubTab: String, CaseIterable, Identifiable {
         case .database: "Database"
         case .tests: "Tests"
         case .icon: "Icon"
+        case .appShots: "App Shots"
         }
     }
 
@@ -141,6 +143,7 @@ enum AppSubTab: String, CaseIterable, Identifiable {
         case .database: "cylinder"
         case .tests: "checkmark.circle"
         case .icon: "photo.badge.plus"
+        case .appShots: "camera.on.rectangle"
         }
     }
 }

@@ -89,6 +89,8 @@ struct AppTabView: View {
             TestsView(appState: appState)
         case .icon:
             AssetsView(appState: appState)
+        case .appShots:
+            AppShotsView(appState: appState)
         }
     }
 }
