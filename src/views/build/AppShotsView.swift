@@ -354,9 +354,9 @@ struct AppShotsView: View {
         ZStack {
             Color(.windowBackgroundColor)
 
-            // Show source screenshot as background
-            if let src = sourceImage {
-                Image(nsImage: src)
+            // Show last result if available, otherwise source screenshot
+            if let preview = generatedImage ?? sourceImage {
+                Image(nsImage: preview)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
@@ -678,8 +678,7 @@ struct AppShotsView: View {
 
         isGenerating = true
         generationError = nil
-        generatedImage = nil
-        generatedImagePath = nil
+        // Keep generatedImage — shows as preview background during generation
 
         if let dir = outputDir {
             try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
