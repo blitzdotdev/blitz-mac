@@ -27,7 +27,7 @@ struct ASCVersionPickerBar<Content: View>: View {
 
             Spacer()
 
-            if asc.canCreateVersion, let onCreateUpdate {
+            if asc.canCreateUpdate, let onCreateUpdate {
                 Button("Create New Update") {
                     onCreateUpdate()
                 }

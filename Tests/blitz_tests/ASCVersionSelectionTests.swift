@@ -34,6 +34,22 @@ import Testing
 }
 
 @MainActor
+@Test func firstVersionWithoutLiveReleaseDoesNotAllowCreatingUpdate() {
+    let manager = ASCManager()
+    manager.appStoreVersions = [
+        makeVersion(id: "initial", versionString: "1.0", state: "PREPARE_FOR_SUBMISSION", createdDate: "2026-03-20T00:00:00Z"),
+    ]
+
+    let selectedVersionId = manager.syncSelectedVersion()
+
+    #expect(selectedVersionId == "initial")
+    #expect(manager.selectedVersion?.id == "initial")
+    #expect(manager.liveVersion == nil)
+    #expect(manager.currentUpdateVersion?.id == "initial")
+    #expect(!manager.canCreateUpdate)
+}
+
+@MainActor
 @Test func historicalRejectedVersionDoesNotOverrideNewerLiveVersion() {
     let manager = ASCManager()
     manager.appStoreVersions = [
