@@ -317,6 +317,51 @@ struct AppShotsView: View {
                     }
                 )
             }
+
+            // Loading overlay during generation
+            if isGenerating || generationError != nil {
+                ZStack {
+                    Color.black.opacity(0.6)
+                        .ignoresSafeArea()
+
+                    VStack(spacing: 16) {
+                        if isGenerating {
+                            ProgressView()
+                                .controlSize(.large)
+                                .tint(.white)
+                            Text("Generating\u{2026}")
+                                .font(.title3.weight(.medium))
+                                .foregroundStyle(.white)
+                            if selectedThemeId != nil {
+                                Text("AI theme styling may take a moment")
+                                    .font(.caption)
+                                    .foregroundStyle(.white.opacity(0.6))
+                            }
+                        } else if let error = generationError {
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.system(size: 32))
+                                .foregroundStyle(.orange)
+                            Text("Generation Failed")
+                                .font(.title3.weight(.medium))
+                                .foregroundStyle(.white)
+                            Text(error)
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.7))
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: 300)
+                            Button("Dismiss") {
+                                generationError = nil
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.white)
+                        }
+                    }
+                    .padding(32)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                }
+                .transition(.opacity)
+                .animation(.easeInOut(duration: 0.2), value: isGenerating)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -443,13 +488,13 @@ struct AppShotsView: View {
     }
 
     private func loadFrameInsets() {
-        guard let url = Bundle.main.url(forResource: "insets", withExtension: "json", subdirectory: "frames"),
+        let bundle = Bundle.appResources
+        guard let url = bundle.url(forResource: "insets", withExtension: "json"),
               let data = try? Data(contentsOf: url),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: [String: Int]] else { return }
         var insets: [String: FrameInset] = [:]
         for (name, vals) in json {
-            // Only include devices that have a frame PNG bundled
-            guard Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "frames") != nil else { continue }
+            guard bundle.url(forResource: name, withExtension: "png") != nil else { continue }
             insets[name] = FrameInset(
                 outputWidth: vals["outputWidth"] ?? 0,
                 outputHeight: vals["outputHeight"] ?? 0,
@@ -651,8 +696,7 @@ struct AppShotsView: View {
     private func compositeBezel(screenshotPath: String) -> String? {
         guard let inset = frameInsets[selectedDevice] else { return nil }
 
-        // Find frame PNG from bundle
-        guard let frameURL = Bundle.main.url(forResource: selectedDevice, withExtension: "png", subdirectory: "frames"),
+        guard let frameURL = Bundle.appResources.url(forResource: selectedDevice, withExtension: "png"),
               let frameImage = NSImage(contentsOf: frameURL),
               let frameCG = frameImage.cgImage(forProposedRect: nil, context: nil, hints: nil),
               let screenshotImage = NSImage(contentsOfFile: screenshotPath),

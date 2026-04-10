@@ -146,7 +146,7 @@ extension ASCManager {
         if let canvasHeight { args += ["--canvas-height", "\(canvasHeight)"] }
         if let imageOutput { args += ["--image-output", imageOutput] }
 
-        let output = try await ProcessRunner.run("asc", arguments: args, timeout: 120)
+        let output = try await ProcessRunner.run("asc", arguments: args, timeout: 300)
         return parseImageOutputPath(from: output, fallback: imageOutput)
     }
 
@@ -213,22 +213,33 @@ extension ASCManager {
 
     /// Parse the image output path from CLI output.
     nonisolated private static func parseImageOutputPath(from output: String, fallback: String?) -> String {
-        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Try parsing as JSON first
-        if let data = trimmed.data(using: .utf8),
+        // Extract JSON from output (may have plugin loading lines before it)
+        let jsonStr = extractJSON(from: output)
+        if let data = jsonStr.data(using: .utf8),
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            if let path = json["outputPath"] as? String { return path }
-            if let path = json["path"] as? String { return path }
-            if let path = json["output"] as? String { return path }
+            if let path = json["outputPath"] as? String { return resolvePath(path) }
+            if let path = json["exported"] as? String { return resolvePath(path) }
+            if let path = json["path"] as? String { return resolvePath(path) }
+            if let path = json["output"] as? String { return resolvePath(path) }
         }
         // Check each line for a file path
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
         for line in trimmed.split(separator: "\n").reversed() {
             let l = line.trimmingCharacters(in: .whitespaces)
             if l.hasSuffix(".png") && (l.hasPrefix("/") || l.hasPrefix(".")) {
-                return l
+                return resolvePath(l)
             }
         }
         return fallback ?? trimmed
+    }
+
+    /// Resolve a potentially relative path to absolute.
+    nonisolated private static func resolvePath(_ path: String) -> String {
+        if path.hasPrefix("/") { return path }
+        if path.hasPrefix("~") { return (path as NSString).expandingTildeInPath }
+        // Relative path — resolve from home directory
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(path).path
     }
 
     /// Parse the generate command output for the enhanced image path.
