@@ -54,6 +54,51 @@ extension ASCManager {
             }
     }
 
+    func latestSubmissionItems(forVersionId versionId: String?) -> [ASCReviewSubmissionItem] {
+        let normalizedVersionId = trimmed(versionId)
+        guard !normalizedVersionId.isEmpty else { return latestSubmissionItems }
+
+        for submission in reviewSubmissions {
+            let items = reviewSubmissionItemsBySubmissionId[submission.id] ?? []
+            if items.contains(where: { trimmed($0.appStoreVersionId) == normalizedVersionId }) {
+                return items
+            }
+        }
+
+        return []
+    }
+
+    func hasRejectedSubmissionHistory(forVersionId versionId: String?) -> Bool {
+        let normalizedVersionId = trimmed(versionId)
+        guard !normalizedVersionId.isEmpty else { return false }
+
+        for submission in reviewSubmissions {
+            let items = reviewSubmissionItemsBySubmissionId[submission.id] ?? []
+            if items.contains(where: {
+                trimmed($0.appStoreVersionId) == normalizedVersionId
+                    && ASCReleaseStatus.normalize($0.attributes.state) == "REJECTED"
+            }) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    func latestRejectedSubmissionVersion(from versions: [ASCAppStoreVersion]) -> ASCAppStoreVersion? {
+        for submission in reviewSubmissions {
+            let items = reviewSubmissionItemsBySubmissionId[submission.id] ?? []
+            if let versionId = items.first(where: {
+                ASCReleaseStatus.normalize($0.attributes.state) == "REJECTED"
+            })?.appStoreVersionId,
+               let version = versions.first(where: { $0.id == versionId }) {
+                return version
+            }
+        }
+
+        return nil
+    }
+
     func refreshReviewSubmissionData(appId: String, service: AppStoreConnectService) async {
         await ASCUpdateLogger.shared.event("review_submission_refresh_started", metadata: [
             "appId": appId,

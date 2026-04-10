@@ -82,6 +82,10 @@ extension ASCManager {
             return feedbackVersion
         }
 
+        if hasRejectedSubmissionHistory(forVersionId: selectedVersion.id) {
+            return selectedVersion
+        }
+
         let normalizedState = ASCReleaseStatus.normalize(selectedVersion.attributes.appStoreState)
         guard normalizedState == "REJECTED" || normalizedState == "METADATA_REJECTED" else {
             return nil

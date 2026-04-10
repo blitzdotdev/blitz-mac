@@ -95,7 +95,9 @@ struct ReviewView: View {
     @ViewBuilder
     private var reviewContent: some View {
         let selectedVersion = asc.selectedVersion
-        let feedbackVersion = asc.feedbackDisplayVersion(from: asc.appStoreVersions)
+        let rejectionCardVersion = asc.rejectionCardVersionForSelectedVersion(
+            from: asc.appStoreVersions
+        )
         let isLoading = asc.isTabLoading(.review)
 
         VStack(spacing: 0) {
@@ -135,10 +137,9 @@ struct ReviewView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 10))
 
                     // Rejection detail — shown when rejected, or when cached feedback persists after re-submission
-                    if let feedbackVersion,
-                       feedbackVersion.id == version.id
-                        || asc.latestSubmissionItems.contains(where: { $0.attributes.state == "REJECTED" }) {
-                        RejectionCardView(asc: asc, version: feedbackVersion) {
+                    if let rejectionCardVersion,
+                       rejectionCardVersion.id == version.id {
+                        RejectionCardView(asc: asc, version: rejectionCardVersion) {
                             Text("Update your review info below and re-submit when ready.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -673,8 +674,7 @@ struct ReviewView: View {
 
     /// Check if a version was previously rejected (has rejected submission items or cached feedback)
     private func wasVersionPreviouslyRejected(_ version: ASCAppStoreVersion) -> Bool {
-        // If we have rejected submission items, the latest review was a rejection
-        if asc.latestSubmissionItems.contains(where: { $0.attributes.state == "REJECTED" }) {
+        if asc.hasRejectedSubmissionHistory(forVersionId: version.id) {
             return true
         }
         if asc.hasIrisFeedback(forVersionString: version.attributes.versionString) {

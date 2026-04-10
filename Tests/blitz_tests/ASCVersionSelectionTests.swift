@@ -145,6 +145,51 @@ import Testing
 }
 
 @MainActor
+@Test func overviewRejectionCardPersistsForHistoricalRejectedSubmissionWithoutIrisFeedback() {
+    let manager = ASCManager()
+    manager.appStoreVersions = [
+        makeVersion(id: "live", versionString: "2.0", state: "READY_FOR_SALE", createdDate: "2026-03-20T00:00:00Z"),
+    ]
+    manager.selectedVersionId = "live"
+    manager.reviewSubmissions = [
+        makeReviewSubmission(id: "submission-accepted", state: "ACCEPTED", submittedDate: "2026-03-06T00:00:00Z"),
+        makeReviewSubmission(id: "submission-rejected", state: "UNRESOLVED_ISSUES", submittedDate: "2026-03-01T00:00:00Z"),
+    ]
+    manager.reviewSubmissionItemsBySubmissionId = [
+        "submission-accepted": [
+            makeSubmissionItem(id: "accepted-item", state: "APPROVED", versionId: "live")
+        ],
+        "submission-rejected": [
+            makeSubmissionItem(id: "rejected-item", state: "REJECTED", versionId: "live")
+        ],
+    ]
+
+    #expect(manager.rejectionCardVersionForSelectedVersion(from: manager.appStoreVersions)?.id == "live")
+    #expect(manager.feedbackDisplayVersion(from: manager.appStoreVersions)?.id == "live")
+}
+
+@MainActor
+@Test func latestSubmissionItemsForVersionIgnoreUnrelatedNewerSubmission() {
+    let manager = ASCManager()
+    manager.reviewSubmissions = [
+        makeReviewSubmission(id: "submission-other", state: "ACCEPTED", submittedDate: "2026-03-06T00:00:00Z"),
+        makeReviewSubmission(id: "submission-target", state: "UNRESOLVED_ISSUES", submittedDate: "2026-03-01T00:00:00Z"),
+    ]
+    manager.reviewSubmissionItemsBySubmissionId = [
+        "submission-other": [
+            makeSubmissionItem(id: "other-item", state: "APPROVED", versionId: "other-version")
+        ],
+        "submission-target": [
+            makeSubmissionItem(id: "target-item", state: "REJECTED", versionId: "target-version")
+        ],
+    ]
+
+    #expect(manager.latestSubmissionItems(forVersionId: "target-version").map(\.id) == ["target-item"])
+    #expect(manager.hasRejectedSubmissionHistory(forVersionId: "target-version"))
+    #expect(!manager.hasRejectedSubmissionHistory(forVersionId: "other-version"))
+}
+
+@MainActor
 @Test func screenshotCacheSeparatesDifferentVersionsForSameLocale() {
     let manager = ASCManager()
     manager.appStoreVersions = [
@@ -271,6 +316,38 @@ private func makeSubmissionItem(id: String, state: String) -> ASCReviewSubmissio
             createdDate: nil
         ),
         relationships: nil
+    )
+}
+
+private func makeSubmissionItem(id: String, state: String, versionId: String?) -> ASCReviewSubmissionItem {
+    ASCReviewSubmissionItem(
+        id: id,
+        attributes: ASCReviewSubmissionItem.Attributes(
+            state: state,
+            resolved: nil,
+            createdDate: nil
+        ),
+        relationships: versionId.map {
+            ASCReviewSubmissionItem.Relationships(
+                appStoreVersion: ASCReviewSubmissionItem.Relationships.ToOneRelationship(
+                    data: ASCReviewSubmissionItem.Relationships.ResourceIdentifier(
+                        type: "appStoreVersions",
+                        id: $0
+                    )
+                )
+            )
+        }
+    )
+}
+
+private func makeReviewSubmission(id: String, state: String, submittedDate: String) -> ASCReviewSubmission {
+    ASCReviewSubmission(
+        id: id,
+        attributes: ASCReviewSubmission.Attributes(
+            state: state,
+            submittedDate: submittedDate,
+            platform: nil
+        )
     )
 }
 

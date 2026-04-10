@@ -98,16 +98,18 @@ struct RejectionCardView<Footer: View>: View {
 
     @ViewBuilder
     private var reviewItems: some View {
-        if !asc.latestSubmissionItems.isEmpty {
-            let rejected = asc.latestSubmissionItems.filter { $0.attributes.state == "REJECTED" }
-            let accepted = asc.latestSubmissionItems.filter { $0.attributes.state == "ACCEPTED" || $0.attributes.state == "APPROVED" }
+        let submissionItems = asc.latestSubmissionItems(forVersionId: version.id)
+
+        if !submissionItems.isEmpty {
+            let rejected = submissionItems.filter { $0.attributes.state == "REJECTED" }
+            let accepted = submissionItems.filter { $0.attributes.state == "ACCEPTED" || $0.attributes.state == "APPROVED" }
 
             if !rejected.isEmpty || !accepted.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Review Items")
                         .font(.callout.weight(.semibold))
 
-                    ForEach(asc.latestSubmissionItems) { item in
+                    ForEach(submissionItems) { item in
                         HStack(spacing: 8) {
                             Image(systemName: item.attributes.state == "REJECTED" ? "xmark.circle.fill" : "checkmark.circle.fill")
                                 .foregroundStyle(item.attributes.state == "REJECTED" ? .red : .green)

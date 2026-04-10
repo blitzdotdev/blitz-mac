@@ -142,6 +142,9 @@ extension ASCManager {
         }) {
             return rejectedVersion
         }
+        if let rejectedVersion = latestRejectedSubmissionVersion(from: versions) {
+            return rejectedVersion
+        }
         if let versionString = latestFeedbackCycle(forVersionString: nil)?.versionString {
             return versions.first(where: { $0.attributes.versionString == versionString })
         }
