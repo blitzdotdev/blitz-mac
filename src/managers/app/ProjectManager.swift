@@ -14,7 +14,7 @@ final class ProjectManager {
         let storage = ProjectStorage()
         projects = await storage.listProjects()
 
-        guard !hasTrackedInventory else { return }
+        guard !hasTrackedInventory, !projects.isEmpty else { return }
         hasTrackedInventory = true
         for project in projects {
             AnalyticsService.trackProjectInventory(projectType: project.type)
