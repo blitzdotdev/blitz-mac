@@ -14,6 +14,60 @@ import Testing
     #expect(normalized["demoAccountRequired"] == "false")
 }
 
+@Test func analyticsResultTreatsErrorTextPayloadAsFailure() {
+    let response: [String: Any] = [
+        "content": [[
+            "type": "text",
+            "text": "Error: missing required field",
+        ]]
+    ]
+
+    #expect(MCPExecutor.isSuccessfulAnalyticsResult(response) == false)
+}
+
+@Test func analyticsResultTreatsJSONSuccessFalsePayloadAsFailure() {
+    let response: [String: Any] = [
+        "content": [[
+            "type": "text",
+            "text": #"{"success":false,"message":"cancelled"}"#,
+        ]]
+    ]
+
+    #expect(MCPExecutor.isSuccessfulAnalyticsResult(response) == false)
+}
+
+@Test func analyticsResultTreatsJSONSuccessTruePayloadAsSuccess() {
+    let response: [String: Any] = [
+        "content": [[
+            "type": "text",
+            "text": #"{"success":true,"message":"ok"}"#,
+        ]]
+    ]
+
+    #expect(MCPExecutor.isSuccessfulAnalyticsResult(response) == true)
+}
+
+@Test func analyticsResultDefaultsToSuccessWhenPayloadHasNoFailureSignal() {
+    let response: [String: Any] = [
+        "content": [[
+            "type": "text",
+            "text": #"{"opened":true}"#,
+        ]]
+    ]
+
+    #expect(MCPExecutor.isSuccessfulAnalyticsResult(response) == true)
+}
+
+@Test func mcpToolContextPropagatesToChildTasks() async {
+    let inheritedCommandType = await AnalyticsService.withMCPToolContext(commandType: "asc_web_auth") {
+        await Task {
+            AnalyticsService.currentMCPToolCommandType
+        }.value
+    }
+
+    #expect(inheritedCommandType == "asc_web_auth")
+}
+
 @Test func reviewContactMissingRequiredFieldsIncludesPhoneForPartialDraft() {
     let missing = MCPExecutor.missingRequiredReviewContactFields(from: [
         "contactFirstName": "Taylor",

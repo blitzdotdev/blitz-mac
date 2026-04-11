@@ -94,6 +94,8 @@ enum AnalyticsEventSource: String {
 }
 
 enum AnalyticsService {
+    @TaskLocal static var currentMCPToolCommandType: String?
+
     private static let session = URLSession.shared
     private static let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
@@ -179,6 +181,10 @@ enum AnalyticsService {
         success: Bool,
         startedAt: Date
     ) {
+        if currentMCPToolCommandType != nil {
+            return
+        }
+
         trackASCUsage(
             source: .blitzManaged,
             commandType: commandType,
@@ -187,7 +193,61 @@ enum AnalyticsService {
         )
     }
 
+    static func withMCPToolContext<T>(
+        commandType: String,
+        operation: () async throws -> T
+    ) async rethrows -> T {
+        try await $currentMCPToolCommandType.withValue(commandType) {
+            try await operation()
+        }
+    }
+
+    static func trackBlitzManagedMCPToolStart(commandType: String) {
+        trackMCPToolStart(source: .blitzManaged, commandType: commandType)
+    }
+
+    static func trackBlitzManagedMCPToolCompletion(
+        commandType: String,
+        success: Bool,
+        startedAt: Date
+    ) {
+        trackMCPToolCompletion(
+            source: .blitzManaged,
+            commandType: commandType,
+            success: success,
+            startedAt: startedAt
+        )
+    }
+
     static func trackASCUsage(
+        source: AnalyticsEventSource,
+        commandType: String,
+        success: Bool,
+        startedAt: Date
+    ) {
+        trackMCPToolCompletion(
+            source: source,
+            commandType: commandType,
+            success: success,
+            startedAt: startedAt
+        )
+    }
+
+    private static func trackMCPToolStart(
+        source: AnalyticsEventSource,
+        commandType: String
+    ) {
+        track(
+            eventName: "asc_usage",
+            source: source.rawValue,
+            commandType: commandType,
+            projectType: nil,
+            success: nil,
+            durationMS: nil
+        )
+    }
+
+    private static func trackMCPToolCompletion(
         source: AnalyticsEventSource,
         commandType: String,
         success: Bool,

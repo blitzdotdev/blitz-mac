@@ -227,6 +227,30 @@ actor MCPExecutor {
     // MARK: - Tool Dispatch
 
     func executeTool(name: String, arguments: [String: Any]) async throws -> [String: Any] {
+        let startedAt = Date()
+        AnalyticsService.trackBlitzManagedMCPToolStart(commandType: name)
+
+        do {
+            let result = try await AnalyticsService.withMCPToolContext(commandType: name) {
+                try await dispatchTool(name: name, arguments: arguments)
+            }
+            AnalyticsService.trackBlitzManagedMCPToolCompletion(
+                commandType: name,
+                success: Self.isSuccessfulAnalyticsResult(result),
+                startedAt: startedAt
+            )
+            return result
+        } catch {
+            AnalyticsService.trackBlitzManagedMCPToolCompletion(
+                commandType: name,
+                success: false,
+                startedAt: startedAt
+            )
+            throw error
+        }
+    }
+
+    private func dispatchTool(name: String, arguments: [String: Any]) async throws -> [String: Any] {
         switch name {
         case "app_get_state":
             return try await executeAppGetState()
@@ -346,6 +370,33 @@ actor MCPExecutor {
             return mcpText(str)
         }
         return mcpText("{}")
+    }
+
+    static func isSuccessfulAnalyticsResult(_ response: [String: Any]) -> Bool {
+        guard let content = response["content"] as? [[String: Any]] else {
+            return true
+        }
+
+        for item in content {
+            guard item["type"] as? String == "text",
+                  let rawText = item["text"] as? String else {
+                continue
+            }
+
+            let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if text.hasPrefix("Error:") {
+                return false
+            }
+
+            guard let data = text.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let success = json["success"] as? Bool else {
+                continue
+            }
+            return success
+        }
+
+        return true
     }
 
     /// Check for ASC write error and return it, clearing pending form values.
