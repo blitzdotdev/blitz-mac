@@ -16,8 +16,10 @@ struct DashboardView: View {
     /// restart the network hydration task. Local project changes are linked in
     /// memory and should not cancel an in-flight ASC fetch.
     private var summaryHydrationKey: String {
-        let credentialsKey = dashboardAccountKey ?? "no-creds"
-        return "\(credentialsKey):\(appState.ascManager.credentialActivationRevision)"
+        DashboardSummaryStore.cacheKey(
+            accountKey: dashboardAccountKey,
+            credentialActivationRevision: appState.ascManager.credentialActivationRevision
+        )
     }
 
     var body: some View {
@@ -314,10 +316,6 @@ struct DashboardView: View {
 
     private func hydrateSummary() async {
         let hydrationKey = summaryHydrationKey
-        if dashboardSummary.isLoading(for: hydrationKey) || !dashboardSummary.shouldRefresh(for: hydrationKey) {
-            return
-        }
-
         // Make sure credentials are loaded up front — even if there is no active project,
         // the dashboard should show the user's ASC apps as soon as possible.
         appState.ascManager.loadStoredCredentialsIfNeeded()
@@ -327,84 +325,11 @@ struct DashboardView: View {
             return
         }
 
-        dashboardSummary.beginLoading(for: hydrationKey, accountKey: accountKey)
-
-        // Fetch every app in the ASC account up front. This is the "all my apps show up
-        // in an instant" piece — a single /apps request seeds the whole dashboard.
-        let allAscApps: [ASCApp]
-        do {
-            allAscApps = try await service.fetchAllApps()
-        } catch {
-            dashboardSummary.markUnavailable(for: hydrationKey, accountKey: accountKey)
-            return
-        }
-
-        if Task.isCancelled {
-            dashboardSummary.cancelLoading(for: hydrationKey)
-            return
-        }
-
-        var nextSummary = ASCDashboardSummary.empty
-        var nextStatuses: [String: ASCDashboardProjectStatus] = [:]
-
-        // Fetch the version state for each app in parallel but bounded — we want the full
-        // list visible fast, but we also want the live/pending/rejected counts populated.
-        // Use a TaskGroup of up to `concurrencyLimit` simultaneous requests.
-        let concurrencyLimit = 6
-        var perAppStatuses: [String: ASCDashboardProjectStatus] = [:]
-        await withTaskGroup(of: (String, ASCDashboardProjectStatus?).self) { group in
-            var iterator = allAscApps.makeIterator()
-
-            func enqueueNext() {
-                guard let next = iterator.next() else { return }
-                let appId = next.id
-                group.addTask {
-                    do {
-                        let versions = try await service.fetchAppStoreVersions(appId: appId)
-                        return (appId, ASCDashboardProjectStatus(versions: versions))
-                    } catch {
-                        return (appId, nil)
-                    }
-                }
-            }
-
-            for _ in 0..<min(concurrencyLimit, allAscApps.count) {
-                enqueueNext()
-            }
-
-            while let result = await group.next() {
-                if let status = result.1 {
-                    perAppStatuses[result.0] = status
-                }
-                if Task.isCancelled { break }
-                enqueueNext()
-            }
-        }
-
-        if Task.isCancelled {
-            dashboardSummary.cancelLoading(for: hydrationKey)
-            return
-        }
-
-        for app in allAscApps {
-            let status = perAppStatuses[app.id] ?? .empty
-            nextSummary.include(status)
-            nextStatuses[app.bundleId] = status
-        }
-
-        let combinedRows = dashboardSummary.rows(
-            linking: appState.projectManager.projects,
-            ascApps: allAscApps,
-            projectStatuses: nextStatuses
-        )
-
-        dashboardSummary.store(
-            summary: nextSummary,
-            projectStatuses: nextStatuses,
-            ascApps: allAscApps,
-            appRows: combinedRows,
+        await dashboardSummary.refresh(
             for: hydrationKey,
-            accountKey: accountKey
+            accountKey: accountKey,
+            service: service,
+            projects: appState.projectManager.projects
         )
     }
 

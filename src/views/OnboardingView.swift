@@ -661,6 +661,7 @@ struct OnboardingView: View {
                     projectId: appState.activeProjectId ?? "onboarding",
                     bundleId: appState.activeProject?.metadata.bundleIdentifier
                 )
+                Task { await prewarmDashboardCache() }
                 withAnimation(.easeInOut(duration: 0.3)) {
                     ascSaveSuccess = true
                 }
@@ -702,6 +703,23 @@ struct OnboardingView: View {
             terminal: terminal,
             prompt: prompt,
             skipPermissions: skipAgentPermissions
+        )
+    }
+
+    @MainActor
+    private func prewarmDashboardCache() async {
+        let accountKey = DashboardSummaryStore.accountKey(for: appState.ascManager.credentials)
+        guard let service = appState.ascManager.service else { return }
+
+        await DashboardSummaryStore.shared.refresh(
+            for: DashboardSummaryStore.cacheKey(
+                accountKey: accountKey,
+                credentialActivationRevision: appState.ascManager.credentialActivationRevision
+            ),
+            accountKey: accountKey,
+            service: service,
+            projects: appState.projectManager.projects,
+            force: true
         )
     }
 

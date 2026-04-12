@@ -86,6 +86,10 @@ final class DashboardSummaryStore {
         return "\(credentials.issuerId):\(credentials.keyId)"
     }
 
+    static func cacheKey(accountKey: String?, credentialActivationRevision: Int) -> String {
+        "\(accountKey ?? "no-creds"):\(credentialActivationRevision)"
+    }
+
     func shouldRefresh(for key: String) -> Bool {
         guard cacheKey == key, let refreshedAt else { return true }
         return Date().timeIntervalSince(refreshedAt) > Self.freshness
@@ -149,6 +153,87 @@ final class DashboardSummaryStore {
     func cancelLoading(for key: String) {
         guard cacheKey == key else { return }
         isLoadingSummary = false
+    }
+
+    func refresh(
+        for key: String,
+        accountKey: String?,
+        service: AppStoreConnectService,
+        projects: [Project],
+        force: Bool = false
+    ) async {
+        if isLoading(for: key) || (!force && !shouldRefresh(for: key)) {
+            return
+        }
+
+        beginLoading(for: key, accountKey: accountKey)
+
+        let allAscApps: [ASCApp]
+        do {
+            allAscApps = try await service.fetchAllApps()
+        } catch {
+            markUnavailable(for: key, accountKey: accountKey)
+            return
+        }
+
+        if Task.isCancelled {
+            cancelLoading(for: key)
+            return
+        }
+
+        var nextSummary = ASCDashboardSummary.empty
+        var nextStatuses: [String: ASCDashboardProjectStatus] = [:]
+
+        let concurrencyLimit = 6
+        var perAppStatuses: [String: ASCDashboardProjectStatus] = [:]
+        await withTaskGroup(of: (String, ASCDashboardProjectStatus?).self) { group in
+            var iterator = allAscApps.makeIterator()
+
+            func enqueueNext() {
+                guard let next = iterator.next() else { return }
+                let appId = next.id
+                group.addTask {
+                    do {
+                        let versions = try await service.fetchAppStoreVersions(appId: appId)
+                        return (appId, ASCDashboardProjectStatus(versions: versions))
+                    } catch {
+                        return (appId, nil)
+                    }
+                }
+            }
+
+            for _ in 0..<min(concurrencyLimit, allAscApps.count) {
+                enqueueNext()
+            }
+
+            while let result = await group.next() {
+                if let status = result.1 {
+                    perAppStatuses[result.0] = status
+                }
+                if Task.isCancelled { break }
+                enqueueNext()
+            }
+        }
+
+        if Task.isCancelled {
+            cancelLoading(for: key)
+            return
+        }
+
+        for app in allAscApps {
+            let status = perAppStatuses[app.id] ?? .empty
+            nextSummary.include(status)
+            nextStatuses[app.bundleId] = status
+        }
+
+        store(
+            summary: nextSummary,
+            projectStatuses: nextStatuses,
+            ascApps: allAscApps,
+            appRows: rows(linking: projects, ascApps: allAscApps, projectStatuses: nextStatuses),
+            for: key,
+            accountKey: accountKey
+        )
     }
 
     private func shouldResetLoadedState(for accountKey: String?) -> Bool {
