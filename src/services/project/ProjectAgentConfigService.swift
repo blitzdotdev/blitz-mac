@@ -18,6 +18,10 @@ struct ProjectAgentConfigService {
             let localNode = Self.localNodePath() ?? "/opt/homebrew/bin/node"
             command = localNode
             args = [localCLI]
+        } else if FileManager.default.isExecutableFile(atPath: nodeRuntimeBin + "/node"),
+                  FileManager.default.isExecutableFile(atPath: nodeRuntimeBin + "/iphone-mcp") {
+            command = nodeRuntimeBin + "/node"
+            args = [nodeRuntimeBin + "/iphone-mcp"]
         } else {
             command = nodeRuntimeBin + "/npx"
             args = ["-y", "@blitzdev/iphone-mcp"]

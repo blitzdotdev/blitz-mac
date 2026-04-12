@@ -130,11 +130,6 @@ runner_label_for_job() {
 validate_yaml() {
     log "Validating workflow YAML syntax"
 
-    if command -v ruby >/dev/null 2>&1; then
-        ruby -e 'require "yaml"; YAML.load_file(ARGV[0]); puts "YAML OK"' "$WORKFLOW_PATH"
-        return
-    fi
-
     if command -v python3 >/dev/null 2>&1; then
         python3 - <<'PY' "$WORKFLOW_PATH"
 import sys
@@ -154,7 +149,7 @@ PY
         return
     fi
 
-    die "neither ruby nor python3 is available for YAML validation"
+    die "python3 with PyYAML is required for YAML validation"
 }
 
 validate_with_actionlint() {

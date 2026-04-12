@@ -17,7 +17,11 @@ import Testing
     let codexConfigURL = tempDirectory.appendingPathComponent(".codex/config.toml")
     let codexConfig = try String(contentsOf: codexConfigURL, encoding: .utf8)
     #expect(codexConfig.contains("command = \"\(launcherPath)\""))
-    #expect(codexConfig.contains("dist/cli.js") || codexConfig.contains("\"-y\", \"@blitzdev/iphone-mcp\""))
+    #expect(
+        codexConfig.contains("dist/cli.js")
+        || codexConfig.contains("node-runtime/bin/iphone-mcp")
+        || codexConfig.contains("\"-y\", \"@blitzdev/iphone-mcp\"")
+    )
 
     let mcpConfigURL = tempDirectory.appendingPathComponent(".mcp.json")
     let mcpConfigData = try Data(contentsOf: mcpConfigURL)

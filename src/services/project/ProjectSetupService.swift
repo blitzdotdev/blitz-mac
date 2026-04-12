@@ -2,7 +2,7 @@ import Foundation
 
 /// Scaffolds a new React Native / Blitz project from the bundled template.
 /// Handles the full lifecycle: copy template → patch placeholders.
-/// The AI agent handles npm install, pod install, metro, and builds.
+/// Dependency install, runtime setup, and builds are handled by the user's agent.
 struct ProjectSetupService {
 
     enum SetupStep: String {

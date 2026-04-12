@@ -180,9 +180,11 @@ final class AutoUpdateManager {
     private func installApp(zipPath: URL) async throws {
         let pid = ProcessInfo.processInfo.processIdentifier
 
-        // AppleScript statement 1: unzip, run preinstall, replace app, run postinstall
+        // AppleScript statement 1: unzip, replace app, then run postinstall.
         // The PKG postinstall chowns Blitz.app to the current user, so no admin needed.
-        // Pre/postinstall scripts are embedded in the .app at Contents/Resources/pkg-scripts/.
+        // We intentionally skip preinstall during .app.zip updates because those
+        // checks are for first-time setup and can trigger heavyweight Xcode/runtime work.
+        // The embedded postinstall script remains available at Contents/Resources/pkg-scripts/.
         let installScript = Self.appUpdateInstallScript(zipPath: zipPath)
 
         // AppleScript statement 2: background wait-for-exit + relaunch
@@ -294,8 +296,6 @@ final class AutoUpdateManager {
         BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \\"$APP_SRC/Contents/Info.plist\\" 2>> \\"$UPDATE_LOG\\" || true); \
         if [ \\"$BUNDLE_ID\\" != 'com.blitz.macos' ]; then echo 'Update failed: unexpected bundle identifier' >> \\"$UPDATE_LOG\\"; exit 1; fi; \
         if [ ! -x \\"$APP_SRC/Contents/Helpers/ascd\\" ]; then echo 'Update failed: bundled ascd helper missing' >> \\"$UPDATE_LOG\\"; exit 1; fi; \
-        PREINSTALL=\\"$APP_SRC/Contents/Resources/pkg-scripts/preinstall\\"; \
-        if [ -x \\"$PREINSTALL\\" ]; then BLITZ_UPDATE_CONTEXT='auto-update' \\"$PREINSTALL\\" '' '' '/' >> \\"$UPDATE_LOG\\" 2>&1; fi; \
         rm -rf /Applications/Blitz.app; \
         mv \\"$APP_SRC\\" /Applications/Blitz.app; \
         POSTINSTALL='/Applications/Blitz.app/Contents/Resources/pkg-scripts/postinstall'; \

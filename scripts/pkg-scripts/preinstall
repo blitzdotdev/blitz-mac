@@ -149,16 +149,6 @@ if ! xcrun simctl list runtimes 2>/dev/null | grep -q 'iOS.*SimRuntime'; then
     echo "Disk check: iOS Simulator runtime not found, adding 7 GB to requirement" >> "$LOG"
 fi
 
-# +200 MB if Ruby not already installed via rv
-HAVE_RUBY=false
-if [ -n "$CONSOLE_HOME" ] && [ -x "$CONSOLE_HOME/.blitz/ruby/bin/ruby" ]; then
-    HAVE_RUBY=true
-fi
-if [ "$HAVE_RUBY" = false ]; then
-    REQUIRED_MB=$((REQUIRED_MB + 200))
-    echo "Disk check: Ruby not found, adding 200 MB to requirement" >> "$LOG"
-fi
-
 AVAILABLE_KB=$(df -k / | awk 'NR==2 {print $4}')
 AVAILABLE_MB=$((AVAILABLE_KB / 1024))
 

@@ -128,7 +128,7 @@ pkgbuild --analyze --root "$BUILD_DIR/payload" "$BUILD_DIR/component.plist"
 /usr/libexec/PlistBuddy -c "Set :0:BundleIsRelocatable false" "$BUILD_DIR/component.plist"
 
 # Bundle-specific scripts with 1-hour timeout (default 10 min is too short
-# for postinstall on slow connections — Node + Ruby + Python + idb downloads)
+# for postinstall on slow connections — Node + Python + idb downloads)
 /usr/libexec/PlistBuddy -c "Add :0:BundlePreInstallScriptPath  string blitz-preinstall"    "$BUILD_DIR/component.plist"
 /usr/libexec/PlistBuddy -c "Add :0:BundlePostInstallScriptPath string blitz-postinstall"   "$BUILD_DIR/component.plist"
 /usr/libexec/PlistBuddy -c "Add :0:BundleInstallScriptTimeout  integer 3600"               "$BUILD_DIR/component.plist"

@@ -116,7 +116,7 @@ All release binaries are built by the public [GitHub Actions workflow](.github/w
 - **What official telemetry records.** App launches, Blitz project type inventory/create/import events, and MCP/App Store Connect tool usage events. Each event includes an anonymous device ID stored at `~/.blitz/analytics/device-id`, app version, OS version, event name, timestamp, and when applicable `source` (`blitz_managed` or `agent_direct`), normalized command type, success, and duration.
 - **What official telemetry never records.** No project names, paths, bundle IDs, CLI args, App Store Connect form values, file names, prompts, terminal contents, or user content.
 - **App Wall sync is opt-in.** If you enable App Wall sync, Blitz sends the selected apps' public store listing metadata and submission history to the App Wall backend. Reviewer feedback is only sent when `Share reviewer feedback` is enabled.
-- **Network requests depend on the features you use.** Beyond the optional anonymous telemetry above, Blitz may talk to a build-time-configured analytics ingest endpoint in official release builds, Apple's App Store Connect API, GitHub's releases API for update checks, the npm registry on launch to update `@blitzdev/iphone-mcp`, and the App Wall backend when App Wall sync is enabled.
+- **Network requests depend on the features you use.** Beyond the optional anonymous telemetry above, Blitz may talk to a build-time-configured analytics ingest endpoint in official release builds, Apple's App Store Connect API, GitHub's releases API for update checks, the npm registry during install/update to refresh `@blitzdev/iphone-mcp`, and the App Wall backend when App Wall sync is enabled.
 - **MCP server is localhost-only.** The built-in MCP server binds to `127.0.0.1` and is never exposed to the network.
 - **No access to sensitive data.** The app does not access your contacts, photos, location, or any personal data. Screen capture is limited to the iOS Simulator window.
 
@@ -126,7 +126,7 @@ Single-target SwiftUI app built with Swift Package Manager. All source lives in 
 
 ## Contributor TODO
 
-- Improve auto-update performance and UX. The current `.app.zip` update path runs embedded `preinstall`/`postinstall` scripts during in-app updates, which can re-run heavyweight setup like Ruby, CocoaPods, Python, `idb`, and simulator checks. The preferred fix is a fast app-replacement path for normal updates, with toolchain repair/checks moved to first launch or background maintenance, plus real progress reporting during download/install.
+- Improve auto-update performance and UX. The current `.app.zip` update path runs embedded `preinstall`/`postinstall` scripts during in-app updates, which can re-run heavyweight setup like Python, `idb`, and simulator checks. The preferred fix is a fast app-replacement path for normal updates, with toolchain repair/checks moved to first launch or background maintenance, plus real progress reporting during download/install.
 
 ## License
 

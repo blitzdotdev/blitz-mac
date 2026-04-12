@@ -1,6 +1,6 @@
 #!/bin/bash
 # Blitz PKG Postinstall Script
-# Sets up ~/.blitz directory and installs bundled toolchain pieces (Node, Ruby, CocoaPods, Python, idb).
+# Sets up ~/.blitz directory and installs bundled toolchain pieces (Node, iPhone MCP, Python, idb).
 #
 # NOTE: The app itself (Blitz.app) is installed to /Applications by the PKG system,
 # NOT by this script. This script only handles post-installation setup.
@@ -162,6 +162,42 @@ rm -f "$CONSOLE_HOME/.blitz/node-bin-path" 2>/dev/null || true
 
 echo "TIMING: node install took $(( $(date +%s) - T_NODE_START ))s" >> "$LOG"
 
+# ============================================================================
+# Install/update @blitzdev/iphone-mcp in the bundled Node runtime
+# ============================================================================
+
+T_IPHONE_MCP_START=$(date +%s)
+NPM_BIN="$NODE_DIR/npm"
+IPHONE_MCP_BIN="$NODE_DIR/iphone-mcp"
+
+if [ -x "$NPM_BIN" ]; then
+    echo "Installing @blitzdev/iphone-mcp..." >> "$LOG"
+    if run_as_user \
+        env \
+            "HOME=$CONSOLE_HOME" \
+            "PATH=$NODE_DIR:/usr/bin:/bin:/usr/sbin:/sbin" \
+            "npm_config_cache=$CONSOLE_TMPDIR/blitz-npm-cache" \
+            "npm_config_loglevel=error" \
+            "npm_config_update_notifier=false" \
+            "$NPM_BIN" install -g --prefix "$BLITZ_NODE_DIR" @blitzdev/iphone-mcp@latest > /dev/null 2>> "$LOG"; then
+        if [ -x "$IPHONE_MCP_BIN" ]; then
+            echo "iphone-mcp ready at: $IPHONE_MCP_BIN" >> "$LOG"
+        else
+            echo "WARNING: iphone-mcp install reported success but binary was not found at $IPHONE_MCP_BIN" >> "$LOG"
+        fi
+    else
+        if [ -x "$IPHONE_MCP_BIN" ]; then
+            echo "WARNING: iphone-mcp refresh failed; keeping existing binary at $IPHONE_MCP_BIN" >> "$LOG"
+        else
+            echo "WARNING: Failed to install @blitzdev/iphone-mcp" >> "$LOG"
+        fi
+    fi
+else
+    echo "WARNING: npm not found at $NPM_BIN; skipping iphone-mcp install" >> "$LOG"
+fi
+
+echo "TIMING: iphone-mcp install took $(( $(date +%s) - T_IPHONE_MCP_START ))s" >> "$LOG"
+
 if [ ! -d "$APP_DIR" ]; then
     echo "WARNING: Blitz.app not found in /Applications — skipping chown (app may be installed later)." >> "$LOG"
 else
@@ -189,135 +225,6 @@ else
     echo "WARNING: Failed to create $BLITZ_DIR" >> "$LOG"
 fi
 echo "TIMING: create user dirs took $(( $(date +%s) - T_STEP ))s" >> "$LOG"
-
-# ============================================================================
-# Install Ruby and CocoaPods via rv (fast Ruby version manager)
-# https://github.com/spinel-coop/rv — pre-built, relocatable Ruby in ~2s
-# ============================================================================
-
-T_RUBY_START=$(date +%s)
-if [ "${BLITZ_UPDATE_CONTEXT:-}" = "auto-update" ]; then
-    echo "Skipping Ruby and CocoaPods bootstrap during auto-update" >> "$LOG"
-    echo "TIMING: ruby + cocoapods took 0s" >> "$LOG"
-else
-    RV_VERSION="v0.4.3"
-    BLITZ_BIN_DIR="$CONSOLE_HOME/.blitz/rubies"
-    RV_BIN="$BLITZ_BIN_DIR/rv"
-    BLITZ_RUBIES_DIR="$CONSOLE_HOME/.blitz/rubies"
-    POD_PATH=""
-
-    # Clean up old Ruby install from previous Blitz versions
-    OLD_RUBY_DIR="$CONSOLE_HOME/.blitz/ruby"
-    if [ -d "$OLD_RUBY_DIR" ] && [ ! -L "$OLD_RUBY_DIR" ]; then
-        echo "Cleaning up old Ruby install at $OLD_RUBY_DIR..." >> "$LOG"
-        rm -rf "$OLD_RUBY_DIR"
-    fi
-
-    # [1] Download rv binary if not present or wrong version
-    RV_NEEDED=true
-    if [ -x "$RV_BIN" ]; then
-        EXISTING_RV=$("$RV_BIN" --version 2>/dev/null || echo "")
-        if echo "$EXISTING_RV" | grep -q "${RV_VERSION#v}"; then
-            echo "OK: rv $RV_VERSION already installed at $RV_BIN" >> "$LOG"
-            RV_NEEDED=false
-        else
-            echo "rv version mismatch ($EXISTING_RV vs $RV_VERSION), updating..." >> "$LOG"
-        fi
-    fi
-
-    if [ "$RV_NEEDED" = true ]; then
-        echo "Installing rv $RV_VERSION..." >> "$LOG"
-        show_progress "Installing Ruby version manager..."
-
-        ARCH=$(uname -m)
-        if [ "$ARCH" = "arm64" ]; then
-            RV_URL="https://github.com/spinel-coop/rv/releases/download/$RV_VERSION/rv-aarch64-apple-darwin.tar.xz"
-        else
-            RV_URL="https://github.com/spinel-coop/rv/releases/download/$RV_VERSION/rv-x86_64-apple-darwin.tar.xz"
-        fi
-
-        RV_TMP="/tmp/blitz-rv-$$"
-        rm -rf "$RV_TMP"
-        mkdir -p "$RV_TMP" "$BLITZ_BIN_DIR"
-
-        if curl -fsSL "$RV_URL" -o "$RV_TMP/rv.tar.xz" 2>> "$LOG"; then
-            tar -xJf "$RV_TMP/rv.tar.xz" -C "$RV_TMP" 2>> "$LOG"
-            cp "$RV_TMP"/rv-*/rv "$RV_BIN" 2>> "$LOG"
-            chmod 755 "$RV_BIN"
-            if [ "$IS_ROOT" = true ]; then chown "$CONSOLE_USER" "$BLITZ_BIN_DIR" "$RV_BIN"; fi
-            echo "rv installed to $RV_BIN" >> "$LOG"
-        else
-            fail "Failed to download rv from $RV_URL. Check /tmp/blitz_install.log for details."
-        fi
-
-        rm -rf "$RV_TMP"
-    fi
-
-    # [2] Install Ruby via rv
-    RUBY_VERSION="3.4"
-    mkdir -p "$BLITZ_RUBIES_DIR"
-    if [ "$IS_ROOT" = true ]; then chown "$CONSOLE_USER" "$BLITZ_RUBIES_DIR" 2>/dev/null || true; fi
-
-    BLITZ_RUBY=$(run_as_user \
-        env "HOME=$CONSOLE_HOME" "RUBIES_PATH=$BLITZ_RUBIES_DIR" \
-        "$RV_BIN" ruby find "$RUBY_VERSION" 2>/dev/null || true)
-
-    if [ -n "$BLITZ_RUBY" ] && [ -x "$BLITZ_RUBY" ]; then
-        echo "OK: Ruby already installed at $BLITZ_RUBY" >> "$LOG"
-    else
-        show_progress "Installing Ruby..."
-        echo "Installing Ruby $RUBY_VERSION via rv..." >> "$LOG"
-        if run_as_user \
-            env "HOME=$CONSOLE_HOME" "RUBIES_PATH=$BLITZ_RUBIES_DIR" \
-            "$RV_BIN" ruby install "$RUBY_VERSION" >> "$LOG" 2>&1; then
-            echo "Ruby installed via rv" >> "$LOG"
-        else
-            fail "Failed to install Ruby via rv. Check /tmp/blitz_install.log for details."
-        fi
-
-        BLITZ_RUBY=$(run_as_user \
-            env "HOME=$CONSOLE_HOME" "RUBIES_PATH=$BLITZ_RUBIES_DIR" \
-            "$RV_BIN" ruby find "$RUBY_VERSION" 2>/dev/null || true)
-    fi
-
-    if [ -z "$BLITZ_RUBY" ] || [ ! -x "$BLITZ_RUBY" ]; then
-        fail "Ruby was installed but binary not found. Check /tmp/blitz_install.log for details."
-    fi
-    echo "Ruby ready at: $BLITZ_RUBY ($($BLITZ_RUBY --version 2>/dev/null))" >> "$LOG"
-
-    # Create stable symlink: ~/.blitz/ruby → rv-managed Ruby dir
-    RUBY_INSTALL_DIR="$(dirname "$(dirname "$BLITZ_RUBY")")"
-    ln -sfn "$RUBY_INSTALL_DIR" "$CONSOLE_HOME/.blitz/ruby"
-    if [ "$IS_ROOT" = true ]; then chown -h "$CONSOLE_USER" "$CONSOLE_HOME/.blitz/ruby" 2>/dev/null || true; fi
-    echo "Symlinked $CONSOLE_HOME/.blitz/ruby -> $RUBY_INSTALL_DIR" >> "$LOG"
-
-    # [3] Install CocoaPods via gem
-    BLITZ_GEM="$(dirname "$BLITZ_RUBY")/gem"
-    BLITZ_GEM_BIN="$(dirname "$BLITZ_RUBY")"
-
-    if [ -x "$BLITZ_GEM_BIN/pod" ]; then
-        POD_PATH="$BLITZ_GEM_BIN/pod"
-        echo "OK: CocoaPods already installed at $POD_PATH" >> "$LOG"
-    else
-        show_progress "Installing CocoaPods..."
-        echo "Installing CocoaPods..." >> "$LOG"
-        if run_as_user \
-            "$BLITZ_GEM" install cocoapods --no-document > /dev/null 2>> "$LOG"; then
-            echo "CocoaPods installed successfully" >> "$LOG"
-        else
-            fail "Failed to install CocoaPods. Check /tmp/blitz_install.log for details."
-        fi
-
-        if [ -x "$BLITZ_GEM_BIN/pod" ]; then
-            POD_PATH="$BLITZ_GEM_BIN/pod"
-        else
-            fail "CocoaPods gem installed but pod binary not found. Check /tmp/blitz_install.log for details."
-        fi
-    fi
-
-    echo "Pod ready at: $POD_PATH ($($POD_PATH --version 2>/dev/null))" >> "$LOG"
-    echo "TIMING: ruby + cocoapods took $(( $(date +%s) - T_RUBY_START ))s" >> "$LOG"
-fi
 
 # ============================================================================
 # Install Python 3 + idb (Facebook iOS Development Bridge)
