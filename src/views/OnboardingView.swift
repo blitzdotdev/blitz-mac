@@ -1,5 +1,4 @@
 import AVKit
-import ScreenCaptureKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -103,6 +102,10 @@ enum TerminalApp: Hashable {
 struct OnboardingView: View {
     @Bindable var appState: AppState
     var onComplete: () -> Void
+    /// When true, onboarding is shown just to collect/refresh ASC credentials
+    /// (the user has already completed the full flow but their credentials are gone).
+    /// Starts at the ASC slide and dismisses as soon as credentials are saved.
+    var credentialOnlyMode: Bool
 
     @State private var currentStep = 0
     @State private var selectedTerminal: TerminalApp = .builtIn
@@ -115,9 +118,13 @@ struct OnboardingView: View {
     @State private var whitelistBlitzMCPTools: Bool = true
     @State private var allowASCCLICalls: Bool = true
 
-    init(appState: AppState, onComplete: @escaping () -> Void) {
+    init(appState: AppState, credentialOnlyMode: Bool = false, onComplete: @escaping () -> Void) {
         self.appState = appState
+        self.credentialOnlyMode = credentialOnlyMode
         self.onComplete = onComplete
+        // When we're only collecting credentials, jump straight to the ASC slide
+        // instead of forcing the user back through the full flow.
+        _currentStep = State(initialValue: credentialOnlyMode ? 1 : 0)
     }
 
     // ASC setup state
@@ -137,21 +144,15 @@ struct OnboardingView: View {
         !ascPrivateKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    // Permissions state
-    @State private var screenRecordingGranted = false
-    @State private var screenRecordingChecking = false
-
     /// Skip the ASC slide if credentials are already configured (or just saved during onboarding)
     private var skipASCSlide: Bool {
         ascSaveSuccess || ASCCredentials.load() != nil
     }
 
-    // Steps: config, [asc setup], import, ask ai, [permissions]
-    // ASC slide is skipped if credentials already exist; permissions skipped if already granted
+    // Steps: config, [asc setup], import, ask ai
     private var totalSteps: Int {
         var count = 3 // config + import + ask ai
         if !skipASCSlide { count += 1 }
-        if !screenRecordingGranted { count += 1 }
         return count
     }
 
@@ -179,8 +180,6 @@ struct OnboardingView: View {
                     slideImportProject
                 case 3:
                     slideAskAI
-                case 4:
-                    slidePermissions
                 default:
                     EmptyView()
                 }
@@ -199,7 +198,6 @@ struct OnboardingView: View {
             if let first = detectedTerminals.first {
                 selectedTerminal = first
             }
-            screenRecordingGranted = CGPreflightScreenCaptureAccess()
         }
         .onChange(of: appState.ascManager.pendingCredentialValues) { _, pending in
             if let pending {
@@ -655,9 +653,28 @@ struct OnboardingView: View {
         )
         Task {
             do {
-                try creds.save()
+                // Route through ASCManager so the dashboard hydrates as soon as the
+                // onboarding credential step finishes — this is what lets a new user
+                // see all their ASC apps instantly on the first main-window render.
+                try await appState.ascManager.saveCredentials(
+                    creds,
+                    projectId: appState.activeProjectId ?? "onboarding",
+                    bundleId: appState.activeProject?.metadata.bundleIdentifier
+                )
                 withAnimation(.easeInOut(duration: 0.3)) {
                     ascSaveSuccess = true
+                }
+                // In credential-only mode, we don't need to show the rest of the
+                // onboarding flow — just make sure the settings flag is set and
+                // dismiss onboarding.
+                if credentialOnlyMode {
+                    let settings = appState.settingsStore
+                    if !settings.hasCompletedOnboarding {
+                        settings.hasCompletedOnboarding = true
+                        settings.save()
+                    }
+                    try? await Task.sleep(nanoseconds: 400_000_000)
+                    onComplete()
                 }
             } catch {
                 ascSaveError = error.localizedDescription
@@ -719,82 +736,6 @@ struct OnboardingView: View {
                 .padding(.horizontal, 8)
                 .padding(.bottom, 4)
         }
-    }
-
-    // MARK: - Slide 4: Permissions (Screen Recording)
-
-    private var slidePermissions: some View {
-        VStack(spacing: 24) {
-            Spacer()
-
-            Image(systemName: "rectangle.dashed.badge.record")
-                .font(.system(size: 48))
-                .foregroundStyle(Color.accentColor)
-
-            VStack(spacing: 8) {
-                Text("Screen Recording")
-                    .font(.system(size: 22, weight: .bold))
-
-                Text("Blitz needs Screen Recording permission to capture\nyour simulator for AI-assisted development.")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 420)
-            }
-
-            // Screen recording permission row
-            HStack(spacing: 12) {
-                Image(systemName: "record.circle")
-                    .font(.title2)
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 32, height: 32)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Screen Recording")
-                        .font(.body.weight(.medium))
-                    Text("Required to capture the iOS Simulator window")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                if screenRecordingChecking {
-                    ProgressView()
-                        .controlSize(.small)
-                } else if screenRecordingGranted {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.title3)
-                        .foregroundStyle(.green)
-                } else {
-                    Button("Grant Access") {
-                        requestScreenRecording()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                }
-            }
-            .padding(12)
-            .frame(maxWidth: 440)
-            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(screenRecordingGranted ? Color.green.opacity(0.3) : Color.primary.opacity(0.08), lineWidth: 1)
-            )
-
-            Button("Open System Settings") {
-                AppRelaunchService.shared.prepareForScreenRecordingPermissionRestart()
-                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-                    NSWorkspace.shared.open(url)
-                }
-            }
-            .buttonStyle(.plain)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-
-            Spacer()
-        }
-        .padding(.horizontal, 40)
     }
 
     // MARK: - Shared Components
@@ -901,19 +842,6 @@ struct OnboardingView: View {
         }
 
         return found
-    }
-
-    private func requestScreenRecording() {
-        screenRecordingChecking = true
-        Task {
-            do {
-                _ = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-                screenRecordingGranted = true
-            } catch {
-                screenRecordingGranted = false
-            }
-            screenRecordingChecking = false
-        }
     }
 
     private func finishOnboarding() {
