@@ -72,11 +72,11 @@ struct ASCPaginatedResponse<T: Decodable>: Decodable {
 
 // MARK: - App
 
-struct ASCApp: Decodable, Identifiable {
+struct ASCApp: Codable, Identifiable {
     let id: String
     let attributes: Attributes
 
-    struct Attributes: Decodable {
+    struct Attributes: Codable {
         let bundleId: String
         let name: String
         let primaryLocale: String?

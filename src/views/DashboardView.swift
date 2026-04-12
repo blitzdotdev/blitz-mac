@@ -5,13 +5,19 @@ struct DashboardView: View {
     @State private var dashboardSummary = DashboardSummaryStore.shared
 
     private var projects: [Project] { appState.projectManager.projects }
+
+    private var dashboardAccountKey: String? {
+        DashboardSummaryStore.accountKey(
+            for: appState.ascManager.credentials ?? ASCCredentials.load()
+        )
+    }
+
+    /// Only the ASC account identity and explicit credential activation should
+    /// restart the network hydration task. Local project changes are linked in
+    /// memory and should not cancel an in-flight ASC fetch.
     private var summaryHydrationKey: String {
-        let credentialsKey = appState.ascManager.credentials?.keyId ?? "no-creds"
-        let fingerprint = projects
-            .map { "\($0.id):\($0.metadata.bundleIdentifier ?? "")" }
-            .sorted()
-            .joined(separator: "|")
-        return "\(credentialsKey):\(appState.ascManager.credentialActivationRevision):\(fingerprint)"
+        let credentialsKey = dashboardAccountKey ?? "no-creds"
+        return "\(credentialsKey):\(appState.ascManager.credentialActivationRevision)"
     }
 
     var body: some View {
@@ -79,6 +85,14 @@ struct DashboardView: View {
         }
     }
 
+    private var appRows: [DashboardAppRow] { dashboardSummary.rows(linking: projects) }
+    private var showsBlockingSummarySpinner: Bool {
+        dashboardSummary.isLoadingSummary && !dashboardSummary.hasLoadedSummary
+    }
+    private var showsRefreshSpinner: Bool {
+        dashboardSummary.isLoadingSummary && dashboardSummary.hasLoadedSummary
+    }
+
     private var myAppsContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -107,17 +121,19 @@ struct DashboardView: View {
                     )
                 }
 
-                // App grid
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 140, maximum: 180), spacing: 8, alignment: .leading)],
-                    spacing: 16
-                ) {
-                    ForEach(projects) { project in
-                        appCard(project: project)
-                            .onTapGesture {
-                                selectProject(project)
-                            }
+                if !appRows.isEmpty {
+                    // App grid — ASC apps first, local-only projects beneath
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 140, maximum: 180), spacing: 8, alignment: .leading)],
+                        spacing: 16
+                    ) {
+                        ForEach(appRows) { row in
+                            appCard(row: row)
+                                .onTapGesture { selectRow(row) }
+                        }
                     }
+                } else if dashboardSummary.hasLoadedSummary {
+                    emptyStateView
                 }
 
                 Spacer(minLength: 0)
@@ -126,6 +142,20 @@ struct DashboardView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(DottedCanvasBackground())
+        .overlay {
+            if showsBlockingSummarySpinner {
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .controlSize(.large)
+                    Text("Loading apps…")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 28)
+                .padding(.vertical, 24)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+            }
+        }
         .overlay(alignment: .bottomTrailing) {
             VStack(spacing: 8) {
                 Button {
@@ -149,7 +179,7 @@ struct DashboardView: View {
             .padding(20)
         }
         .overlay(alignment: .topTrailing) {
-            if dashboardSummary.isLoadingSummary {
+            if showsRefreshSpinner {
                 ProgressView()
                     .controlSize(.small)
                     .padding(12)
@@ -160,6 +190,22 @@ struct DashboardView: View {
         .task(id: summaryHydrationKey) {
             await hydrateSummary()
         }
+    }
+
+    private var emptyStateView: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "square.grid.2x2")
+                .font(.system(size: 36))
+                .foregroundStyle(.secondary)
+            Text("No apps yet")
+                .font(.headline)
+            Text("Create a new app or import an existing project to get started.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 48)
     }
 
     // MARK: - Stat Card
@@ -185,17 +231,19 @@ struct DashboardView: View {
 
     // MARK: - App Card
 
-    private func appCard(project: Project) -> some View {
-        let isSelected = project.id == appState.activeProjectId
+    @ViewBuilder
+    private func appCard(row: DashboardAppRow) -> some View {
+        let isSelected = row.linkedProjectId != nil && row.linkedProjectId == appState.activeProjectId
+        let project = row.linkedProjectId.flatMap { id in projects.first(where: { $0.id == id }) }
 
-        return VStack(spacing: 6) {
-            ProjectAppIconView(project: project, size: 56, cornerRadius: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(projectColor(project).opacity(0.15))
-                    Image(systemName: projectIcon(project))
-                        .font(.system(size: 24))
-                        .foregroundStyle(projectColor(project))
+        VStack(spacing: 6) {
+            Group {
+                if let project {
+                    ProjectAppIconView(project: project, size: 56, cornerRadius: 12) {
+                        fallbackIcon(name: row.name)
+                    }
+                } else {
+                    fallbackIcon(name: row.name)
                 }
             }
             .padding(3)
@@ -205,11 +253,17 @@ struct DashboardView: View {
             )
 
             HStack(spacing: 3) {
-                statusIcon(for: project)
+                statusIcon(for: row)
                     .font(.system(size: 9))
-                Text(project.name)
+                Text(row.name)
                     .font(.callout.weight(.medium))
                     .lineLimit(1)
+            }
+
+            if row.source == .localOnly {
+                Text("Local only")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
         }
         .padding(14)
@@ -217,64 +271,113 @@ struct DashboardView: View {
         .contentShape(Rectangle())
     }
 
+    private func fallbackIcon(name: String) -> some View {
+        let first = String(name.prefix(1)).uppercased()
+        return ZStack {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.accentColor.opacity(0.15))
+                .frame(width: 56, height: 56)
+            Text(first.isEmpty ? "?" : first)
+                .font(.system(size: 24, weight: .semibold, design: .rounded))
+                .foregroundStyle(.primary.opacity(0.7))
+        }
+    }
+
     // MARK: - Actions
 
-    private func selectProject(_ project: Project) {
-        appState.activeProjectId = project.id
-        let projectId = project.id
-        Task.detached(priority: .utility) {
-            ProjectStorage().updateLastOpened(projectId: projectId)
+    private func selectRow(_ row: DashboardAppRow) {
+        // Claim analytics event — one-shot per app key per device.
+        let claimKey = row.bundleId ?? row.id
+        AnalyticsService.trackAppClaim(appKey: claimKey)
+
+        if let projectId = row.linkedProjectId {
+            // Linked local project — open it as before.
+            appState.activeTab = .app
+            appState.activeAppSubTab = .overview
+            appState.activeProjectId = projectId
+            let id = projectId
+            Task.detached(priority: .utility) {
+                ProjectStorage().updateLastOpened(projectId: id)
+            }
+        } else if let bundleId = row.bundleId {
+            // ASC-only app — stay in this window, focus the ASC manager on this bundle id,
+            // and route the user to the App > Overview tab so the synthesized dashboard renders.
+            appState.activeProjectId = nil
+            appState.activeTab = .app
+            appState.activeAppSubTab = .overview
+            Task {
+                await appState.ascManager.loadCredentials(for: "asc:\(bundleId)", bundleId: bundleId)
+                await appState.ascManager.ensureTabData(.app)
+            }
         }
     }
 
     private func hydrateSummary() async {
-        if projects.isEmpty {
-            await appState.projectManager.loadProjects()
-        }
-
         let hydrationKey = summaryHydrationKey
         if dashboardSummary.isLoading(for: hydrationKey) || !dashboardSummary.shouldRefresh(for: hydrationKey) {
             return
         }
 
-        let eligibleProjects = appState.projectManager.projects.compactMap { project -> DashboardProjectInput? in
-            guard let bundleId = project.metadata.bundleIdentifier?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-                  !bundleId.isEmpty else {
-                return nil
-            }
-            return DashboardProjectInput(bundleId: bundleId)
-        }
-
-        guard !eligibleProjects.isEmpty else {
-            dashboardSummary.markEmpty(for: hydrationKey)
+        // Make sure credentials are loaded up front — even if there is no active project,
+        // the dashboard should show the user's ASC apps as soon as possible.
+        appState.ascManager.loadStoredCredentialsIfNeeded()
+        let accountKey = DashboardSummaryStore.accountKey(for: appState.ascManager.credentials)
+        guard let service = appState.ascManager.service else {
+            dashboardSummary.markUnavailable(for: hydrationKey, accountKey: accountKey)
             return
         }
 
-        guard let credentials = ASCCredentials.load() else {
-            dashboardSummary.markUnavailable(for: hydrationKey)
+        dashboardSummary.beginLoading(for: hydrationKey, accountKey: accountKey)
+
+        // Fetch every app in the ASC account up front. This is the "all my apps show up
+        // in an instant" piece — a single /apps request seeds the whole dashboard.
+        let allAscApps: [ASCApp]
+        do {
+            allAscApps = try await service.fetchAllApps()
+        } catch {
+            dashboardSummary.markUnavailable(for: hydrationKey, accountKey: accountKey)
             return
         }
 
-        dashboardSummary.beginLoading(for: hydrationKey)
+        if Task.isCancelled {
+            dashboardSummary.cancelLoading(for: hydrationKey)
+            return
+        }
+
         var nextSummary = ASCDashboardSummary.empty
         var nextStatuses: [String: ASCDashboardProjectStatus] = [:]
-        let service = AppStoreConnectService(credentials: credentials)
 
-        for project in eligibleProjects {
-            if Task.isCancelled {
-                dashboardSummary.cancelLoading(for: hydrationKey)
-                return
+        // Fetch the version state for each app in parallel but bounded — we want the full
+        // list visible fast, but we also want the live/pending/rejected counts populated.
+        // Use a TaskGroup of up to `concurrencyLimit` simultaneous requests.
+        let concurrencyLimit = 6
+        var perAppStatuses: [String: ASCDashboardProjectStatus] = [:]
+        await withTaskGroup(of: (String, ASCDashboardProjectStatus?).self) { group in
+            var iterator = allAscApps.makeIterator()
+
+            func enqueueNext() {
+                guard let next = iterator.next() else { return }
+                let appId = next.id
+                group.addTask {
+                    do {
+                        let versions = try await service.fetchAppStoreVersions(appId: appId)
+                        return (appId, ASCDashboardProjectStatus(versions: versions))
+                    } catch {
+                        return (appId, nil)
+                    }
+                }
             }
 
-            do {
-                let app = try await service.fetchApp(bundleId: project.bundleId)
-                let versions = try await service.fetchAppStoreVersions(appId: app.id)
-                let status = ASCDashboardProjectStatus(versions: versions)
-                nextSummary.include(status)
-                nextStatuses[project.bundleId] = status
-            } catch {
-                continue
+            for _ in 0..<min(concurrencyLimit, allAscApps.count) {
+                enqueueNext()
+            }
+
+            while let result = await group.next() {
+                if let status = result.1 {
+                    perAppStatuses[result.0] = status
+                }
+                if Task.isCancelled { break }
+                enqueueNext()
             }
         }
 
@@ -283,19 +386,37 @@ struct DashboardView: View {
             return
         }
 
-        dashboardSummary.store(summary: nextSummary, projectStatuses: nextStatuses, for: hydrationKey)
+        for app in allAscApps {
+            let status = perAppStatuses[app.id] ?? .empty
+            nextSummary.include(status)
+            nextStatuses[app.bundleId] = status
+        }
+
+        let combinedRows = dashboardSummary.rows(
+            linking: appState.projectManager.projects,
+            ascApps: allAscApps,
+            projectStatuses: nextStatuses
+        )
+
+        dashboardSummary.store(
+            summary: nextSummary,
+            projectStatuses: nextStatuses,
+            ascApps: allAscApps,
+            appRows: combinedRows,
+            for: hydrationKey,
+            accountKey: accountKey
+        )
     }
 
     // MARK: - Helpers
 
     private func statValue(_ count: Int) -> String {
-        dashboardSummary.hasLoadedSummary ? "\(count)" : (projects.isEmpty ? "0" : "-")
+        dashboardSummary.hasLoadedSummary ? "\(count)" : (appRows.isEmpty ? "0" : "-")
     }
 
     @ViewBuilder
-    private func statusIcon(for project: Project) -> some View {
-        let bundleId = project.metadata.bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if let status = dashboardSummary.projectStatuses[bundleId] {
+    private func statusIcon(for row: DashboardAppRow) -> some View {
+        if let status = row.status {
             if status.isRejected {
                 Image(systemName: "xmark.circle.fill")
                     .foregroundStyle(.red)
@@ -310,26 +431,5 @@ struct DashboardView: View {
                     .foregroundStyle(.secondary)
             }
         }
-    }
-
-    private func projectIcon(_ project: Project) -> String {
-        if project.platform == .macOS { return "desktopcomputer" }
-        switch project.type {
-        case .reactNative: return "atom"
-        case .swift: return "swift"
-        case .flutter: return "bird"
-        }
-    }
-
-    private func projectColor(_ project: Project) -> Color {
-        switch project.type {
-        case .reactNative: return .cyan
-        case .swift: return .orange
-        case .flutter: return .blue
-        }
-    }
-
-    private struct DashboardProjectInput: Sendable {
-        let bundleId: String
     }
 }

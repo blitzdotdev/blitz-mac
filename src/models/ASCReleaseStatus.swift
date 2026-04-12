@@ -1,6 +1,6 @@
 import Foundation
 
-struct ASCDashboardProjectStatus: Sendable, Equatable {
+struct ASCDashboardProjectStatus: Codable, Sendable, Equatable {
     let isLiveOnStore: Bool
     let isPendingReview: Bool
     let isRejected: Bool
@@ -50,7 +50,7 @@ struct ASCDashboardProjectStatus: Sendable, Equatable {
     }
 }
 
-struct ASCDashboardSummary: Sendable, Equatable {
+struct ASCDashboardSummary: Codable, Sendable, Equatable {
     var liveCount: Int
     var pendingCount: Int
     var rejectedCount: Int
