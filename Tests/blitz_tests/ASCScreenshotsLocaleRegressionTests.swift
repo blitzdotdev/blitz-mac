@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import AppKit
 @testable import Blitz
 
 @MainActor
@@ -39,6 +40,114 @@ import Testing
     let slots = manager.trackSlotsForDisplayType(displayType, locale: locale)
     #expect(slots[0]?.id == "local-1")
     #expect(manager.hasUnsavedChanges(displayType: displayType, locale: locale))
+}
+
+@MainActor
+@Test func hydrateScreenshotImageCacheOverwritesOnForceRefresh() async {
+    let manager = ASCManager()
+    let shot = makeScreenshot(
+        id: "remote-1",
+        fileName: "remote-1.png",
+        templateURL: "https://example.com/remote-1.png"
+    )
+    let initialImage = makeTestImage()
+    let refreshedImage = makeTestImage()
+
+    await manager.hydrateScreenshotImageCache(
+        screenshots: ["set-1": [shot]],
+        force: false,
+        loader: { _ in initialImage }
+    )
+    #expect(manager.cachedScreenshotImage(for: shot.id) === initialImage)
+
+    await manager.hydrateScreenshotImageCache(
+        screenshots: ["set-1": [shot]],
+        force: false,
+        loader: { _ in refreshedImage }
+    )
+    #expect(manager.cachedScreenshotImage(for: shot.id) === initialImage)
+
+    await manager.hydrateScreenshotImageCache(
+        screenshots: ["set-1": [shot]],
+        force: true,
+        loader: { _ in refreshedImage }
+    )
+    #expect(manager.cachedScreenshotImage(for: shot.id) === refreshedImage)
+}
+
+@MainActor
+@Test func loadTrackFromASCUsesCachedRemoteImage() {
+    let manager = ASCManager()
+    let locale = "en-US"
+    let displayType = "APP_IPHONE_67"
+    let cachedImage = makeTestImage()
+    let set = makeScreenshotSet(id: "set-us", displayType: displayType, count: 1)
+
+    manager.cacheScreenshotImage(cachedImage, for: "remote-1")
+    manager.updateScreenshotCache(
+        locale: locale,
+        sets: [set],
+        screenshots: [set.id: [
+            makeScreenshot(
+                id: "remote-1",
+                fileName: "remote-1.png",
+                templateURL: "https://example.com/remote-1.png"
+            )
+        ]]
+    )
+    manager.loadTrackFromASC(displayType: displayType, locale: locale)
+
+    let slot = manager.trackSlotsForDisplayType(displayType, locale: locale)[0]
+    #expect(slot?.localImage === cachedImage)
+}
+
+@MainActor
+@Test func removeFromTrackClearsCachedImage() {
+    let manager = ASCManager()
+    let locale = "en-US"
+    let displayType = "APP_IPHONE_67"
+    let trackKey = manager.screenshotTrackKey(displayType: displayType, locale: locale)
+    let image = makeTestImage()
+
+    manager.trackSlots[trackKey] = [
+        TrackSlot(
+            id: "local-1",
+            localPath: "/tmp/local-1.png",
+            localImage: nil,
+            ascScreenshot: nil,
+            isFromASC: false
+        )
+    ] + Array(repeating: nil, count: 9)
+    manager.cacheScreenshotImage(image, for: "local-1")
+
+    manager.removeFromTrack(displayType: displayType, slotIndex: 0, locale: locale)
+
+    #expect(manager.cachedScreenshotImage(for: "local-1") == nil)
+    #expect(manager.trackSlotsForDisplayType(displayType, locale: locale).allSatisfy { $0 == nil })
+}
+
+@MainActor
+@Test func addAssetToTrackCachesLocalImage() throws {
+    let manager = ASCManager()
+    let locale = "en-US"
+    let displayType = "APP_IPHONE_67"
+    let imagePath = try writeValidScreenshotPNG(
+        width: 1260,
+        height: 2736,
+        fileName: UUID().uuidString + ".png"
+    )
+
+    let error = manager.addAssetToTrack(
+        displayType: displayType,
+        slotIndex: 0,
+        localPath: imagePath,
+        locale: locale
+    )
+
+    #expect(error == nil)
+    let slot = manager.trackSlotsForDisplayType(displayType, locale: locale)[0]
+    #expect(slot?.localImage != nil)
+    #expect(slot.map { manager.cachedScreenshotImage(for: $0.id) != nil } == true)
 }
 
 @MainActor
@@ -225,14 +334,61 @@ private func makeScreenshotSet(id: String, displayType: String, count: Int?) -> 
     )
 }
 
-private func makeScreenshot(id: String, fileName: String) -> ASCScreenshot {
+private func makeScreenshot(id: String, fileName: String, templateURL: String? = nil) -> ASCScreenshot {
     ASCScreenshot(
         id: id,
         attributes: ASCScreenshot.Attributes(
             fileName: fileName,
             fileSize: nil,
-            imageAsset: nil,
+            imageAsset: templateURL.map {
+                ASCScreenshot.Attributes.ImageAsset(
+                    templateUrl: $0,
+                    width: 400,
+                    height: 800
+                )
+            },
             assetDeliveryState: nil
         )
     )
+}
+
+private func makeTestImage() -> NSImage {
+    let image = NSImage(size: NSSize(width: 12, height: 12))
+    image.lockFocus()
+    NSColor.white.setFill()
+    NSBezierPath(rect: NSRect(x: 0, y: 0, width: 12, height: 12)).fill()
+    image.unlockFocus()
+    return image
+}
+
+private func writeValidScreenshotPNG(width: Int, height: Int, fileName: String) throws -> String {
+    let rep = NSBitmapImageRep(
+        bitmapDataPlanes: nil,
+        pixelsWide: width,
+        pixelsHigh: height,
+        bitsPerSample: 8,
+        samplesPerPixel: 4,
+        hasAlpha: true,
+        isPlanar: false,
+        colorSpaceName: .deviceRGB,
+        bytesPerRow: 0,
+        bitsPerPixel: 0
+    )
+    guard let rep else {
+        throw NSError(domain: "Tests", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create bitmap rep"])
+    }
+
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+    NSColor.white.setFill()
+    NSBezierPath(rect: NSRect(x: 0, y: 0, width: width, height: height)).fill()
+    NSGraphicsContext.restoreGraphicsState()
+
+    guard let data = rep.representation(using: .png, properties: [:]) else {
+        throw NSError(domain: "Tests", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to encode PNG"])
+    }
+
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+    try data.write(to: url, options: .atomic)
+    return url.path
 }

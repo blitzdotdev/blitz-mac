@@ -20,9 +20,26 @@ private struct HostingWindowFinder: NSViewRepresentable {
 
 struct ContentView: View {
     @Bindable var appState: AppState
-    @Environment(\.openWindow) private var openWindow
     @State private var mainWindow: NSWindow?
     @State private var tabSwitchTask: Task<Void, Never>?
+    @State private var showOnboarding: Bool
+    @State private var credentialOnlyOnboarding: Bool
+
+    init(appState: AppState) {
+        self.appState = appState
+        // First-run users see the full onboarding. Users who've already completed
+        // onboarding but don't have credentials (wiped keychain, expired key, etc.)
+        // get a credential-only onboarding that jumps directly to the ASC slide
+        // and dismisses as soon as credentials are saved. Nobody ever sees the
+        // legacy picker again.
+        let hasCompletedOnboarding = appState.settingsStore.hasCompletedOnboarding
+        let hasCredentials = ASCCredentials.load() != nil
+        let onboardingNeeded = !hasCompletedOnboarding || !hasCredentials
+        _showOnboarding = State(initialValue: onboardingNeeded)
+        _credentialOnlyOnboarding = State(
+            initialValue: hasCompletedOnboarding && !hasCredentials
+        )
+    }
 
     private var terminalSplitMinContentSize: CGFloat {
         let baseMinContentSize: CGFloat = 200
@@ -107,31 +124,15 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
-            SidebarView(appState: appState)
-                .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 250)
-        } detail: {
-            TerminalSplitView(
-                isHorizontal: appState.settingsStore.terminalPosition == "right",
-                showPanel: appState.showTerminal,
-                panelSize: $appState.terminalPanelSize,
-                minPanelSize: 120,
-                minContentSize: terminalSplitMinContentSize
-            ) {
-                DetailView(appState: appState)
-            } panel: {
-                TerminalPanelView(appState: appState)
+        ZStack {
+            mainContent
+
+            if showOnboarding {
+                onboardingOverlay
             }
-        }
-        .navigationSplitViewStyle(.balanced)
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button {
-                    launchTerminal()
-                } label: {
-                    Label("Terminal", systemImage: "terminal")
-                }
-                .help("Launch terminal with AI agent")
+
+            if appState.autoUpdate.showsFullScreenOverlay {
+                UpdateOverlay(autoUpdate: appState.autoUpdate)
             }
         }
         .background(HostingWindowFinder { window in
@@ -139,15 +140,21 @@ struct ContentView: View {
         })
         .task {
             await appState.projectManager.loadProjects()
+            await appState.performLaunchAppWallSyncIfNeeded()
+            await appState.autoUpdate.checkForUpdate()
+
+            // Load any stored ASC credentials up front so the Dashboard can render
+            // all ASC apps instantly on the first main-window paint, even when
+            // there is no active local project.
+            appState.ascManager.loadStoredCredentialsIfNeeded()
+
             if let projectId = appState.activeProjectId,
                let projectType = appState.activeProject?.type {
                 refreshProjectFiles(projectId: projectId, projectType: projectType)
             }
 
-            // If a project was just created (e.g. from WelcomeWindow), run setup
+            // If a project was just created, run setup
             if await startPendingSetupIfNeeded() {
-                // Re-hydrate project metadata after setup so launch sync sees the
-                // final local project state, including bundle IDs.
                 await appState.projectManager.loadProjects()
             }
 
@@ -159,7 +166,7 @@ struct ContentView: View {
                     bootedDeviceId: appState.simulatorManager.bootedDeviceId
                 )
             }
-            // Load ASC credentials for the initial project
+            // Per-project credential hydration still runs when we have an active project.
             if let projectId = appState.activeProjectId,
                let project = appState.activeProject {
                 await appState.ascManager.loadCredentials(
@@ -172,14 +179,14 @@ struct ContentView: View {
                     await appState.ascManager.ensureTabData(.app)
                 }
             }
-            await appState.performLaunchAppWallSyncIfNeeded()
         }
         .onChange(of: appState.activeProjectId) { _, newValue in
             if newValue == nil {
-                // Project closed → stop stream, reopen welcome, close this window
+                // Project closed → stop stream. We never reopen a separate welcome/picker
+                // window. The caller is responsible for setting `activeTab` to whatever
+                // makes sense (Dashboard for an explicit "Close Project", App for picking
+                // an ASC-only app, etc.).
                 Task { await appState.simulatorStream.stopStreaming() }
-                openWindow(id: "welcome")
-                mainWindow?.close()
             } else {
                 // Project switched → ensure config files, run pending setup, reload ASC credentials
                 if let newId = newValue {
@@ -279,6 +286,64 @@ struct ContentView: View {
             }
         }
         .approvalAlert(appState: appState)
+    }
+
+    // MARK: - Main NavigationSplitView content
+
+    @ViewBuilder
+    private var mainContent: some View {
+        NavigationSplitView {
+            SidebarView(appState: appState)
+                .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 250)
+        } detail: {
+            TerminalSplitView(
+                isHorizontal: appState.settingsStore.terminalPosition == "right",
+                showPanel: appState.showTerminal,
+                panelSize: $appState.terminalPanelSize,
+                minPanelSize: 120,
+                minContentSize: terminalSplitMinContentSize
+            ) {
+                DetailView(appState: appState)
+            } panel: {
+                TerminalPanelView(appState: appState)
+            }
+        }
+        .navigationSplitViewStyle(.balanced)
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button {
+                    launchTerminal()
+                } label: {
+                    Label("Terminal", systemImage: "terminal")
+                }
+                .help("Launch terminal with AI agent")
+            }
+        }
+    }
+
+    // MARK: - Onboarding overlay
+
+    @ViewBuilder
+    private var onboardingOverlay: some View {
+        ZStack {
+            Rectangle()
+                .fill(.ultraThickMaterial)
+                .ignoresSafeArea()
+
+            OnboardingView(
+                appState: appState,
+                credentialOnlyMode: credentialOnlyOnboarding
+            ) {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    showOnboarding = false
+                    credentialOnlyOnboarding = false
+                }
+            }
+            .frame(width: 700, height: 440)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .shadow(color: .black.opacity(0.25), radius: 32, y: 12)
+        }
+        .transition(.opacity)
     }
 }
 

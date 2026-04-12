@@ -69,26 +69,18 @@ struct BlitzApp: App {
     @State private var appState = AppState()
 
     var body: some Scene {
-        Window("Welcome to Blitz", id: "welcome") {
-            WelcomeWindow(appState: appState)
-                .frame(width: 700, height: 440)
+        Window("Blitz", id: "main") {
+            ContentView(appState: appState)
+                .frame(minWidth: 800, minHeight: 600)
                 .onAppear {
                     appDelegate.appState = appState
                 }
         }
-        .windowResizability(.contentSize)
-        .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 700, height: 440)
+        .defaultSize(width: 1200, height: 900)
+        .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
             AppCommands(appState: appState)
         }
-
-        WindowGroup(id: "main", for: String.self) { _ in
-            ContentView(appState: appState)
-                .frame(minWidth: 800, minHeight: 600)
-        }
-        .defaultSize(width: 1200, height: 900)
-        .windowToolbarStyle(.unified(showsTitle: false))
     }
 }
 
@@ -165,7 +157,6 @@ final class MCPBootstrap {
             print("[MCP] Failed to install Claude skills: \(error)")
         }
     }
-
 
     private func installMCPHelper() {
         let fm = FileManager.default

@@ -1,8 +1,8 @@
 import SwiftUI
 
-// MARK: - Full-screen overlay (WelcomeWindow)
+// MARK: - Full-screen overlay
 
-/// Full-screen update card that blocks the welcome window UI.
+/// Full-screen update card that blocks the main window UI when an update is in progress.
 struct UpdateOverlay: View {
     @Bindable var autoUpdate: AutoUpdateManager
 

@@ -145,6 +145,7 @@ extension ASCManager {
         selectedAppInformationLocale = nil
         screenshotSetsByLocale = [:]
         screenshotsByLocale = [:]
+        screenshotImageCache = [:]
         selectedScreenshotsLocale = nil
         reviewDetail = nil
         writeError = nil

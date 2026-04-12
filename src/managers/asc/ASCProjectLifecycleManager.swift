@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 extension ASCManager {
     struct ProjectSnapshot {
@@ -38,6 +39,7 @@ extension ASCManager {
         let irisFeedbackCycles: [IrisFeedbackCycle]
         let trackSlots: [String: [TrackSlot?]]
         let savedTrackState: [String: [TrackSlot?]]
+        let screenshotImageCache: [String: NSImage]
         let localScreenshotAssets: [LocalScreenshotAsset]
         let appIconStatus: String?
         let monetizationStatus: String?
@@ -82,6 +84,7 @@ extension ASCManager {
             irisFeedbackCycles = manager.irisFeedbackCycles
             trackSlots = manager.trackSlots
             savedTrackState = manager.savedTrackState
+            screenshotImageCache = manager.screenshotImageCache
             localScreenshotAssets = manager.localScreenshotAssets
             appIconStatus = manager.appIconStatus
             monetizationStatus = manager.monetizationStatus
@@ -126,6 +129,7 @@ extension ASCManager {
             manager.irisFeedbackCycles = irisFeedbackCycles
             manager.trackSlots = trackSlots
             manager.savedTrackState = savedTrackState
+            manager.screenshotImageCache = screenshotImageCache
             manager.localScreenshotAssets = localScreenshotAssets
             manager.appIconStatus = appIconStatus
             manager.monetizationStatus = monetizationStatus
@@ -398,6 +402,7 @@ extension ASCManager {
         attachedSubmissionItemIDs = []
         trackSlots = [:]
         savedTrackState = [:]
+        screenshotImageCache = [:]
         localScreenshotAssets = []
         isLoadingTab = [:]
         tabError = [:]

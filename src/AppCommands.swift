@@ -59,6 +59,7 @@ struct AppCommands: Commands {
 
             Button("Close Project") {
                 appState.activeProjectId = nil
+                appState.activeTab = .dashboard
             }
             .keyboardShortcut("w", modifiers: .command)
             .disabled(appState.activeProjectId == nil)

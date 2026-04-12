@@ -132,7 +132,10 @@ extension MCPExecutor {
     }
 
     func executeProjectClose() async -> [String: Any] {
-        await MainActor.run { appState.activeProjectId = nil }
+        await MainActor.run {
+            appState.activeProjectId = nil
+            appState.activeTab = .dashboard
+        }
         return mcpText("Project closed")
     }
 

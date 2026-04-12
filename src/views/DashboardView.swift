@@ -290,7 +290,6 @@ struct DashboardView: View {
     private func selectRow(_ row: DashboardAppRow) {
         // Claim analytics event — one-shot per app key per device.
         let claimKey = row.bundleId ?? row.id
-        AnalyticsService.trackAppClaim(appKey: claimKey)
 
         if let projectId = row.linkedProjectId {
             // Linked local project — open it as before.

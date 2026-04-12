@@ -6,6 +6,10 @@ struct ASCTabContent<Content: View>: View {
     var asc: ASCManager
     var tab: AppTab
     var platform: ProjectPlatform = .iOS
+    /// When true, tabs can render with only an ASC app loaded (no local project required).
+    /// The synthesized App > Overview dashboard uses this so users can manage their
+    /// ASC-only apps without first linking a local folder.
+    var allowWithoutLocalProject: Bool = false
     @ViewBuilder var content: () -> Content
 
     private var isLoading: Bool {
@@ -20,8 +24,12 @@ struct ASCTabContent<Content: View>: View {
         appState.activeProject != nil
     }
 
+    private var gateIsOpen: Bool {
+        hasSelectedProject || (allowWithoutLocalProject && asc.app != nil)
+    }
+
     var body: some View {
-        if !hasSelectedProject {
+        if !gateIsOpen {
             ASCNoProjectSelectedView()
         } else if isLoading && !shouldRenderContentWhileLoading {
             VStack(spacing: 12) {

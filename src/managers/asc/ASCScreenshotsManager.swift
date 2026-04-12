@@ -51,7 +51,11 @@ extension ASCManager {
 
         if !force,
            screenshotSetsByLocale[cacheKey] != nil,
-           screenshotsByLocale[cacheKey] != nil {
+           let cachedScreenshots = screenshotsByLocale[cacheKey] {
+            await hydrateScreenshotImageCache(
+                screenshots: cachedScreenshots,
+                force: false
+            )
             return
         }
 
@@ -62,11 +66,17 @@ extension ASCManager {
         }
 
         do {
+            let previousScreenshotIDs = screenshotIDs(in: screenshotsByLocale[cacheKey] ?? [:])
             let (fetchedSets, fetchedScreenshots) = try await fetchScreenshotData(
                 localizationId: loc.id,
                 service: service
             )
             updateScreenshotCache(locale: loc.attributes.locale, sets: fetchedSets, screenshots: fetchedScreenshots)
+            await hydrateScreenshotImageCache(
+                screenshots: fetchedScreenshots,
+                previousScreenshotIDs: previousScreenshotIDs,
+                force: force
+            )
         } catch {
             print("Failed to load screenshots for locale \(loc.attributes.locale): \(error)")
         }
@@ -78,6 +88,39 @@ extension ASCManager {
 
     func screenshotsForLocale(_ locale: String) -> [String: [ASCScreenshot]] {
         screenshotsByLocale[screenshotCacheKey(locale: locale)] ?? [:]
+    }
+
+    func cachedScreenshotImage(for slotId: String) -> NSImage? {
+        screenshotImageCache[slotId]
+    }
+
+    func cacheScreenshotImage(_ image: NSImage, for slotId: String) {
+        screenshotImageCache[slotId] = image
+        syncCachedImage(image, for: slotId, in: &trackSlots)
+        syncCachedImage(image, for: slotId, in: &savedTrackState)
+    }
+
+    func hydrateScreenshotImageCache(
+        screenshots: [String: [ASCScreenshot]],
+        previousScreenshotIDs: Set<String> = [],
+        force: Bool,
+        loader: ((URL) async -> NSImage?)? = nil
+    ) async {
+        let currentScreenshotIDs = screenshotIDs(in: screenshots)
+        removeCachedScreenshotImages(for: previousScreenshotIDs.subtracting(currentScreenshotIDs))
+
+        let resolvedLoader = loader ?? { url in
+            await Self.loadScreenshotImage(from: url)
+        }
+
+        for shot in screenshots.values.flatMap({ $0 }) {
+            guard let url = shot.imageURL else { continue }
+            if !force, screenshotImageCache[shot.id] != nil { continue }
+            guard let image = await resolvedLoader(url) else { continue }
+            cacheScreenshotImage(image, for: shot.id)
+        }
+
+        purgeUnreferencedScreenshotImages(keeping: currentScreenshotIDs)
     }
 
     func updateScreenshotCache(
@@ -152,8 +195,8 @@ extension ASCManager {
         var slots: [TrackSlot?] = Array(repeating: nil, count: 10)
         if let set, let shots = screenshotsForLocale(locale)[set.id] {
             for (i, shot) in shots.prefix(10).enumerated() {
-                var localImage: NSImage? = nil
-                if shot.imageURL == nil, i < previousSlots.count, let prev = previousSlots[i] {
+                var localImage = cachedScreenshotImage(for: shot.id)
+                if localImage == nil, i < previousSlots.count, let prev = previousSlots[i] {
                     localImage = prev.localImage
                 }
                 slots[i] = TrackSlot(
@@ -185,6 +228,7 @@ extension ASCManager {
 
         trackSlots[trackKey] = sanitizedCurrent
         savedTrackState[trackKey] = latestRemoteSlots
+        purgeUnreferencedScreenshotImages(keeping: validRemoteIDs)
     }
 
     private func sanitizeTrackSlots(
@@ -258,6 +302,7 @@ extension ASCManager {
             for id in toDelete {
                 try await service.deleteScreenshot(screenshotId: id)
             }
+            removeCachedScreenshotImages(for: toDelete)
 
             let currentASCIds = current.compactMap { slot -> String? in
                 guard let slot, slot.isFromASC else { return nil }
@@ -294,6 +339,7 @@ extension ASCManager {
 
             await loadScreenshots(locale: loc.attributes.locale, force: true)
             loadTrackFromASC(displayType: displayType, locale: loc.attributes.locale, overwriteUnsaved: true)
+            purgeUnreferencedScreenshotImages()
             AnalyticsService.trackBlitzManagedASCUsage(
                 commandType: "screenshots.save",
                 success: true,
@@ -386,13 +432,18 @@ extension ASCManager {
 
         if slots[slotIndex] != nil {
             slots.insert(slot, at: slotIndex)
+            let removedSlot = slots.count > 10 ? slots[10] : nil
             slots = Array(slots.prefix(10))
+            if let removedSlot {
+                removeCachedScreenshotImages(for: [removedSlot.id])
+            }
         } else {
             slots[slotIndex] = slot
         }
 
         while slots.count < 10 { slots.append(nil) }
         trackSlots[trackKey] = slots
+        cacheScreenshotImage(image, for: slot.id)
         return nil
     }
 
@@ -400,9 +451,13 @@ extension ASCManager {
         guard slotIndex >= 0 && slotIndex < 10 else { return }
         let trackKey = screenshotTrackKey(displayType: displayType, locale: locale)
         var slots = trackSlots[trackKey] ?? Array(repeating: nil, count: 10)
-        slots.remove(at: slotIndex)
+        let removed = slots.remove(at: slotIndex)
         slots.append(nil)
         trackSlots[trackKey] = slots
+        if let removed {
+            removeCachedScreenshotImages(for: [removed.id])
+        }
+        purgeUnreferencedScreenshotImages()
     }
 
     func reorderTrack(
@@ -435,6 +490,7 @@ extension ASCManager {
         let slots = buildTrackSlotsFromASC(displayType: displayType, locale: locale, previousSlots: previousSlots)
         trackSlots[trackKey] = slots
         savedTrackState[trackKey] = slots
+        purgeUnreferencedScreenshotImages(keeping: screenshotIDs(in: screenshotsForLocale(locale)))
     }
 
     // MARK: - Validation
@@ -485,5 +541,66 @@ extension ASCManager {
         default:
             return "this display type"
         }
+    }
+
+    private func screenshotIDs(in screenshots: [String: [ASCScreenshot]]) -> Set<String> {
+        Set(screenshots.values.flatMap { $0.map(\.id) })
+    }
+
+    private func removeCachedScreenshotImages<S: Sequence>(for slotIds: S) where S.Element == String {
+        for slotId in slotIds {
+            screenshotImageCache.removeValue(forKey: slotId)
+            syncCachedImage(nil, for: slotId, in: &trackSlots)
+            syncCachedImage(nil, for: slotId, in: &savedTrackState)
+        }
+    }
+
+    private func purgeUnreferencedScreenshotImages(keeping protectedIDs: Set<String> = []) {
+        let referencedTrackIDs = Set(trackSlots.values.flatMap { slots in
+            slots.compactMap { $0?.id }
+        })
+        let referencedSavedIDs = Set(savedTrackState.values.flatMap { slots in
+            slots.compactMap { $0?.id }
+        })
+        let retainedIDs = referencedTrackIDs.union(referencedSavedIDs).union(protectedIDs)
+        screenshotImageCache = screenshotImageCache.filter { retainedIDs.contains($0.key) }
+    }
+
+    private func syncCachedImage(
+        _ image: NSImage?,
+        for slotId: String,
+        in storage: inout [String: [TrackSlot?]]
+    ) {
+        for key in Array(storage.keys) {
+            guard var slots = storage[key] else { continue }
+            var didChange = false
+            for index in slots.indices {
+                guard var slot = slots[index], slot.id == slotId else { continue }
+                slot.localImage = image
+                slots[index] = slot
+                didChange = true
+            }
+            if didChange {
+                storage[key] = slots
+            }
+        }
+    }
+
+    nonisolated private static func loadScreenshotImage(from url: URL) async -> NSImage? {
+        guard let (data, _) = try? await URLSession.shared.data(from: url) else {
+            return nil
+        }
+        return decodeScreenshotImage(from: data)
+    }
+
+    nonisolated private static func decodeScreenshotImage(from data: Data) -> NSImage? {
+        if let image = NSImage(data: data), !image.representations.isEmpty {
+            return image
+        }
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            return nil
+        }
+        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
     }
 }
