@@ -131,7 +131,9 @@ struct ScreenshotsView: View {
     @State private var scrollViewRef: NSScrollView?
     @State private var lastAutoScrollTickAt: Date?
     @State private var lastReorderTime: Date?
-    @State private var debugScrollingRight = false
+    @State private var beganDragOnEdgeSlot = false
+    @State private var previousDragPointerX: CGFloat = .zero
+    @State private var dragStartSlotIndex: Int?
 
     private var availableDeviceTypes: [ScreenshotDeviceType] {
         ScreenshotDeviceType.types(for: platform)
@@ -228,11 +230,17 @@ struct ScreenshotsView: View {
     private func beginDrag(for slot: TrackSlot, with value: DragGesture.Value) {
         draggingSlot = slot
         dragPointerLocation = value.location
+        previousDragPointerX = value.location.x
         lastAutoScrollTickAt = nil
+        dragStartSlotIndex = currentTrack.firstIndex(where: { $0?.id == slot.id })
 
         guard let frame = slotViewportFrame(for: slot) else {
             dragGrabOffset = .zero
             return
+        }
+
+        if getLeftOrRightOverflow() != 0 {
+            beganDragOnEdgeSlot = true
         }
 
         dragGrabOffset = CGSize(
@@ -246,6 +254,9 @@ struct ScreenshotsView: View {
         dragPointerLocation = .zero
         dragGrabOffset = .zero
         lastAutoScrollTickAt = nil
+        beganDragOnEdgeSlot = false
+        previousDragPointerX = .zero
+        dragStartSlotIndex = nil
     }
 
     private func currentDraggedViewportFrame() -> CGRect? {
@@ -284,6 +295,37 @@ struct ScreenshotsView: View {
         )
     }
 
+    private func getLeftOrRightOverflow() -> Int {
+        guard let probe = currentAutoScrollProbeBounds(),
+              currentViewportWidth > 0 else {
+            return 0
+        }
+
+        let edgeMargin: CGFloat = 120
+        let leftOverflow = max(0, edgeMargin - probe.minX)
+        let rightOverflow = max(0, probe.maxX - (currentViewportWidth - edgeMargin))
+
+        if leftOverflow > 0 { return -1 }
+        if rightOverflow > 0 { return 1 }
+        return 0
+    }
+
+    private func getLeftOrRightOverflow(forSlotAt index: Int) -> Int {
+        guard let slot = currentTrack[index],
+              let frame = slotViewportFrame(for: slot),
+              currentViewportWidth > 0 else {
+            return 0
+        }
+
+        let edgeMargin: CGFloat = 120
+        let leftOverflow = max(0, edgeMargin - frame.minX)
+        let rightOverflow = max(0, frame.maxX - (currentViewportWidth - edgeMargin))
+
+        if leftOverflow > 0 { return -1 }
+        if rightOverflow > 0 { return 1 }
+        return 0
+    }
+
     private func autoScrollVelocity() -> CGFloat {
         guard let probe = currentAutoScrollProbeBounds(),
               currentViewportWidth > 0 else {
@@ -295,6 +337,19 @@ struct ScreenshotsView: View {
         let maxPointsPerSecond: CGFloat = 1440
         let leftOverflow = max(0, edgeMargin - probe.minX)
         let rightOverflow = max(0, probe.maxX - (currentViewportWidth - edgeMargin))
+
+        // When drag started on an edge slot, use drag direction instead of
+        // overflow direction so the user can drag away from the wall freely.
+        if beganDragOnEdgeSlot {
+            let dragDelta = dragPointerLocation.x - previousDragPointerX
+            let overflow = max(leftOverflow, rightOverflow)
+            if overflow > 0, abs(dragDelta) > 0.5 {
+                let fraction = min(overflow / responseWidth, 1)
+                let speed = maxPointsPerSecond * sqrt(fraction)
+                return dragDelta > 0 ? speed : -speed
+            }
+            return 0
+        }
 
         if leftOverflow > 0 {
             let fraction = min(leftOverflow / responseWidth, 1)
@@ -380,15 +435,6 @@ struct ScreenshotsView: View {
 
         let velocity = autoScrollVelocity()
         guard velocity != 0 else { return }
-        if velocity > 0, draggingSlot != nil {
-            withAnimation(.easeInOut(duration: 0.1)) {
-                debugScrollingRight = true
-            }
-        } else if debugScrollingRight {
-            withAnimation(.easeInOut(duration: 0.1)) {
-                debugScrollingRight = false
-            }
-        }
 
         let clipBounds = scrollView.contentView.bounds
         let maxOffsetX = max(0, (scrollView.documentView?.frame.width ?? 0) - clipBounds.width)
@@ -409,7 +455,16 @@ struct ScreenshotsView: View {
                     beginDrag(for: slot, with: value)
                 }
                 guard draggingSlot?.id == slot.id else { return }
+                previousDragPointerX = dragPointerLocation.x
                 dragPointerLocation = value.location
+
+                // Flip off edge-slot mode once the original slot position leaves the wall
+                if beganDragOnEdgeSlot, let startIndex = dragStartSlotIndex {
+                    if getLeftOrRightOverflow(forSlotAt: startIndex) == 0 {
+                        beganDragOnEdgeSlot = false
+                    }
+                }
+
                 updateReorderIntent()
             }
             .onEnded { _ in
@@ -641,15 +696,18 @@ struct ScreenshotsView: View {
                     displayState: displayState,
                     screenshotHeight: screenshotHeight
                 )
+                .onDrop(of: [.fileURL], delegate: FileDropDelegate(slotIndex: item.index) { url, idx in
+                    importFileToSlot(url: url, slotIndex: idx)
+                })
             } else {
                 emptySlotView(index: item.index, screenshotHeight: screenshotHeight)
+                    .onDrop(of: [.fileURL], delegate: FileDropDelegate(slotIndex: item.index) { url, idx in
+                        importFileToSlot(url: url, slotIndex: idx)
+                    })
             }
         }
         .opacity(draggingSlot?.id == item.slot?.id ? 0.08 : 1)
         .background(slotFrameReader(for: item))
-        .onDrop(of: [.fileURL], delegate: FileDropDelegate(slotIndex: item.index) { url, idx in
-            importFileToSlot(url: url, slotIndex: idx)
-        })
     }
 
     private func slotFrameReader(for item: ScreenshotTrackItem) -> some View {
@@ -715,8 +773,6 @@ struct ScreenshotsView: View {
         displayState: SlotDisplayState,
         screenshotHeight: CGFloat
     ) -> some View {
-        let isDebuggingScroll = debugScrollingRight && draggingSlot?.id == slot.id
-
         if displayState.hasError {
             slotPlaceholder(screenshotHeight: screenshotHeight) {
                 VStack(spacing: 6) {
@@ -745,14 +801,8 @@ struct ScreenshotsView: View {
                 .frame(height: screenshotHeight)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .overlay(
-                    Group {
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(displayState.borderColor, lineWidth: 2)
-                        if isDebuggingScroll {
-                            RoundedRectangle(cornerRadius: 10)
-                                .stroke(.red, lineWidth: 4)
-                        }
-                    }
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(displayState.borderColor, lineWidth: 2)
                 )
         } else if let url = slot.ascScreenshot?.imageURL {
             AsyncImage(url: url) { phase in
@@ -772,26 +822,14 @@ struct ScreenshotsView: View {
             .frame(height: screenshotHeight)
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .overlay(
-                Group {
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(displayState.borderColor, lineWidth: 2)
-                    if isDebuggingScroll {
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(.red, lineWidth: 4)
-                    }
-                }
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(displayState.borderColor, lineWidth: 2)
             )
         } else {
             slotPlaceholder(icon: "photo", screenshotHeight: screenshotHeight)
                 .overlay(
-                    Group {
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(displayState.borderColor, lineWidth: 2)
-                        if isDebuggingScroll {
-                            RoundedRectangle(cornerRadius: 10)
-                                .stroke(.red, lineWidth: 4)
-                        }
-                    }
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(displayState.borderColor, lineWidth: 2)
                 )
         }
     }
@@ -800,26 +838,27 @@ struct ScreenshotsView: View {
         Button {
             addFileToSlot(index: index)
         } label: {
-            emptySlotPlaceholder(screenshotHeight: screenshotHeight)
+            emptySlotBody(screenshotHeight: screenshotHeight)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
 
-    private func emptySlotPlaceholder(screenshotHeight: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: 10)
-            .fill(Color(.controlBackgroundColor))
-            .aspectRatio(selectedDevice.placeholderAspectRatio, contentMode: .fit)
-            .frame(height: screenshotHeight)
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
-                    .foregroundStyle(.quaternary)
-            )
-            .overlay(
-                Image(systemName: "plus")
+    private func emptySlotBody(screenshotHeight: CGFloat) -> some View {
+        slotPlaceholder(screenshotHeight: screenshotHeight) {
+            VStack(spacing: 6) {
+                Image(systemName: "square.and.arrow.up")
                     .font(.title2)
-                    .foregroundStyle(.tertiary)
-            )
+                Text("Upload")
+                    .font(.caption)
+            }
+            .foregroundStyle(.secondary)
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(style: StrokeStyle(lineWidth: 3, dash: [8, 6]))
+                .foregroundStyle(.secondary)
+        )
     }
 
     private func slotPlaceholder(icon: String? = nil, screenshotHeight: CGFloat, @ViewBuilder content: () -> some View = { EmptyView() }) -> some View {
@@ -875,9 +914,10 @@ struct ScreenshotsView: View {
 
     // MARK: - File Import
 
+    @MainActor
     private func addFileToSlot(index: Int) {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.png, .jpeg, .webP]
+        panel.allowedContentTypes = [.image]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.message = "Select a screenshot to add"

@@ -85,13 +85,7 @@ struct ASCOverview: View {
                 // Submission Readiness (original standalone list)
                 submissionReadinessSection
 
-                // 1. Listing health
-                listingHealthCard
-
-                // 2. Screenshots
-                screenshotsCard
-
-                // 3. Activity
+                // Activity
                 activityCard
 
                 // 4. Local source
@@ -671,11 +665,6 @@ struct ASCOverview: View {
                             .foregroundStyle(.secondary)
                     }
                     HStack(spacing: 8) {
-                        Button("Build & Upload") {
-                            asc.showSubmitPreview = true
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
                         Button("Open in Finder") {
                             NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: project.path)
                         }
