@@ -109,13 +109,6 @@ private struct ScrollViewFinder: NSViewRepresentable {
     }
 }
 
-private struct ScreenshotDragPreview: View {
-    var body: some View {
-        Color.clear
-            .frame(width: 1, height: 1)
-    }
-}
-
 // MARK: - View
 
 struct ScreenshotsView: View {
@@ -131,6 +124,7 @@ struct ScreenshotsView: View {
 
     // Drag reorder state
     @State private var draggingSlot: TrackSlot?
+    @State private var dragPointerLocation: CGPoint = .zero
     @State private var dragGrabOffset: CGSize = .zero
     @State private var slotViewportFrames: [String: CGRect] = [:]
     @State private var viewportSize: CGSize = .zero
@@ -221,48 +215,46 @@ struct ScreenshotsView: View {
         slotViewportFrames[slot.id]
     }
 
-    private func currentPointerLocationInTrackArea() -> CGPoint? {
-        guard let scrollView = scrollViewRef,
-              let window = scrollView.window else {
+    private func currentDragDisplayState() -> SlotDisplayState? {
+        guard let draggingSlot,
+              let index = currentTrack.firstIndex(where: { $0?.id == draggingSlot.id }) else {
             return nil
         }
-
-        let windowPoint = window.convertPoint(fromScreen: NSEvent.mouseLocation)
-        return scrollView.contentView.convert(windowPoint, from: nil)
+        return slotDisplayState(at: index)
     }
 
-    private func beginDrag(for slot: TrackSlot) {
+    private func beginDrag(for slot: TrackSlot, with value: DragGesture.Value) {
         draggingSlot = slot
+        dragPointerLocation = value.location
         lastAutoScrollTickAt = nil
 
-        guard let pointer = currentPointerLocationInTrackArea(),
-              let frame = slotViewportFrame(for: slot) else {
+        guard let frame = slotViewportFrame(for: slot) else {
             dragGrabOffset = .zero
             return
         }
 
         dragGrabOffset = CGSize(
-            width: pointer.x - frame.midX,
-            height: pointer.y - frame.midY
+            width: value.startLocation.x - frame.midX,
+            height: value.startLocation.y - frame.midY
         )
     }
 
     private func resetDragState() {
         draggingSlot = nil
+        dragPointerLocation = .zero
         dragGrabOffset = .zero
         lastAutoScrollTickAt = nil
     }
 
     private func currentDraggedViewportFrame() -> CGRect? {
         guard let draggingSlot,
-              let pointer = currentPointerLocationInTrackArea(),
               let frame = slotViewportFrame(for: draggingSlot) else {
             return nil
         }
 
         let center = CGPoint(
-            x: pointer.x - dragGrabOffset.width,
-            y: pointer.y - dragGrabOffset.height
+            x: dragPointerLocation.x - dragGrabOffset.width,
+            y: dragPointerLocation.y - dragGrabOffset.height
         )
 
         return CGRect(
@@ -297,6 +289,50 @@ struct ScreenshotsView: View {
         return 0
     }
 
+    private func updateReorderIntent() {
+        guard let draggingSlot,
+              let dragFrame = currentDraggedViewportFrame(),
+              let sourceIndex = currentTrack.firstIndex(where: { $0?.id == draggingSlot.id }) else {
+            return
+        }
+
+        let filledIndices = currentTrack.indices.filter { currentTrack[$0] != nil }
+        guard let sourceOrder = filledIndices.firstIndex(of: sourceIndex) else { return }
+
+        if sourceOrder > 0 {
+            let previousIndex = filledIndices[sourceOrder - 1]
+            if let previousSlot = currentTrack[previousIndex],
+               let previousFrame = slotViewportFrame(for: previousSlot),
+               dragFrame.midX < previousFrame.midX {
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
+                    asc.reorderTrack(
+                        displayType: selectedDisplayType,
+                        fromIndex: sourceIndex,
+                        toIndex: previousIndex,
+                        locale: currentLocale
+                    )
+                }
+                return
+            }
+        }
+
+        if sourceOrder + 1 < filledIndices.count {
+            let nextIndex = filledIndices[sourceOrder + 1]
+            if let nextSlot = currentTrack[nextIndex],
+               let nextFrame = slotViewportFrame(for: nextSlot),
+               dragFrame.midX > nextFrame.midX {
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
+                    asc.reorderTrack(
+                        displayType: selectedDisplayType,
+                        fromIndex: sourceIndex,
+                        toIndex: nextIndex,
+                        locale: currentLocale
+                    )
+                }
+            }
+        }
+    }
+
     private func autoScrollTick(at now: Date) {
         guard draggingSlot != nil else {
             lastAutoScrollTickAt = nil
@@ -328,6 +364,40 @@ struct ScreenshotsView: View {
 
         scrollView.contentView.scroll(to: NSPoint(x: newOffsetX, y: clipBounds.origin.y))
         scrollView.reflectScrolledClipView(scrollView.contentView)
+        updateReorderIntent()
+    }
+
+    private func slotDragGesture(for slot: TrackSlot) -> some Gesture {
+        DragGesture(minimumDistance: 2, coordinateSpace: .named("trackArea"))
+            .onChanged { value in
+                if draggingSlot == nil {
+                    beginDrag(for: slot, with: value)
+                }
+                guard draggingSlot?.id == slot.id else { return }
+                dragPointerLocation = value.location
+                updateReorderIntent()
+            }
+            .onEnded { _ in
+                guard draggingSlot?.id == slot.id else { return }
+                resetDragState()
+            }
+    }
+
+    @ViewBuilder
+    private func dragOverlayView(screenshotHeight: CGFloat) -> some View {
+        if let draggingSlot,
+           let displayState = currentDragDisplayState(),
+           let dragFrame = currentDraggedViewportFrame() {
+            slotImageContent(
+                slot: draggingSlot,
+                displayState: displayState,
+                screenshotHeight: screenshotHeight
+            )
+            .scaleEffect(1.03)
+            .shadow(color: .black.opacity(0.22), radius: 12, y: 5)
+            .position(x: dragFrame.midX, y: dragFrame.midY)
+            .allowsHitTesting(false)
+        }
     }
 
     // MARK: - Body
@@ -466,12 +536,14 @@ struct ScreenshotsView: View {
     }
 
     private func trackCanvas(in size: CGSize) -> some View {
-        let screenshotHeight = size.height * 0.8
+        let screenshotHeight = size.height * 0.65
 
         return ZStack {
             trackScrollView(screenshotHeight: screenshotHeight, minHeight: size.height)
 
             if draggingSlot != nil {
+                dragOverlayView(screenshotHeight: screenshotHeight)
+
                 TimelineView(.periodic(from: .now, by: 1.0 / 120.0)) { timeline in
                     Color.clear
                         .frame(width: 0, height: 0)
@@ -496,10 +568,6 @@ struct ScreenshotsView: View {
             }
             .animation(.spring(response: 0.25, dampingFraction: 0.82), value: trackAnimationKey)
             .background(ScrollViewFinder(scrollView: $scrollViewRef))
-            .onDrop(
-                of: [.text],
-                delegate: ScreenshotTrackDropCleanupDelegate(draggingSlot: $draggingSlot)
-            )
             .padding(20)
             .frame(minHeight: minHeight)
         }
@@ -524,6 +592,7 @@ struct ScreenshotsView: View {
                 emptySlotView(index: item.index, screenshotHeight: screenshotHeight)
             }
         }
+        .opacity(draggingSlot?.id == item.slot?.id ? 0.08 : 1)
         .background(slotFrameReader(for: item))
         .onDrop(of: [.fileURL], delegate: FileDropDelegate(slotIndex: item.index) { url, idx in
             importFileToSlot(url: url, slotIndex: idx)
@@ -552,22 +621,6 @@ struct ScreenshotsView: View {
             displayState: displayState,
             screenshotHeight: screenshotHeight
         )
-        .onDrag {
-            beginDrag(for: slot)
-            return NSItemProvider(object: NSString(string: slot.id))
-        } preview: {
-            ScreenshotDragPreview()
-        }
-        .onDrop(
-            of: [.text],
-            delegate: ScreenshotReorderDropDelegate(
-                targetSlot: slot,
-                asc: asc,
-                displayType: selectedDisplayType,
-                locale: currentLocale,
-                draggingSlot: $draggingSlot
-            )
-        )
     }
 
     // MARK: - Slot Views
@@ -581,6 +634,8 @@ struct ScreenshotsView: View {
     ) -> some View {
         ZStack(alignment: .topTrailing) {
             slotImageContent(slot: slot, displayState: displayState, screenshotHeight: screenshotHeight)
+                .contentShape(Rectangle())
+                .highPriorityGesture(slotDragGesture(for: slot))
 
             Button {
                 withAnimation {
@@ -861,72 +916,6 @@ struct ScreenshotsView: View {
             displayType: selectedDisplayType,
             locale: currentLocale
         )
-    }
-}
-
-// MARK: - Screenshot Reorder Drop Delegates
-
-private struct ScreenshotTrackDropCleanupDelegate: DropDelegate {
-    @Binding var draggingSlot: TrackSlot?
-
-    func performDrop(info: DropInfo) -> Bool {
-        draggingSlot = nil
-        return true
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        guard draggingSlot != nil else {
-            return DropProposal(operation: .cancel)
-        }
-        return DropProposal(operation: .move)
-    }
-
-    func validateDrop(info: DropInfo) -> Bool {
-        draggingSlot != nil && !info.itemProviders(for: [.text]).isEmpty
-    }
-}
-
-private struct ScreenshotReorderDropDelegate: DropDelegate {
-    let targetSlot: TrackSlot
-    let asc: ASCManager
-    let displayType: String
-    let locale: String
-    @Binding var draggingSlot: TrackSlot?
-
-    func dropEntered(info: DropInfo) {
-        guard let draggingSlot, draggingSlot != targetSlot else { return }
-
-        let track = asc.trackSlotsForDisplayType(displayType, locale: locale)
-        guard let fromIndex = track.firstIndex(where: { $0 == draggingSlot }),
-              let toIndex = track.firstIndex(where: { $0 == targetSlot }),
-              fromIndex != toIndex else {
-            return
-        }
-
-        withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
-            asc.reorderTrack(
-                displayType: displayType,
-                fromIndex: fromIndex,
-                toIndex: toIndex,
-                locale: locale
-            )
-        }
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        draggingSlot = nil
-        return true
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        guard draggingSlot != nil else {
-            return DropProposal(operation: .cancel)
-        }
-        return DropProposal(operation: .move)
-    }
-
-    func validateDrop(info: DropInfo) -> Bool {
-        draggingSlot != nil && !info.itemProviders(for: [.text]).isEmpty
     }
 }
 
