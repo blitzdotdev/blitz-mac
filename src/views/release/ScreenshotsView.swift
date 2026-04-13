@@ -130,6 +130,8 @@ struct ScreenshotsView: View {
     @State private var viewportSize: CGSize = .zero
     @State private var scrollViewRef: NSScrollView?
     @State private var lastAutoScrollTickAt: Date?
+    @State private var lastReorderTime: Date?
+    @State private var debugScrollingRight = false
 
     private var availableDeviceTypes: [ScreenshotDeviceType] {
         ScreenshotDeviceType.types(for: platform)
@@ -265,16 +267,34 @@ struct ScreenshotsView: View {
         )
     }
 
+    private func currentAutoScrollProbeBounds() -> (minX: CGFloat, maxX: CGFloat, width: CGFloat)? {
+        guard let dragFrame = currentDraggedViewportFrame() else {
+            return nil
+        }
+
+        guard let draggingSlot,
+              let slotFrame = slotViewportFrame(for: draggingSlot) else {
+            return (minX: dragFrame.minX, maxX: dragFrame.maxX, width: dragFrame.width)
+        }
+
+        return (
+            minX: min(dragFrame.minX, slotFrame.minX),
+            maxX: max(dragFrame.maxX, slotFrame.maxX),
+            width: dragFrame.width
+        )
+    }
+
     private func autoScrollVelocity() -> CGFloat {
-        guard let dragFrame = currentDraggedViewportFrame(),
+        guard let probe = currentAutoScrollProbeBounds(),
               currentViewportWidth > 0 else {
             return 0
         }
 
-        let responseWidth = max(dragFrame.width, 60)
+        let edgeMargin: CGFloat = 120
+        let responseWidth = max(probe.width, 60)
         let maxPointsPerSecond: CGFloat = 1440
-        let leftOverflow = max(0, -dragFrame.minX)
-        let rightOverflow = max(0, dragFrame.maxX - currentViewportWidth)
+        let leftOverflow = max(0, edgeMargin - probe.minX)
+        let rightOverflow = max(0, probe.maxX - (currentViewportWidth - edgeMargin))
 
         if leftOverflow > 0 {
             let fraction = min(leftOverflow / responseWidth, 1)
@@ -297,14 +317,15 @@ struct ScreenshotsView: View {
         }
 
         let filledIndices = currentTrack.indices.filter { currentTrack[$0] != nil }
-        guard let sourceOrder = filledIndices.firstIndex(of: sourceIndex) else { return }
+        guard let sourceNonNilIndex = filledIndices.firstIndex(of: sourceIndex) else { return }
 
-        if sourceOrder > 0 {
-            let previousIndex = filledIndices[sourceOrder - 1]
+        if sourceNonNilIndex > 0 {
+            let previousIndex = filledIndices[sourceNonNilIndex - 1]
             if let previousSlot = currentTrack[previousIndex],
                let previousFrame = slotViewportFrame(for: previousSlot),
                dragFrame.midX < previousFrame.midX {
-                withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
+                lastReorderTime = Date()
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) {
                     asc.reorderTrack(
                         displayType: selectedDisplayType,
                         fromIndex: sourceIndex,
@@ -316,11 +337,12 @@ struct ScreenshotsView: View {
             }
         }
 
-        if sourceOrder + 1 < filledIndices.count {
-            let nextIndex = filledIndices[sourceOrder + 1]
+        if sourceNonNilIndex + 1 < filledIndices.count {
+            let nextIndex = filledIndices[sourceNonNilIndex + 1]
             if let nextSlot = currentTrack[nextIndex],
                let nextFrame = slotViewportFrame(for: nextSlot),
                dragFrame.midX > nextFrame.midX {
+                lastReorderTime = Date()
                 withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
                     asc.reorderTrack(
                         displayType: selectedDisplayType,
@@ -344,6 +366,10 @@ struct ScreenshotsView: View {
             return
         }
 
+        // Skip auto-scroll if a reorder animation is in progress
+        // The spring animation has response: 0.5, so wait ~0.6s for it to settle
+        if let lastReorderTime, now.timeIntervalSince(lastReorderTime) < 0.6 { return }
+
         let deltaTime = min(
             max(lastAutoScrollTickAt.map { now.timeIntervalSince($0) } ?? (1.0 / 120.0), 0),
             1.0 / 20.0
@@ -354,6 +380,15 @@ struct ScreenshotsView: View {
 
         let velocity = autoScrollVelocity()
         guard velocity != 0 else { return }
+        if velocity > 0, draggingSlot != nil {
+            withAnimation(.easeInOut(duration: 0.1)) {
+                debugScrollingRight = true
+            }
+        } else if debugScrollingRight {
+            withAnimation(.easeInOut(duration: 0.1)) {
+                debugScrollingRight = false
+            }
+        }
 
         let clipBounds = scrollView.contentView.bounds
         let maxOffsetX = max(0, (scrollView.documentView?.frame.width ?? 0) - clipBounds.width)
@@ -364,7 +399,7 @@ struct ScreenshotsView: View {
 
         scrollView.contentView.scroll(to: NSPoint(x: newOffsetX, y: clipBounds.origin.y))
         scrollView.reflectScrolledClipView(scrollView.contentView)
-        updateReorderIntent()
+        //updateReorderIntent()
     }
 
     private func slotDragGesture(for slot: TrackSlot) -> some Gesture {
@@ -559,12 +594,22 @@ struct ScreenshotsView: View {
         }
     }
 
+    private let trackPaddingSlots = 2
+    private let trackSpacing: CGFloat = 16
+
+    private func trackPaddingWidth(screenshotHeight: CGFloat) -> CGFloat {
+        let slotWidth = screenshotHeight * selectedDevice.placeholderAspectRatio
+        return CGFloat(trackPaddingSlots) * slotWidth + CGFloat(trackPaddingSlots) * trackSpacing
+    }
+
     private func trackScrollView(screenshotHeight: CGFloat, minHeight: CGFloat) -> some View {
         ScrollView(.horizontal, showsIndicators: true) {
-            HStack(alignment: .center, spacing: 16) {
+            HStack(alignment: .center, spacing: trackSpacing) {
+                Color.clear.frame(width: trackPaddingWidth(screenshotHeight: screenshotHeight), height: 1)
                 ForEach(trackItems) { item in
                     slotContainer(item: item, screenshotHeight: screenshotHeight)
                 }
+                Color.clear.frame(width: trackPaddingWidth(screenshotHeight: screenshotHeight), height: 1)
             }
             .animation(.spring(response: 0.25, dampingFraction: 0.82), value: trackAnimationKey)
             .background(ScrollViewFinder(scrollView: $scrollViewRef))
@@ -573,6 +618,14 @@ struct ScreenshotsView: View {
         }
         .coordinateSpace(name: "trackArea")
         .onPreferenceChange(SlotViewportFramePreference.self) { slotViewportFrames = $0 }
+        .onAppear {
+            DispatchQueue.main.async {
+                guard let scrollView = scrollViewRef else { return }
+                let offsetX = trackPaddingWidth(screenshotHeight: screenshotHeight) + trackSpacing
+                scrollView.contentView.scroll(to: NSPoint(x: offsetX, y: 0))
+                scrollView.reflectScrolledClipView(scrollView.contentView)
+            }
+        }
     }
 
     // MARK: - Slot Container
@@ -662,6 +715,8 @@ struct ScreenshotsView: View {
         displayState: SlotDisplayState,
         screenshotHeight: CGFloat
     ) -> some View {
+        let isDebuggingScroll = debugScrollingRight && draggingSlot?.id == slot.id
+
         if displayState.hasError {
             slotPlaceholder(screenshotHeight: screenshotHeight) {
                 VStack(spacing: 6) {
@@ -690,8 +745,14 @@ struct ScreenshotsView: View {
                 .frame(height: screenshotHeight)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(displayState.borderColor, lineWidth: 2)
+                    Group {
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(displayState.borderColor, lineWidth: 2)
+                        if isDebuggingScroll {
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(.red, lineWidth: 4)
+                        }
+                    }
                 )
         } else if let url = slot.ascScreenshot?.imageURL {
             AsyncImage(url: url) { phase in
@@ -711,14 +772,26 @@ struct ScreenshotsView: View {
             .frame(height: screenshotHeight)
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(displayState.borderColor, lineWidth: 2)
+                Group {
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(displayState.borderColor, lineWidth: 2)
+                    if isDebuggingScroll {
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(.red, lineWidth: 4)
+                    }
+                }
             )
         } else {
             slotPlaceholder(icon: "photo", screenshotHeight: screenshotHeight)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(displayState.borderColor, lineWidth: 2)
+                    Group {
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(displayState.borderColor, lineWidth: 2)
+                        if isDebuggingScroll {
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(.red, lineWidth: 4)
+                        }
+                    }
                 )
         }
     }

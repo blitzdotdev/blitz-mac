@@ -148,7 +148,7 @@ export default {
 
 **Key concepts:** `$` prefix resolves env vars from `.dev.vars` / `.prod.vars`. Rules are expressions — `auth.uid == id` becomes a SQL WHERE clause. Extensions add behavior (auth, rules, crud). Everything else is auto-generated: REST API, Swagger docs, admin panel.
 
-> **Note:** The default scaffold also includes `authCookie: { name: 'teeny_auth' }` and `passwordConfirmSuffix: 'Confirm'` on the auth extension. This enables browser Auth UI and requires `passwordConfirm` in sign-up/password-reset requests.
+> **Note:** The default scaffold also includes `authCookie: { name: 'teeny_auth' }` and `passwordConfirmSuffix: 'Confirm'` on the auth extension. 
 
 ## Local Development
 
@@ -347,7 +347,7 @@ authProviders: [
 ## Deploy to Production (Teenybase Cloud)
 
 ```bash
-teeny register                # create account (one-time)
+teeny register                # create account (one-time) the user must do this 
 teeny deploy --remote --yes   # deploy
 teeny status                  # see live URL
 ```
