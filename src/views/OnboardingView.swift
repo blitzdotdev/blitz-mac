@@ -149,9 +149,9 @@ struct OnboardingView: View {
         ascSaveSuccess || ASCCredentials.load() != nil
     }
 
-    // Steps: config, [asc setup], import, ask ai
+    // Steps: config, [asc setup], ask ai
     private var totalSteps: Int {
-        var count = 3 // config + import + ask ai
+        var count = 2 // config + ask ai
         if !skipASCSlide { count += 1 }
         return count
     }
@@ -177,8 +177,6 @@ struct OnboardingView: View {
                 case 1:
                     slideASCSetup
                 case 2:
-                    slideImportProject
-                case 3:
                     slideAskAI
                 default:
                     EmptyView()
@@ -429,7 +427,7 @@ struct OnboardingView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Slide header (shared between slides 1 & 2)
+    // MARK: - Slide header
 
     private func slideHeader(title: String, subtitle: String) -> some View {
         VStack(spacing: 4) {
@@ -723,29 +721,13 @@ struct OnboardingView: View {
         )
     }
 
-    // MARK: - Slide 2: Import Project (was Slide 1)
-
-    private var slideImportProject: some View {
-        VStack(spacing: 6) {
-            slideHeader(
-                title: "Import Your Project",
-                subtitle: "Use an existing Flutter, Swift, or React Native project. Or create a new project."
-            )
-
-            OnboardingVideoPlayer(resourceName: "ImportDemo")
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .padding(.horizontal, 8)
-                .padding(.bottom, 4)
-        }
-    }
-
-    // MARK: - Slide 3: Ask AI
+    // MARK: - Slide 2: Ask AI
 
     private var slideAskAI: some View {
         VStack(spacing: 6) {
             slideHeader(
                 title: "Open \(selectedAgent.displayName) in Blitz",
-                subtitle: "Click the terminal icon anywhere to launch \(selectedAgent.displayName). Select your project in the dashboard and ask it to submit your app to the App Store."
+                subtitle: "Click the terminal icon anywhere to launch \(selectedAgent.displayName). Select one of your imported apps in the dashboard and ask it to submit your app to the App Store."
             )
 
             // Demo video — transparent background, aspect fit
