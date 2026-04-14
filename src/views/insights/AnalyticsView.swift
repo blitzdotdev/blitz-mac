@@ -20,7 +20,7 @@ struct AnalyticsView: View {
             projectId: appState.activeProjectId ?? "",
             bundleId: appState.activeProject?.metadata.bundleIdentifier
         ) {
-            ASCTabContent(appState: appState, asc: asc, tab: .analytics, platform: appState.activeProject?.platform ?? .iOS) {
+            ASCTabContent(appState: appState, asc: asc, tab: .analytics, platform: appState.activeProject?.platform ?? .iOS, allowWithoutLocalProject: true) {
                 analyticsContent
             }
         }

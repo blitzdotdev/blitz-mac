@@ -499,7 +499,7 @@ struct ScreenshotsView: View {
             projectId: appState.activeProjectId ?? "",
             bundleId: appState.activeProject?.metadata.bundleIdentifier
         ) {
-            ASCTabContent(appState: appState, asc: asc, tab: .screenshots, platform: platform) {
+            ASCTabContent(appState: appState, asc: asc, tab: .screenshots, platform: platform, allowWithoutLocalProject: true) {
                 VStack(spacing: 0) {
                     if asc.app != nil {
                         ASCVersionPickerBar(
@@ -706,7 +706,7 @@ struct ScreenshotsView: View {
                     })
             }
         }
-        .opacity(draggingSlot?.id == item.slot?.id ? 0.08 : 1)
+        .opacity(draggingSlot != nil && draggingSlot?.id == item.slot?.id ? 0.08 : 1)
         .background(slotFrameReader(for: item))
     }
 
