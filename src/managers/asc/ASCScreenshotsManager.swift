@@ -20,6 +20,11 @@ extension ASCManager {
         ],
     ]
 
+    private struct PreparedTrackUpload {
+        let path: String
+        let isTemporary: Bool
+    }
+
     // MARK: - Screenshot Data
 
     func screenshotCacheKey(versionId: String? = nil, locale: String) -> String {
@@ -196,12 +201,20 @@ extension ASCManager {
         if let set, let shots = screenshotsForLocale(locale)[set.id] {
             for (i, shot) in shots.prefix(10).enumerated() {
                 var localImage = cachedScreenshotImage(for: shot.id)
-                if localImage == nil, i < previousSlots.count, let prev = previousSlots[i] {
-                    localImage = prev.localImage
+                let localPath = resolvedLocalSourcePath(for: shot, previousSlots: previousSlots)
+                if localImage == nil {
+                    if i < previousSlots.count, let prev = previousSlots[i], prev.id == shot.id {
+                        localImage = prev.localImage
+                    } else if let localPath,
+                              let image = NSImage(contentsOfFile: localPath) {
+                        localImage = image
+                    } else if i < previousSlots.count, let prev = previousSlots[i] {
+                        localImage = prev.localImage
+                    }
                 }
                 slots[i] = TrackSlot(
                     id: shot.id,
-                    localPath: nil,
+                    localPath: localPath,
                     localImage: localImage,
                     ascScreenshot: shot,
                     isFromASC: true
@@ -209,6 +222,45 @@ extension ASCManager {
             }
         }
         return slots
+    }
+
+    private func resolvedLocalSourcePath(for screenshot: ASCScreenshot, previousSlots: [TrackSlot?]) -> String? {
+        let targetFileName = screenshot.attributes.fileName?.lowercased()
+
+        func matches(_ slot: TrackSlot) -> Bool {
+            guard let localPath = slot.localPath,
+                  FileManager.default.fileExists(atPath: localPath) else {
+                return false
+            }
+            if slot.id == screenshot.id {
+                return true
+            }
+            let localFileName = URL(fileURLWithPath: localPath).lastPathComponent.lowercased()
+            if let targetFileName {
+                if slot.ascScreenshot?.attributes.fileName?.lowercased() == targetFileName {
+                    return true
+                }
+                if localFileName == targetFileName {
+                    return true
+                }
+            }
+            return false
+        }
+
+        if let matched = previousSlots.compactMap({ $0 }).first(where: matches) {
+            return matched.localPath
+        }
+
+        guard let targetFileName,
+              let projectId = appState?.activeProjectId else {
+            return nil
+        }
+
+        let candidate = BlitzPaths.screenshots(projectId: projectId).appendingPathComponent(targetFileName)
+        guard FileManager.default.fileExists(atPath: candidate.path) else {
+            return nil
+        }
+        return candidate.path
     }
 
     func invalidateStaleTrackSnapshots(displayType: String, locale: String) {
@@ -268,6 +320,131 @@ extension ASCManager {
 
     // MARK: - Track Synchronization
 
+    func requiresFullTrackRebuild(current: [TrackSlot?], saved: [TrackSlot?]) -> Bool {
+        let currentFilled = current.compactMap { $0 }
+        let currentRemoteIds = currentFilled.compactMap { slot -> String? in
+            guard slot.isFromASC else { return nil }
+            return slot.id
+        }
+        let currentRemoteIdSet = Set(currentRemoteIds)
+        let savedRemainingRemoteIds = saved.compactMap { slot -> String? in
+            guard let slot, slot.isFromASC, currentRemoteIdSet.contains(slot.id) else { return nil }
+            return slot.id
+        }
+
+        if currentRemoteIds != savedRemainingRemoteIds {
+            return true
+        }
+
+        var sawLocalSlot = false
+        for slot in currentFilled {
+            if slot.isFromASC {
+                if sawLocalSlot {
+                    return true
+                }
+            } else {
+                sawLocalSlot = true
+            }
+        }
+
+        return false
+    }
+
+    private func prepareTrackUploads(
+        current: [TrackSlot?],
+        fullRebuild: Bool
+    ) async throws -> [PreparedTrackUpload] {
+        var uploads: [PreparedTrackUpload] = []
+        uploads.reserveCapacity(current.compactMap { $0 }.count)
+
+        for slot in current {
+            guard let slot else { continue }
+            if let localPath = slot.localPath {
+                guard FileManager.default.fileExists(atPath: localPath) else {
+                    throw NSError(
+                        domain: "ASCManager",
+                        code: 5,
+                        userInfo: [
+                            NSLocalizedDescriptionKey: "Local screenshot file is missing at \(localPath). Re-add it and save again."
+                        ]
+                    )
+                }
+                uploads.append(PreparedTrackUpload(path: localPath, isTemporary: false))
+                continue
+            }
+            guard fullRebuild else {
+                continue
+            }
+            guard slot.isFromASC, let screenshot = slot.ascScreenshot else {
+                throw NSError(
+                    domain: "ASCManager",
+                    code: 6,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: "A staged screenshot could not be resolved for re-upload. Refresh the screenshots tab and try again."
+                    ]
+                )
+            }
+            uploads.append(try await stageRemoteScreenshotForReupload(screenshot))
+        }
+
+        return uploads
+    }
+
+    private func stageRemoteScreenshotForReupload(_ screenshot: ASCScreenshot) async throws -> PreparedTrackUpload {
+        guard let downloadURL = screenshot.originalImageURL else {
+            throw NSError(
+                domain: "ASCManager",
+                code: 1,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "Could not download the original screenshot for '\(screenshot.attributes.fileName ?? screenshot.id)'. Re-add it locally and save again."
+                ]
+            )
+        }
+
+        let (data, response) = try await URLSession.shared.data(from: downloadURL)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw NSError(
+                domain: "ASCManager",
+                code: 2,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "Downloading '\(screenshot.attributes.fileName ?? screenshot.id)' failed with status \(http.statusCode)."
+                ]
+            )
+        }
+
+        guard let image = Self.decodeScreenshotImage(from: data) else {
+            throw NSError(
+                domain: "ASCManager",
+                code: 3,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "Downloaded screenshot '\(screenshot.attributes.fileName ?? screenshot.id)' was unreadable."
+                ]
+            )
+        }
+
+        if let expectedWidth = screenshot.attributes.imageAsset?.width,
+           let expectedHeight = screenshot.attributes.imageAsset?.height {
+            let actualSize = Self.pixelDimensions(for: image)
+            guard actualSize.width == expectedWidth, actualSize.height == expectedHeight else {
+                throw NSError(
+                    domain: "ASCManager",
+                    code: 4,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: "Downloaded screenshot '\(screenshot.attributes.fileName ?? screenshot.id)' had unexpected dimensions \(actualSize.width)x\(actualSize.height); expected \(expectedWidth)x\(expectedHeight)."
+                    ]
+                )
+            }
+        }
+
+        let baseName = screenshot.attributes.fileName?.isEmpty == false
+            ? screenshot.attributes.fileName!
+            : "\(screenshot.id).png"
+        let stagedURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("blitz-screenshot-\(UUID().uuidString)-\(baseName)")
+        try data.write(to: stagedURL, options: .atomic)
+        return PreparedTrackUpload(path: stagedURL.path, isTemporary: true)
+    }
+
     func syncTrackToASC(displayType: String, locale: String) async {
         guard let service else {
             writeError = "ASC service not configured"
@@ -296,45 +473,32 @@ extension ASCManager {
 
             let current = trackSlots[trackKey] ?? Array(repeating: nil, count: 10)
             let saved = savedTrackState[trackKey] ?? Array(repeating: nil, count: 10)
-            let savedIds = Set(saved.compactMap { $0?.id })
-            let currentIds = Set(current.compactMap { $0?.id })
-            let toDelete = savedIds.subtracting(currentIds)
-            for id in toDelete {
+            let savedRemoteIds = Set(saved.compactMap { slot -> String? in
+                guard let slot, slot.isFromASC else { return nil }
+                return slot.id
+            })
+            let currentRemoteIds = Set(current.compactMap { slot -> String? in
+                guard let slot, slot.isFromASC else { return nil }
+                return slot.id
+            })
+            let fullRebuild = requiresFullTrackRebuild(current: current, saved: saved)
+            let uploads = try await prepareTrackUploads(current: current, fullRebuild: fullRebuild)
+            defer {
+                for upload in uploads where upload.isTemporary {
+                    try? FileManager.default.removeItem(atPath: upload.path)
+                }
+            }
+
+            let idsToDelete = fullRebuild
+                ? savedRemoteIds
+                : savedRemoteIds.subtracting(currentRemoteIds)
+            for id in idsToDelete {
                 try await service.deleteScreenshot(screenshotId: id)
             }
-            removeCachedScreenshotImages(for: toDelete)
+            removeCachedScreenshotImages(for: idsToDelete)
 
-            let currentASCIds = current.compactMap { slot -> String? in
-                guard let slot, slot.isFromASC else { return nil }
-                return slot.id
-            }
-            let savedASCIds = saved.compactMap { slot -> String? in
-                guard let slot, slot.isFromASC else { return nil }
-                return slot.id
-            }
-            let remainingASCIds = Set(currentASCIds)
-            let reorderNeeded = currentASCIds != savedASCIds.filter { remainingASCIds.contains($0) }
-
-            if reorderNeeded {
-                for id in currentASCIds where !toDelete.contains(id) {
-                    try await service.deleteScreenshot(screenshotId: id)
-                }
-            }
-
-            for slot in current {
-                guard let slot else { continue }
-                if let path = slot.localPath {
-                    try await service.uploadScreenshot(localizationId: loc.id, path: path, displayType: displayType)
-                } else if reorderNeeded, slot.isFromASC, let ascShot = slot.ascScreenshot {
-                    if let url = ascShot.imageURL,
-                       let (data, _) = try? await URLSession.shared.data(from: url),
-                       let fileName = ascShot.attributes.fileName {
-                        let tmpPath = FileManager.default.temporaryDirectory.appendingPathComponent(fileName).path
-                        try data.write(to: URL(fileURLWithPath: tmpPath))
-                        try await service.uploadScreenshot(localizationId: loc.id, path: tmpPath, displayType: displayType)
-                        try? FileManager.default.removeItem(atPath: tmpPath)
-                    }
-                }
+            for upload in uploads {
+                try await service.uploadScreenshot(localizationId: loc.id, path: upload.path, displayType: displayType)
             }
 
             await loadScreenshots(locale: loc.attributes.locale, force: true)
@@ -360,35 +524,6 @@ extension ASCManager {
     func deleteScreenshot(screenshotId: String) async throws {
         guard let service else { throw ASCError.notFound("ASC service not configured") }
         try await service.deleteScreenshot(screenshotId: screenshotId)
-    }
-
-    // MARK: - Local Assets
-
-    func scanLocalAssets(projectId: String) {
-        let dir = BlitzPaths.screenshots(projectId: projectId)
-        let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else {
-            localScreenshotAssets = []
-            return
-        }
-        let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "webp"]
-        localScreenshotAssets = files
-            .filter { imageExtensions.contains($0.pathExtension.lowercased()) }
-            .sorted { $0.lastPathComponent < $1.lastPathComponent }
-            .compactMap { url in
-                var image = NSImage(contentsOf: url)
-                if image == nil || image!.representations.isEmpty {
-                    if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-                       let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) {
-                        image = NSImage(
-                            cgImage: cgImage,
-                            size: NSSize(width: cgImage.width, height: cgImage.height)
-                        )
-                    }
-                }
-                guard let image else { return nil }
-                return LocalScreenshotAsset(id: UUID(), url: url, image: image, fileName: url.lastPathComponent)
-            }
     }
 
     // MARK: - Track Management
@@ -473,6 +608,27 @@ extension ASCManager {
         let item = slots.remove(at: fromIndex)
         slots.insert(item, at: toIndex)
         trackSlots[trackKey] = slots
+    }
+
+    @discardableResult
+    func reorderTrack(
+        displayType: String,
+        order: [Int],
+        locale: String = "en-US"
+    ) -> String? {
+        guard order.count == 10 else {
+            return "Order must contain exactly 10 indexes."
+        }
+        let expected = Set(0..<10)
+        let provided = Set(order)
+        guard provided == expected else {
+            return "Order must be a permutation of indexes 0 through 9."
+        }
+
+        let trackKey = screenshotTrackKey(displayType: displayType, locale: locale)
+        let slots = trackSlots[trackKey] ?? Array(repeating: nil, count: 10)
+        trackSlots[trackKey] = order.map { slots[$0] }
+        return nil
     }
 
     // MARK: - Track Loading
@@ -602,5 +758,16 @@ extension ASCManager {
             return nil
         }
         return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+    }
+
+    nonisolated private static func pixelDimensions(for image: NSImage) -> (width: Int, height: Int) {
+        if let rep = image.representations.first, rep.pixelsWide > 0, rep.pixelsHigh > 0 {
+            return (rep.pixelsWide, rep.pixelsHigh)
+        }
+        if let tiff = image.tiffRepresentation,
+           let bitmap = NSBitmapImageRep(data: tiff) {
+            return (bitmap.pixelsWide, bitmap.pixelsHigh)
+        }
+        return (Int(image.size.width), Int(image.size.height))
     }
 }

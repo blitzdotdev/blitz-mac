@@ -201,13 +201,41 @@ struct ASCScreenshot: Decodable, Identifiable {
         }
     }
 
-    var imageURL: URL? {
-        guard let template = attributes.imageAsset?.templateUrl else { return nil }
+    private var fileFormat: String {
+        let ext = (attributes.fileName as NSString?)?.pathExtension.lowercased() ?? ""
+        switch ext {
+        case "jpg", "jpeg":
+            return "jpg"
+        case "png":
+            return "png"
+        default:
+            return "png"
+        }
+    }
+
+    private func renderedImageURL(width: Int, height: Int, format: String) -> URL? {
+        guard let template = attributes.imageAsset?.templateUrl,
+              width > 0,
+              height > 0 else {
+            return nil
+        }
         let urlStr = template
-            .replacingOccurrences(of: "{w}", with: "400")
-            .replacingOccurrences(of: "{h}", with: "800")
-            .replacingOccurrences(of: "{f}", with: "png")
+            .replacingOccurrences(of: "{w}", with: "\(width)")
+            .replacingOccurrences(of: "{h}", with: "\(height)")
+            .replacingOccurrences(of: "{f}", with: format)
         return URL(string: urlStr)
+    }
+
+    var imageURL: URL? {
+        renderedImageURL(width: 400, height: 800, format: "png")
+    }
+
+    var originalImageURL: URL? {
+        guard let width = attributes.imageAsset?.width,
+              let height = attributes.imageAsset?.height else {
+            return nil
+        }
+        return renderedImageURL(width: width, height: height, format: fileFormat)
     }
 
     var hasError: Bool {
@@ -236,13 +264,6 @@ struct TrackSlot: Identifiable, Equatable {
     static func == (lhs: TrackSlot, rhs: TrackSlot) -> Bool {
         lhs.id == rhs.id
     }
-}
-
-struct LocalScreenshotAsset: Identifiable {
-    let id: UUID
-    let url: URL
-    let image: NSImage
-    let fileName: String
 }
 
 // MARK: - CustomerReview

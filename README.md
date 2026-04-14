@@ -173,7 +173,7 @@ Blitz supports three display types: iPhone 6.7", iPad Pro 12.9", and Mac. Requir
 - **iPad Pro 12.9"**: 2048×2732
 - **Mac**: 1280×800, 1440×900, 2560×1600, or 2880×1800
 
-Capture screenshots from the iOS Simulator, then drag them into Blitz's screenshot track or let Claude Code place them with `screenshots_set_track`.
+Capture screenshots from the iOS Simulator, then drag them into Blitz's screenshot track or let Claude Code manipulate slots directly with `screenshots_put_track_slot`, `screenshots_remove_track_slot`, `screenshots_reorder_track`, and `screenshots_save`.
 
 ### Why does my app keep getting rejected?
 

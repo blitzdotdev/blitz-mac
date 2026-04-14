@@ -223,7 +223,7 @@ enum MCPRegistry {
         // -- Screenshot Track Tools --
         tools.append(tool(
             name: "screenshots_switch_localization",
-            description: "Refresh screenshot localizations from App Store Connect, switch the Blitz screenshots tab to the requested locale, and hydrate that locale's screenshot tracks. Call this before screenshots_set_track or screenshots_save when targeting a specific locale.",
+            description: "Refresh screenshot localizations from App Store Connect, switch the Blitz screenshots tab to the requested locale, and hydrate that locale's screenshot tracks. Call this before manipulating track slots or saving when targeting a specific locale.",
             properties: [
                 "locale": ["type": "string", "description": "Locale code to select in the screenshots tab (for example en-US or en-GB)"]
             ],
@@ -231,25 +231,42 @@ enum MCPRegistry {
         ))
 
         tools.append(tool(
-            name: "screenshots_add_asset",
-            description: "Copy a screenshot file into the project's local screenshots asset library.",
+            name: "screenshots_put_track_slot",
+            description: "Import a screenshot file directly into a specific track slot (1-10). If the slot is occupied, Blitz inserts the new screenshot there and shifts later slots right. If you are targeting a specific locale, call screenshots_switch_localization first.",
             properties: [
                 "sourcePath": ["type": "string", "description": "Absolute path to the source image file"],
-                "fileName": ["type": "string", "description": "Optional file name for the copy (defaults to source file name)"]
+                "slotIndex": ["type": "integer", "description": "Track slot position (1-10)"],
+                "displayType": ["type": "string", "description": "Display type (default APP_IPHONE_67)", "enum": ["APP_IPHONE_67", "APP_IPAD_PRO_3GEN_129", "APP_DESKTOP"]],
+                "locale": ["type": "string", "description": "Locale code. Must match the currently selected screenshots locale in Blitz."],
+                "fileName": ["type": "string", "description": "Optional stored file name for the imported image (defaults to the source file name, converting to .png when needed)"]
             ],
-            required: ["sourcePath"]
+            required: ["sourcePath", "slotIndex"]
         ))
 
         tools.append(tool(
-            name: "screenshots_set_track",
-            description: "Place a local screenshot asset into a specific track slot (1-10) for upload staging. If you are targeting a specific locale, call screenshots_switch_localization first.",
+            name: "screenshots_remove_track_slot",
+            description: "Remove the screenshot currently staged in a specific track slot (1-10). If you are targeting a specific locale, call screenshots_switch_localization first.",
             properties: [
-                "assetFileName": ["type": "string", "description": "File name of the asset in the local screenshots library"],
                 "slotIndex": ["type": "integer", "description": "Track slot position (1-10)"],
                 "displayType": ["type": "string", "description": "Display type (default APP_IPHONE_67)", "enum": ["APP_IPHONE_67", "APP_IPAD_PRO_3GEN_129", "APP_DESKTOP"]],
                 "locale": ["type": "string", "description": "Locale code. Must match the currently selected screenshots locale in Blitz."]
             ],
-            required: ["assetFileName", "slotIndex"]
+            required: ["slotIndex"]
+        ))
+
+        tools.append(tool(
+            name: "screenshots_reorder_track",
+            description: "Reorder the current screenshot track using a full 10-element permutation of the current 0-based slot positions. For example, [0,2,1,4,3,5,6,7,8,9] swaps slots 2/3 and 4/5. If you are targeting a specific locale, call screenshots_switch_localization first.",
+            properties: [
+                "order": [
+                    "type": "array",
+                    "description": "Exactly 10 integers containing each slot index 0 through 9 once. The value at each position says which current slot moves there.",
+                    "items": ["type": "integer"] as [String: Any]
+                ] as [String: Any],
+                "displayType": ["type": "string", "description": "Display type (default APP_IPHONE_67)", "enum": ["APP_IPHONE_67", "APP_IPAD_PRO_3GEN_129", "APP_DESKTOP"]],
+                "locale": ["type": "string", "description": "Locale code. Must match the currently selected screenshots locale in Blitz."]
+            ],
+            required: ["order"]
         ))
 
         tools.append(tool(
@@ -418,7 +435,8 @@ enum MCPRegistry {
             return .query
         case "asc_create_version":
             return .ascSubmitMutation
-        case "screenshots_switch_localization", "screenshots_add_asset", "screenshots_set_track", "screenshots_save":
+        case "screenshots_switch_localization", "screenshots_put_track_slot",
+             "screenshots_remove_track_slot", "screenshots_reorder_track", "screenshots_save":
             return .ascScreenshotMutation
         case "asc_open_submit_preview":
             return .ascSubmitMutation

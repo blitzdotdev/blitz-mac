@@ -883,10 +883,6 @@ struct ScreenshotsView: View {
 
     private func loadData() async {
         syncSelectedDeviceIfNeeded()
-        if let projectId = appState.activeProjectId {
-            asc.scanLocalAssets(projectId: projectId)
-        }
-
         await asc.ensureTabData(.screenshots)
         if asc.selectedScreenshotsLocale == nil {
             asc.selectedScreenshotsLocale = asc.localizations.first?.attributes.locale
@@ -973,8 +969,6 @@ struct ScreenshotsView: View {
         }
 
         guard let path = destPath else { return }
-
-        asc.scanLocalAssets(projectId: projectId)
 
         if let error = asc.addAssetToTrack(
             displayType: selectedDisplayType,

@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import ImageIO
 
 extension MCPExecutor {
     // MARK: - ASC Form Tools
@@ -711,39 +712,6 @@ extension MCPExecutor {
         ])
     }
 
-    func executeScreenshotsAddAsset(_ args: [String: Any]) async throws -> [String: Any] {
-        guard let sourcePath = args["sourcePath"] as? String else {
-            throw MCPServerService.MCPError.invalidToolArgs
-        }
-        let expanded = (sourcePath as NSString).expandingTildeInPath
-        guard FileManager.default.fileExists(atPath: expanded) else {
-            return mcpText("Error: file not found at \(expanded)")
-        }
-
-        guard let projectId = await MainActor.run(body: { appState.activeProjectId }) else {
-            return mcpText("Error: no active project")
-        }
-
-        let destDir = BlitzPaths.screenshots(projectId: projectId)
-        let fm = FileManager.default
-        try? fm.createDirectory(at: destDir, withIntermediateDirectories: true)
-
-        let fileName = args["fileName"] as? String ?? (expanded as NSString).lastPathComponent
-        let dest = destDir.appendingPathComponent(fileName)
-
-        do {
-            if fm.fileExists(atPath: dest.path) {
-                try fm.removeItem(at: dest)
-            }
-            try fm.copyItem(atPath: expanded, toPath: dest.path)
-        } catch {
-            return mcpText("Error copying file: \(error.localizedDescription)")
-        }
-
-        await MainActor.run { appState.ascManager.scanLocalAssets(projectId: projectId) }
-        return mcpJSON(["success": true, "fileName": fileName])
-    }
-
     func executeScreenshotsSwitchLocalization(_ args: [String: Any]) async throws -> [String: Any] {
         guard let rawLocale = args["locale"] as? String else {
             throw MCPServerService.MCPError.invalidToolArgs
@@ -798,37 +766,29 @@ extension MCPExecutor {
         ])
     }
 
-    func executeScreenshotsSetTrack(_ args: [String: Any]) async throws -> [String: Any] {
-        guard let assetFileName = args["assetFileName"] as? String else {
-            throw MCPServerService.MCPError.invalidToolArgs
-        }
-        guard let slotRaw = args["slotIndex"] as? Int ?? (args["slotIndex"] as? Double).map({ Int($0) }),
+    private func resolveScreenshotSlotIndex(_ rawValue: Any?) -> Int? {
+        guard let slotRaw = rawValue as? Int ?? (rawValue as? Double).map({ Int($0) }),
               slotRaw >= 1 && slotRaw <= 10 else {
-            return mcpText("Error: slotIndex must be between 1 and 10")
+            return nil
         }
-        let slotIndex = slotRaw - 1
-        let displayType = args["displayType"] as? String ?? "APP_IPHONE_67"
-        let (locale, explicitlyRequestedLocale) = await resolveScreenshotsLocale(from: args)
+        return slotRaw - 1
+    }
 
-        let selectedLocale = await MainActor.run {
-            appState.ascManager.selectedScreenshotsLocale ?? appState.ascManager.localizations.first?.attributes.locale
+    private func selectedScreenshotsLocale() async -> String? {
+        await MainActor.run {
+            appState.ascManager.selectedScreenshotsLocale
+                ?? appState.ascManager.localizations.first?.attributes.locale
         }
+    }
+
+    private func ensurePreparedScreenshotsTrack(
+        displayType: String,
+        locale: String,
+        explicitlyRequestedLocale: Bool
+    ) async -> String? {
+        let selectedLocale = await selectedScreenshotsLocale()
         if explicitlyRequestedLocale, selectedLocale != locale {
-            return mcpText(
-                "Error: screenshots locale '\(locale)' is not selected in Blitz. "
-                    + "Call screenshots_switch_localization first."
-            )
-        }
-
-        guard let projectId = await MainActor.run(body: { appState.activeProjectId }) else {
-            return mcpText("Error: no active project")
-        }
-
-        let dir = BlitzPaths.screenshots(projectId: projectId)
-        let filePath = dir.appendingPathComponent(assetFileName).path
-
-        guard FileManager.default.fileExists(atPath: filePath) else {
-            return mcpText("Error: asset '\(assetFileName)' not found in local screenshots library")
+            return "Error: screenshots locale '\(locale)' is not selected in Blitz. Call screenshots_switch_localization first."
         }
 
         await MainActor.run {
@@ -838,28 +798,229 @@ extension MCPExecutor {
                 asc.loadTrackFromASC(displayType: displayType, locale: locale)
             }
         }
+
         let trackReady = await MainActor.run {
             appState.ascManager.hasTrackState(displayType: displayType, locale: locale)
         }
         guard trackReady else {
-            return mcpText(
-                "Error: screenshot locale '\(locale)' is not prepared in Blitz. "
-                    + "Call screenshots_switch_localization first."
+            return "Error: screenshot locale '\(locale)' is not prepared in Blitz. Call screenshots_switch_localization first."
+        }
+        return nil
+    }
+
+    private func decodeScreenshotImage(at url: URL) -> NSImage? {
+        if let image = NSImage(contentsOf: url), !image.representations.isEmpty {
+            return image
+        }
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            return nil
+        }
+        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+    }
+
+    private func pngData(for image: NSImage) -> Data? {
+        guard let tiff = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff) else {
+            return nil
+        }
+        return bitmap.representation(using: .png, properties: [:])
+    }
+
+    private func importScreenshotToProjectStore(
+        sourcePath: String,
+        fileNameOverride: String?,
+        projectId: String
+    ) throws -> (storedPath: String, storedFileName: String) {
+        let expanded = (sourcePath as NSString).expandingTildeInPath
+        guard FileManager.default.fileExists(atPath: expanded) else {
+            throw NSError(domain: "BlitzMCP", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "file not found at \(expanded)"
+            ])
+        }
+
+        let sourceURL = URL(fileURLWithPath: expanded)
+        let requestedFileName = fileNameOverride?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let sourceExtension = sourceURL.pathExtension.lowercased()
+        let normalizedFileName: String
+        if let requestedFileName, !requestedFileName.isEmpty {
+            if sourceExtension == "png" {
+                normalizedFileName = requestedFileName
+            } else {
+                let baseName = URL(fileURLWithPath: requestedFileName)
+                    .deletingPathExtension()
+                    .lastPathComponent
+                normalizedFileName = baseName + ".png"
+            }
+        } else if sourceExtension == "png" {
+            normalizedFileName = sourceURL.lastPathComponent
+        } else {
+            normalizedFileName = sourceURL.deletingPathExtension().lastPathComponent + ".png"
+        }
+
+        let destDir = BlitzPaths.screenshots(projectId: projectId)
+        let fm = FileManager.default
+        try fm.createDirectory(at: destDir, withIntermediateDirectories: true)
+        let destURL = destDir.appendingPathComponent(normalizedFileName)
+
+        if fm.fileExists(atPath: destURL.path) {
+            try fm.removeItem(at: destURL)
+        }
+
+        if sourceExtension == "png" {
+            try fm.copyItem(at: sourceURL, to: destURL)
+        } else {
+            guard let image = decodeScreenshotImage(at: sourceURL) else {
+                throw NSError(domain: "BlitzMCP", code: 2, userInfo: [
+                    NSLocalizedDescriptionKey: "unsupported format or could not load image at \(expanded)"
+                ])
+            }
+            guard let pngData = pngData(for: image) else {
+                throw NSError(domain: "BlitzMCP", code: 3, userInfo: [
+                    NSLocalizedDescriptionKey: "failed to convert image to PNG"
+                ])
+            }
+            try pngData.write(to: destURL)
+        }
+
+        return (destURL.path, normalizedFileName)
+    }
+
+    func executeScreenshotsPutTrackSlot(_ args: [String: Any]) async throws -> [String: Any] {
+        guard let sourcePath = args["sourcePath"] as? String else {
+            throw MCPServerService.MCPError.invalidToolArgs
+        }
+        guard let slotIndex = resolveScreenshotSlotIndex(args["slotIndex"]) else {
+            return mcpText("Error: slotIndex must be between 1 and 10")
+        }
+        let slotRaw = slotIndex + 1
+        let displayType = args["displayType"] as? String ?? "APP_IPHONE_67"
+        let (locale, explicitlyRequestedLocale) = await resolveScreenshotsLocale(from: args)
+        if let error = await ensurePreparedScreenshotsTrack(
+            displayType: displayType,
+            locale: locale,
+            explicitlyRequestedLocale: explicitlyRequestedLocale
+        ) {
+            return mcpText(error)
+        }
+
+        guard let projectId = await MainActor.run(body: { appState.activeProjectId }) else {
+            return mcpText("Error: no active project")
+        }
+
+        let storedAsset: (storedPath: String, storedFileName: String)
+        do {
+            storedAsset = try importScreenshotToProjectStore(
+                sourcePath: sourcePath,
+                fileNameOverride: args["fileName"] as? String,
+                projectId: projectId
             )
+        } catch {
+            return mcpText("Error: \(error.localizedDescription)")
         }
 
         let error = await MainActor.run {
             appState.ascManager.addAssetToTrack(
                 displayType: displayType,
                 slotIndex: slotIndex,
-                localPath: filePath,
+                localPath: storedAsset.storedPath,
                 locale: locale
             )
         }
         if let error {
             return mcpText("Error: \(error)")
         }
-        return mcpJSON(["success": true, "slot": slotRaw, "locale": locale])
+        return mcpJSON([
+            "success": true,
+            "slot": slotRaw,
+            "locale": locale,
+            "displayType": displayType,
+            "fileName": storedAsset.storedFileName,
+        ])
+    }
+
+    func executeScreenshotsRemoveTrackSlot(_ args: [String: Any]) async throws -> [String: Any] {
+        guard let slotIndex = resolveScreenshotSlotIndex(args["slotIndex"]) else {
+            return mcpText("Error: slotIndex must be between 1 and 10")
+        }
+        let slotRaw = slotIndex + 1
+        let displayType = args["displayType"] as? String ?? "APP_IPHONE_67"
+        let (locale, explicitlyRequestedLocale) = await resolveScreenshotsLocale(from: args)
+        if let error = await ensurePreparedScreenshotsTrack(
+            displayType: displayType,
+            locale: locale,
+            explicitlyRequestedLocale: explicitlyRequestedLocale
+        ) {
+            return mcpText(error)
+        }
+
+        let slotExists = await MainActor.run {
+            appState.ascManager.trackSlotsForDisplayType(displayType, locale: locale)[slotIndex] != nil
+        }
+        guard slotExists else {
+            return mcpText("Error: slot \(slotRaw) is already empty")
+        }
+
+        await MainActor.run {
+            appState.ascManager.removeFromTrack(
+                displayType: displayType,
+                slotIndex: slotIndex,
+                locale: locale
+            )
+        }
+
+        return mcpJSON([
+            "success": true,
+            "slot": slotRaw,
+            "locale": locale,
+            "displayType": displayType,
+        ])
+    }
+
+    func executeScreenshotsReorderTrack(_ args: [String: Any]) async throws -> [String: Any] {
+        guard let rawOrder = args["order"] as? [Any] else {
+            throw MCPServerService.MCPError.invalidToolArgs
+        }
+        let order = rawOrder.compactMap { value -> Int? in
+            if let intValue = value as? Int {
+                return intValue
+            }
+            if let doubleValue = value as? Double {
+                return Int(doubleValue)
+            }
+            return nil
+        }
+        guard order.count == rawOrder.count else {
+            return mcpText("Error: order must contain only integers")
+        }
+
+        let displayType = args["displayType"] as? String ?? "APP_IPHONE_67"
+        let (locale, explicitlyRequestedLocale) = await resolveScreenshotsLocale(from: args)
+        if let error = await ensurePreparedScreenshotsTrack(
+            displayType: displayType,
+            locale: locale,
+            explicitlyRequestedLocale: explicitlyRequestedLocale
+        ) {
+            return mcpText(error)
+        }
+
+        if let error = await MainActor.run(body: {
+            appState.ascManager.reorderTrack(
+                displayType: displayType,
+                order: order,
+                locale: locale
+            )
+        }) {
+            return mcpText("Error: \(error)")
+        }
+
+        return mcpJSON([
+            "success": true,
+            "order": order,
+            "locale": locale,
+            "displayType": displayType,
+        ])
     }
 
     func executeScreenshotsSave(_ args: [String: Any]) async throws -> [String: Any] {

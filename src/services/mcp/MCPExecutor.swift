@@ -74,7 +74,10 @@ actor MCPExecutor {
             || MCPAppInformationCompatibility.isLocalizationTool(name)
             || name == "asc_create_iap" || name == "asc_create_subscription" || name == "asc_set_app_price"
             || name == "screenshots_switch_localization"
-            || name == "screenshots_add_asset" || name == "screenshots_set_track" || name == "screenshots_save" {
+            || name == "screenshots_put_track_slot"
+            || name == "screenshots_remove_track_slot"
+            || name == "screenshots_reorder_track"
+            || name == "screenshots_save" {
             previousNavigation = await preNavigateASCTool(name: name, arguments: arguments)
         }
 
@@ -134,8 +137,10 @@ actor MCPExecutor {
             targetTab = .app
             targetAppSubTab = .overview
         } else if name == "screenshots_switch_localization"
-                    || name == "screenshots_add_asset"
-                    || name == "screenshots_set_track" || name == "screenshots_save" {
+                    || name == "screenshots_put_track_slot"
+                    || name == "screenshots_remove_track_slot"
+                    || name == "screenshots_reorder_track"
+                    || name == "screenshots_save" {
             targetTab = .screenshots
             targetAppSubTab = nil
         } else if name == "asc_set_app_price" {
@@ -302,10 +307,12 @@ actor MCPExecutor {
             return try await executeASCCreateVersion(arguments)
         case "screenshots_switch_localization":
             return try await executeScreenshotsSwitchLocalization(arguments)
-        case "screenshots_add_asset":
-            return try await executeScreenshotsAddAsset(arguments)
-        case "screenshots_set_track":
-            return try await executeScreenshotsSetTrack(arguments)
+        case "screenshots_put_track_slot":
+            return try await executeScreenshotsPutTrackSlot(arguments)
+        case "screenshots_remove_track_slot":
+            return try await executeScreenshotsRemoveTrackSlot(arguments)
+        case "screenshots_reorder_track":
+            return try await executeScreenshotsReorderTrack(arguments)
         case "screenshots_save":
             return try await executeScreenshotsSave(arguments)
         case "asc_open_submit_preview":

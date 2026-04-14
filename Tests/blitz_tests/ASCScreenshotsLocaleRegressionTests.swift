@@ -151,6 +151,152 @@ import AppKit
 }
 
 @MainActor
+@Test func reorderTrackPermutationUsesCurrentSlotIndexes() {
+    let manager = ASCManager()
+    let locale = "en-US"
+    let displayType = "APP_IPHONE_67"
+    let trackKey = manager.screenshotTrackKey(displayType: displayType, locale: locale)
+
+    manager.trackSlots[trackKey] = [
+        TrackSlot(id: "slot-0", localPath: "/tmp/0.png", localImage: nil, ascScreenshot: nil, isFromASC: false),
+        TrackSlot(id: "slot-1", localPath: "/tmp/1.png", localImage: nil, ascScreenshot: nil, isFromASC: false),
+        TrackSlot(id: "slot-2", localPath: "/tmp/2.png", localImage: nil, ascScreenshot: nil, isFromASC: false),
+        nil,
+        TrackSlot(id: "slot-4", localPath: "/tmp/4.png", localImage: nil, ascScreenshot: nil, isFromASC: false),
+        nil,
+        nil,
+        nil,
+        nil,
+        nil,
+    ]
+
+    let error = manager.reorderTrack(
+        displayType: displayType,
+        order: [0, 2, 1, 4, 3, 5, 6, 7, 8, 9],
+        locale: locale
+    )
+
+    #expect(error == nil)
+    let reordered = manager.trackSlotsForDisplayType(displayType, locale: locale)
+    #expect(reordered[0]?.id == "slot-0")
+    #expect(reordered[1]?.id == "slot-2")
+    #expect(reordered[2]?.id == "slot-1")
+    #expect(reordered[3]?.id == "slot-4")
+    #expect(reordered[4] == nil)
+}
+
+@MainActor
+@Test func loadTrackFromASCPreservesLocalSourcePathsForMatchingUploadedFiles() throws {
+    let manager = ASCManager()
+    let locale = "en-US"
+    let displayType = "APP_IPHONE_67"
+    let trackKey = manager.screenshotTrackKey(displayType: displayType, locale: locale)
+    let set = makeScreenshotSet(id: "set-us", displayType: displayType, count: 3)
+    let path1 = try writeValidScreenshotPNG(width: 1290, height: 2796, fileName: UUID().uuidString + "-ss1.png")
+    let path2 = try writeValidScreenshotPNG(width: 1290, height: 2796, fileName: UUID().uuidString + "-ss2.png")
+    let path3 = try writeValidScreenshotPNG(width: 1290, height: 2796, fileName: UUID().uuidString + "-ss3.png")
+
+    manager.trackSlots[trackKey] = [
+        TrackSlot(id: "local-1", localPath: path1, localImage: nil, ascScreenshot: nil, isFromASC: false),
+        TrackSlot(id: "local-2", localPath: path2, localImage: nil, ascScreenshot: nil, isFromASC: false),
+        TrackSlot(id: "local-3", localPath: path3, localImage: nil, ascScreenshot: nil, isFromASC: false),
+    ] + Array(repeating: nil, count: 7)
+
+    manager.updateScreenshotCache(
+        locale: locale,
+        sets: [set],
+        screenshots: [set.id: [
+            makeScreenshot(id: "remote-1", fileName: URL(fileURLWithPath: path1).lastPathComponent),
+            makeScreenshot(id: "remote-2", fileName: URL(fileURLWithPath: path2).lastPathComponent),
+            makeScreenshot(id: "remote-3", fileName: URL(fileURLWithPath: path3).lastPathComponent),
+        ]]
+    )
+
+    manager.loadTrackFromASC(displayType: displayType, locale: locale, overwriteUnsaved: true)
+
+    let slots = manager.trackSlotsForDisplayType(displayType, locale: locale)
+    #expect(slots[0]?.isFromASC == true)
+    #expect(slots[0]?.localPath == path1)
+    #expect(slots[1]?.localPath == path2)
+    #expect(slots[2]?.localPath == path3)
+}
+
+@Test func originalScreenshotURLUsesNativeDimensions() {
+    let screenshot = makeScreenshot(
+        id: "remote-1",
+        fileName: "remote-1.png",
+        templateURL: "https://example.com/{w}x{h}.{f}",
+        width: 1290,
+        height: 2796
+    )
+
+    #expect(screenshot.imageURL?.absoluteString == "https://example.com/400x800.png")
+    #expect(screenshot.originalImageURL?.absoluteString == "https://example.com/1290x2796.png")
+}
+
+@MainActor
+@Test func trackSyncRequiresFullRebuildWhenLocalSlotSplitsRemoteOrder() {
+    let manager = ASCManager()
+    let remoteA = TrackSlot(
+        id: "remote-a",
+        localPath: nil,
+        localImage: nil,
+        ascScreenshot: makeScreenshot(id: "remote-a", fileName: "a.png"),
+        isFromASC: true
+    )
+    let remoteB = TrackSlot(
+        id: "remote-b",
+        localPath: nil,
+        localImage: nil,
+        ascScreenshot: makeScreenshot(id: "remote-b", fileName: "b.png"),
+        isFromASC: true
+    )
+    let local = TrackSlot(
+        id: "local-1",
+        localPath: "/tmp/local-1.png",
+        localImage: nil,
+        ascScreenshot: nil,
+        isFromASC: false
+    )
+
+    let saved: [TrackSlot?] = [remoteA, remoteB] + Array(repeating: nil, count: 8)
+    let current: [TrackSlot?] = [remoteA, local, remoteB] + Array(repeating: nil, count: 7)
+
+    #expect(manager.requiresFullTrackRebuild(current: current, saved: saved))
+}
+
+@MainActor
+@Test func trackSyncDoesNotRequireFullRebuildForTailAppend() {
+    let manager = ASCManager()
+    let remoteA = TrackSlot(
+        id: "remote-a",
+        localPath: nil,
+        localImage: nil,
+        ascScreenshot: makeScreenshot(id: "remote-a", fileName: "a.png"),
+        isFromASC: true
+    )
+    let remoteB = TrackSlot(
+        id: "remote-b",
+        localPath: nil,
+        localImage: nil,
+        ascScreenshot: makeScreenshot(id: "remote-b", fileName: "b.png"),
+        isFromASC: true
+    )
+    let local = TrackSlot(
+        id: "local-1",
+        localPath: "/tmp/local-1.png",
+        localImage: nil,
+        ascScreenshot: nil,
+        isFromASC: false
+    )
+
+    let saved: [TrackSlot?] = [remoteA, remoteB] + Array(repeating: nil, count: 8)
+    let current: [TrackSlot?] = [remoteA, remoteB, local] + Array(repeating: nil, count: 7)
+
+    #expect(!manager.requiresFullTrackRebuild(current: current, saved: saved))
+}
+
+@MainActor
 @Test func submissionReadinessUsesPrimaryLocaleScreenshotCache() {
     let manager = ASCManager()
     manager.app = makeApp(primaryLocale: "en-US")
@@ -334,7 +480,13 @@ private func makeScreenshotSet(id: String, displayType: String, count: Int?) -> 
     )
 }
 
-private func makeScreenshot(id: String, fileName: String, templateURL: String? = nil) -> ASCScreenshot {
+private func makeScreenshot(
+    id: String,
+    fileName: String,
+    templateURL: String? = nil,
+    width: Int = 400,
+    height: Int = 800
+) -> ASCScreenshot {
     ASCScreenshot(
         id: id,
         attributes: ASCScreenshot.Attributes(
@@ -343,8 +495,8 @@ private func makeScreenshot(id: String, fileName: String, templateURL: String? =
             imageAsset: templateURL.map {
                 ASCScreenshot.Attributes.ImageAsset(
                     templateUrl: $0,
-                    width: 400,
-                    height: 800
+                    width: width,
+                    height: height
                 )
             },
             assetDeliveryState: nil

@@ -187,7 +187,7 @@ Create an auto-renewable subscription. Creates or reuses a subscription group.
     - `asc_fill_form` tab `"monetization"` — isFree (use `asc_set_app_price` for paid pricing)
     - `asc_fill_form` tab `"review.ageRating"` — set all applicable content descriptors
     - `asc_fill_form` tab `"review.contact"` — contactFirstName, contactLastName, contactEmail, contactPhone
-    - Screenshots: `screenshots_add_asset` → `screenshots_set_track` (slots 1-10) → `screenshots_save` for APP_IPHONE_67/APP_IPAD_PRO_3GEN_129 (iOS) or APP_DESKTOP (macOS)
+    - Screenshots: `screenshots_switch_localization` → `screenshots_put_track_slot` / `screenshots_remove_track_slot` / `screenshots_reorder_track` → `screenshots_save` for APP_IPHONE_67/APP_IPAD_PRO_3GEN_129 (iOS) or APP_DESKTOP (macOS)
     - Re-check `get_tab_state` tab `"ascOverview"` to confirm all required fields are filled
 3. **Manual step:** Tell the user to set Privacy Nutrition Labels manually in [App Store Connect](https://appstoreconnect.apple.com) — this is not exposed in Apple's REST API
 4. `app_store_setup_signing` teamId=YOUR_TEAM_ID (one-time per bundle ID)

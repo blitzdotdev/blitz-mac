@@ -40,7 +40,6 @@ extension ASCManager {
         let trackSlots: [String: [TrackSlot?]]
         let savedTrackState: [String: [TrackSlot?]]
         let screenshotImageCache: [String: NSImage]
-        let localScreenshotAssets: [LocalScreenshotAsset]
         let appIconStatus: String?
         let monetizationStatus: String?
         let loadedTabs: Set<AppTab>
@@ -85,7 +84,6 @@ extension ASCManager {
             trackSlots = manager.trackSlots
             savedTrackState = manager.savedTrackState
             screenshotImageCache = manager.screenshotImageCache
-            localScreenshotAssets = manager.localScreenshotAssets
             appIconStatus = manager.appIconStatus
             monetizationStatus = manager.monetizationStatus
             let cachedLoadedTabs = manager.loadedTabs.intersection(Self.cachedProjectTabs)
@@ -130,7 +128,6 @@ extension ASCManager {
             manager.trackSlots = trackSlots
             manager.savedTrackState = savedTrackState
             manager.screenshotImageCache = screenshotImageCache
-            manager.localScreenshotAssets = localScreenshotAssets
             manager.appIconStatus = appIconStatus
             manager.monetizationStatus = monetizationStatus
             manager.loadedTabs = loadedTabs
@@ -403,7 +400,6 @@ extension ASCManager {
         trackSlots = [:]
         savedTrackState = [:]
         screenshotImageCache = [:]
-        localScreenshotAssets = []
         isLoadingTab = [:]
         tabError = [:]
         loadedTabs = []

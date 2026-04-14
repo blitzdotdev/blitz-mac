@@ -464,6 +464,7 @@ extension MCPExecutor {
         let selectedLocale = asc.selectedScreenshotsLocale ?? asc.localizations.first?.attributes.locale ?? ""
         let screenshotSets = asc.screenshotSetsForLocale(selectedLocale)
         let screenshots = asc.screenshotsForLocale(selectedLocale)
+        let displayTypes = asc.orderedKnownScreenshotDisplayTypes(for: selectedLocale)
         let sets = screenshotSets.map { set -> [String: Any] in
             var value: [String: Any] = ["id": set.id, "displayType": set.attributes.screenshotDisplayType]
             if let shots = screenshots[set.id] {
@@ -474,10 +475,38 @@ extension MCPExecutor {
             }
             return value
         }
+        let tracks = displayTypes.map { displayType -> [String: Any] in
+            let currentTrack = asc.trackSlotsForDisplayType(displayType, locale: selectedLocale)
+            let savedTrack = asc.savedTrackStateForDisplayType(displayType, locale: selectedLocale)
+            let slots = currentTrack.enumerated().map { index, slot -> [String: Any] in
+                let savedSlot = savedTrack[index]
+                return [
+                    "index": index,
+                    "slotIndex": index + 1,
+                    "id": slot?.id as Any,
+                    "source": slot == nil ? "empty" : (slot?.isFromASC == true ? "asc" : "local"),
+                    "fileName": slot?.ascScreenshot?.attributes.fileName
+                        ?? slot?.localPath.map { ($0 as NSString).lastPathComponent } as Any,
+                    "localPath": slot?.localPath as Any,
+                    "isFromASC": slot?.isFromASC as Any,
+                    "isSynced": slot != nil && slot?.id == savedSlot?.id,
+                    "hasError": slot?.ascScreenshot?.hasError ?? false,
+                    "errorDescription": slot?.ascScreenshot?.errorDescription as Any,
+                ]
+            }
+            return [
+                "displayType": displayType,
+                "filledSlotCount": currentTrack.compactMap { $0 }.count,
+                "hasUnsavedChanges": asc.hasUnsavedChanges(displayType: displayType, locale: selectedLocale),
+                "slots": slots,
+            ]
+        }
         var result: [String: Any] = [
             "selectedLocale": selectedLocale,
             "availableLocales": asc.localizations.map(\.attributes.locale),
             "screenshotSets": sets,
+            "displayTypes": displayTypes,
+            "tracks": tracks,
             "localeCount": asc.localizations.count,
             "canCreateUpdate": asc.canCreateUpdate,
         ]

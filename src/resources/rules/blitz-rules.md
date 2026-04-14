@@ -20,7 +20,7 @@ Additionally, the **`asc`** CLI (a bundled Go binary for App Store Connect) is a
 - **Build pipeline** — `app_store_setup_signing` → `app_store_build` → `app_store_upload` is the standard flow with progress tracking in Blitz UI
 - **Creating IAPs/subscriptions** — `asc_create_iap` and `asc_create_subscription` handle the full creation flow (product + localization + pricing) in one call
 - **Setting prices** — `asc_set_app_price` for app pricing, including scheduled price changes
-- **Managing screenshots** — `screenshots_add_asset` → `screenshots_set_track` → `screenshots_save` for screenshot upload workflow
+- **Managing screenshots** — `screenshots_switch_localization` → `screenshots_put_track_slot` / `screenshots_remove_track_slot` / `screenshots_reorder_track` → `screenshots_save` for screenshot upload workflow
 - **Submission** — `asc_open_submit_preview` checks readiness and opens the submit modal
 - **Anything with a dedicated MCP tool** — the tool exists because it handles the common case safely
 

@@ -32,6 +32,15 @@ struct MCPRegistryCompatibilityTests {
         #expect(properties["bundleId"] != nil)
     }
 
+    @Test func screenshotRegistryUsesDirectTrackTools() {
+        let tools = MCPRegistry.allTools()
+        #expect(tool(named: "screenshots_add_asset", in: tools) == nil)
+        #expect(tool(named: "screenshots_set_track", in: tools) == nil)
+        #expect(tool(named: "screenshots_put_track_slot", in: tools) != nil)
+        #expect(tool(named: "screenshots_remove_track_slot", in: tools) != nil)
+        #expect(tool(named: "screenshots_reorder_track", in: tools) != nil)
+    }
+
     private func tool(named name: String, in tools: [[String: Any]]) -> [String: Any]? {
         tools.first { $0["name"] as? String == name }
     }
