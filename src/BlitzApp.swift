@@ -71,7 +71,6 @@ struct BlitzApp: App {
     var body: some Scene {
         Window("Blitz", id: "main") {
             ContentView(appState: appState)
-                .frame(minWidth: 800, minHeight: 600)
                 .onAppear {
                     appDelegate.appState = appState
                 }

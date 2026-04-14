@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.35
+- Blitz now detects all of your apps in App Store Connect and imports them into the dashboard, no more manual bundleID setup for existing projects. 
+- Screenshot tab has been greatly simplified 
+
 ## 1.0.34
 - Security updates
 - Onboarding Improvements

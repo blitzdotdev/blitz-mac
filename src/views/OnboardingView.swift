@@ -651,15 +651,15 @@ struct OnboardingView: View {
         )
         Task {
             do {
-                // Route through ASCManager so the dashboard hydrates as soon as the
-                // onboarding credential step finishes — this is what lets a new user
-                // see all their ASC apps instantly on the first main-window render.
+                // Save through ASCManager, then await the shared dashboard prewarm
+                // before completing this step so the first My Apps render already
+                // has data or a live loading state.
                 try await appState.ascManager.saveCredentials(
                     creds,
                     projectId: appState.activeProjectId ?? "onboarding",
                     bundleId: appState.activeProject?.metadata.bundleIdentifier
                 )
-                Task { await prewarmDashboardCache() }
+                await prewarmDashboardCache()
                 withAnimation(.easeInOut(duration: 0.3)) {
                     ascSaveSuccess = true
                 }

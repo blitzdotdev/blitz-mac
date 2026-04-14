@@ -125,7 +125,15 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
+            // Keep the dashboard view tree alive behind onboarding so its
+            // hydration tasks can run before the overlay is dismissed.
             mainContent
+                .frame(
+                    minWidth: showOnboarding ? nil : 800,
+                    minHeight: showOnboarding ? nil : 600
+                )
+                .opacity(showOnboarding ? 0 : 1)
+                .allowsHitTesting(!showOnboarding)
 
             if showOnboarding {
                 onboardingOverlay
@@ -138,6 +146,12 @@ struct ContentView: View {
         .background(HostingWindowFinder { window in
             mainWindow = window
         })
+        .onChange(of: mainWindow) { _, _ in
+            configureWindow(forOnboarding: showOnboarding)
+        }
+        .onChange(of: showOnboarding) { _, isOnboarding in
+            configureWindow(forOnboarding: isOnboarding)
+        }
         .task {
             await appState.projectManager.loadProjects()
             await appState.performLaunchAppWallSyncIfNeeded()
@@ -288,6 +302,28 @@ struct ContentView: View {
         .approvalAlert(appState: appState)
     }
 
+    // MARK: - Window configuration
+
+    private func configureWindow(forOnboarding isOnboarding: Bool) {
+        guard let window = mainWindow else { return }
+        if isOnboarding {
+            window.toolbar?.isVisible = false
+            window.styleMask.remove(.resizable)
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+            window.setContentSize(NSSize(width: 700, height: 440))
+            window.center()
+        } else {
+            window.titlebarAppearsTransparent = false
+            window.titleVisibility = .hidden
+            window.styleMask.insert(.resizable)
+            window.contentMinSize = NSSize(width: 800, height: 600)
+            window.toolbar?.isVisible = true
+            window.setContentSize(NSSize(width: 1200, height: 900))
+            window.center()
+        }
+    }
+
     // MARK: - Main NavigationSplitView content
 
     @ViewBuilder
@@ -325,25 +361,15 @@ struct ContentView: View {
 
     @ViewBuilder
     private var onboardingOverlay: some View {
-        ZStack {
-            Rectangle()
-                .fill(.ultraThickMaterial)
-                .ignoresSafeArea()
-
-            OnboardingView(
-                appState: appState,
-                credentialOnlyMode: credentialOnlyOnboarding
-            ) {
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    showOnboarding = false
-                    credentialOnlyOnboarding = false
-                }
-            }
-            .frame(width: 700, height: 440)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .shadow(color: .black.opacity(0.25), radius: 32, y: 12)
+        OnboardingView(
+            appState: appState,
+            credentialOnlyMode: credentialOnlyOnboarding
+        ) {
+            showOnboarding = false
+            credentialOnlyOnboarding = false
         }
-        .transition(.opacity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.windowBackground)
     }
 }
 

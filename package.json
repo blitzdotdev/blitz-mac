@@ -1,6 +1,6 @@
 {
   "name": "blitz-macos",
-  "version": "1.0.34",
+  "version": "1.0.35",
   "type": "module",
   "private": true,
   "scripts": {
@@ -9,8 +9,6 @@
     "build:app:debug": "killall Blitz 2>/dev/null; CODESIGN_TIMESTAMP=none bash scripts/bundle.sh debug && open .build/Blitz.app",
     "build:app:release": "killall Blitz 2>/dev/null; bash scripts/bundle.sh release && open .build/Blitz.app",
     "build:pkg": "bash scripts/build-pkg.sh",
-    "deploy:r2": "bash scripts/deploy-pkg.sh",
-    "deploy:r2:snapshot": "bash scripts/deploy-pkg.sh --snapshot",
     "release": "npm version patch --no-git-tag-version && VERSION=$(node -p \"require('./package.json').version\") && git add package.json && git commit -m \"$VERSION\" && git tag \"v$VERSION\" && git push origin master --tags",
     "install:local": "npm run build:pkg && sudo pkill -f blitz-postinstall 2>/dev/null; sudo installer -pkg build/Blitz-*.pkg -target / -verbose && open /Applications/Blitz.app"
   },
