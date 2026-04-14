@@ -38,6 +38,9 @@ struct AppShotsView: View {
     @State private var galleryHTML: String = ""
     @State private var isLoadingGallery = true
 
+    @State private var showOnboarding = false
+    @State private var onboardingChecked = false
+
     private var projectId: String? { appState.activeProjectId }
 
     private var outputDir: String? {
@@ -51,13 +54,33 @@ struct AppShotsView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            sourcePanel
-                .frame(width: 240)
-            Divider()
-            rightPanel
+        Group {
+            if showOnboarding {
+                AppShotsOnboardingView(
+                    appState: appState,
+                    onPickSet: { screenshotPath, templateId in
+                        adoptOnboardingSelection(screenshotPath: screenshotPath, templateId: templateId)
+                    },
+                    onDismiss: {
+                        showOnboarding = false
+                    }
+                )
+            } else {
+                HStack(spacing: 0) {
+                    sourcePanel
+                        .frame(width: 240)
+                    Divider()
+                    rightPanel
+                }
+            }
         }
-        .task { await loadCatalog() }
+        .task {
+            await loadCatalog()
+            if !onboardingChecked {
+                onboardingChecked = true
+                showOnboarding = !hasExistingGeneratedShots()
+            }
+        }
         .alert("Error", isPresented: Binding(
             get: { importError != nil },
             set: { if !$0 { importError = nil } }
@@ -66,6 +89,29 @@ struct AppShotsView: View {
         } message: {
             Text(importError ?? "")
         }
+    }
+
+    // MARK: - Onboarding bridge
+
+    /// Consider onboarding "done" if the project's AppShots output dir has at least one PNG.
+    private func hasExistingGeneratedShots() -> Bool {
+        guard let dir = outputDir else { return true } // no project — skip onboarding
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(atPath: dir) else { return false }
+        for case let path as String in enumerator where path.hasSuffix(".png") {
+            return true
+        }
+        return false
+    }
+
+    private func adoptOnboardingSelection(screenshotPath: String, templateId: String) {
+        if let image = NSImage(contentsOfFile: screenshotPath) {
+            sourceImage = image
+            sourceImagePath = screenshotPath
+        }
+        selectedTemplateId = templateId
+        updateFramedPreview()
+        showOnboarding = false
     }
 
     // MARK: - Source Panel (Left)
