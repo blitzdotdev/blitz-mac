@@ -177,6 +177,7 @@ struct DashboardView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.large)
+                .background(.background, in: RoundedRectangle(cornerRadius: 8))
             }
             .padding(20)
         }
