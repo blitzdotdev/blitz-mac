@@ -259,7 +259,7 @@ final class DashboardSummaryStore {
         }
 
         for app in allAscApps {
-            let status = perAppStatuses[app.id] ?? .empty
+            let status = perAppStatuses[app.bundleId] ?? .empty
             nextSummary.include(status)
             nextStatuses[app.bundleId] = status
         }
