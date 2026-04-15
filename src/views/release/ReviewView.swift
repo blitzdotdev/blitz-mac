@@ -106,11 +106,18 @@ struct ReviewView: View {
                     asc: asc,
                     selection: selectedVersionBinding
                 ) {
+                    if let appId = asc.app?.id {
+                        Link(destination: URL(string: "https://appstoreconnect.apple.com/apps/\(appId)/distribution/reviewsubmissions")!) {
+                            Image(systemName: "arrow.up.right.square")
+                                .font(.callout)
+                        }
+                        .help("Open in App Store Connect")
+                    }
                     ASCTabRefreshButton(asc: asc, tab: .review, helpText: "Refresh review data")
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)
-                .background(.background.secondary)
+                .background(.bar)
             }
 
             Divider()

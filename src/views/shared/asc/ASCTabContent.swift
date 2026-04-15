@@ -68,16 +68,6 @@ struct ASCTabContent<Content: View>: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             content()
-                .overlay(alignment: .topTrailing) {
-                    if isLoading && shouldRenderContentWhileLoading {
-                        ProgressView()
-                            .controlSize(.small)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                            .background(.background.secondary, in: Capsule())
-                            .padding(12)
-                    }
-                }
                 .overlay(alignment: .topLeading) {
                     if let error = asc.tabError[tab], asc.hasLoadedTabData(tab) {
                         HStack(spacing: 8) {
@@ -140,19 +130,23 @@ struct ASCTabRefreshButton: View {
     var helpText: String = "Refresh this tab"
 
     private var isRefreshing: Bool {
-        asc.isLoadingTab[tab] == true
+        asc.isTabLoading(tab)
     }
 
     var body: some View {
         Button {
             Task { await asc.refreshTabData(tab) }
         } label: {
-            if isRefreshing {
-                ProgressView()
-                    .controlSize(.small)
-            } else {
-                Image(systemName: "arrow.clockwise")
+            Group {
+                if isRefreshing {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 12, weight: .medium))
+                }
             }
+            .frame(width: 16, height: 16)
         }
         .buttonStyle(.borderless)
         .disabled(isRefreshing)

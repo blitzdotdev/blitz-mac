@@ -100,6 +100,12 @@ enum TerminalApp: Hashable {
 }
 
 struct OnboardingView: View {
+    private enum Step: Equatable {
+        case configuration
+        case ascSetup
+        case askAI
+    }
+
     @Bindable var appState: AppState
     var onComplete: () -> Void
     /// When true, onboarding is shown just to collect/refresh ASC credentials
@@ -122,9 +128,15 @@ struct OnboardingView: View {
         self.appState = appState
         self.credentialOnlyMode = credentialOnlyMode
         self.onComplete = onComplete
-        // When we're only collecting credentials, jump straight to the ASC slide
-        // instead of forcing the user back through the full flow.
-        _currentStep = State(initialValue: credentialOnlyMode ? 1 : 0)
+        let hasStoredCredentials = ASCCredentials.load() != nil
+        if credentialOnlyMode {
+            self.steps = [.ascSetup]
+        } else if hasStoredCredentials {
+            self.steps = [.configuration, .askAI]
+        } else {
+            self.steps = [.configuration, .ascSetup, .askAI]
+        }
+        _currentStep = State(initialValue: 0)
     }
 
     // ASC setup state
@@ -135,51 +147,34 @@ struct OnboardingView: View {
     @State private var ascShowFilePicker = false
     @State private var ascIsSaving = false
     @State private var ascSaveError: String?
-    @State private var ascSaveSuccess = false
     @State private var ascShowInstructions = false
+    private let steps: [Step]
+
+    private var resolvedASCKeyID: String? {
+        let trimmed = ascKeyId.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            return trimmed
+        }
+        return ASCCredentials.keyID(fromPrivateKeyFilename: ascPrivateKeyFileName)
+    }
 
     private var ascIsValid: Bool {
         !ascIssuerId.trimmingCharacters(in: .whitespaces).isEmpty &&
-        !ascKeyId.trimmingCharacters(in: .whitespaces).isEmpty &&
-        !ascPrivateKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    /// Skip the ASC slide if credentials are already configured (or just saved during onboarding)
-    private var skipASCSlide: Bool {
-        ascSaveSuccess || ASCCredentials.load() != nil
-    }
-
-    // Steps: config, [asc setup], ask ai
-    private var totalSteps: Int {
-        var count = 2 // config + ask ai
-        if !skipASCSlide { count += 1 }
-        return count
-    }
-
-    /// Map a logical step index to the actual slide, accounting for skipped slides
-    private func slideForStep(_ step: Int) -> Int {
-        var slide = step
-        // slide 0 = config (always)
-        // slide 1 = asc setup (maybe skipped)
-        if skipASCSlide && slide >= 1 {
-            slide += 1 // skip over ASC
-        }
-        return slide
+        !ascPrivateKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        resolvedASCKeyID != nil
     }
 
     var body: some View {
         VStack(spacing: 0) {
             // Content area
             Group {
-                switch slideForStep(currentStep) {
-                case 0:
+                switch currentSlide {
+                case .configuration:
                     configurationStep
-                case 1:
+                case .ascSetup:
                     slideASCSetup
-                case 2:
+                case .askAI:
                     slideAskAI
-                default:
-                    EmptyView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -205,13 +200,18 @@ struct OnboardingView: View {
                 ascPrivateKeyFileName = pending["privateKeyFileName"]
                 appState.ascManager.pendingCredentialValues = nil
                 // Jump to ASC slide so user can verify
-                if currentStep != 1 {
+                if let ascStepIndex = steps.firstIndex(of: .ascSetup),
+                   currentStep != ascStepIndex {
                     withAnimation(.easeInOut(duration: 0.2)) {
-                        currentStep = 1
+                        currentStep = ascStepIndex
                     }
                 }
             }
         }
+    }
+
+    private var currentSlide: Step {
+        steps[currentStep]
     }
 
     // MARK: - Step 0: Configuration
@@ -447,20 +447,6 @@ struct OnboardingView: View {
 
     @ViewBuilder
     private var slideASCSetup: some View {
-        if ascSaveSuccess {
-            VStack(spacing: 16) {
-                Spacer()
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 56))
-                    .foregroundStyle(.green)
-                Text("Credentials saved")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .transition(.opacity)
-        } else {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 14) {
                 // Header
@@ -472,7 +458,9 @@ struct OnboardingView: View {
                     Text("App Store Connect")
                         .font(.system(size: 20, weight: .bold))
 
-                    Text("Connect your API key to manage submissions, screenshots, and more.")
+                    Text(
+                        "Connect your API key to continue using Blitz. Your key is saved locally and never leaves your machine."
+                    )
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -485,14 +473,6 @@ struct OnboardingView: View {
                         Text("Issuer ID")
                             .font(.callout.weight(.medium))
                         TextField("xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", text: $ascIssuerId)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
-                    }
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Key ID")
-                            .font(.callout.weight(.medium))
-                        TextField("10-character alphanumeric", text: $ascKeyId)
                             .textFieldStyle(.roundedBorder)
                             .font(.system(.body, design: .monospaced))
                     }
@@ -516,22 +496,17 @@ struct OnboardingView: View {
                                     .foregroundStyle(.green)
                                     .font(.body)
                             }
+                        }
 
-                            Spacer()
+                        Text("Blitz validates and saves this key when you press Next.")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
 
-                            Button {
-                                saveASCCredentials()
-                            } label: {
-                                if ascIsSaving {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                        .padding(.horizontal, 8)
-                                } else {
-                                    Text("Save Credentials")
-                                }
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(!ascIsValid || ascIsSaving)
+                        if ascPrivateKeyFileName != nil && resolvedASCKeyID == nil {
+                            Text("Use the original downloaded .p8 filename so Blitz can detect the Apple key automatically.")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
 
@@ -596,7 +571,7 @@ struct OnboardingView: View {
                                 ascInstructionStep(3, "Click the **+** button to generate a new key")
                                 ascInstructionStep(4, "Set Access to **Admin** and give the key a name")
                                 ascInstructionStep(5, "Click **Generate**")
-                                ascInstructionStep(6, "Copy the **Issuer ID** (shown at the top) and the **Key ID** from the key row")
+                                ascInstructionStep(6, "Copy the **Issuer ID** shown at the top of the page")
                                 ascInstructionStep(7, "Click **Download** to save the .p8 file")
                                 Text("The .p8 file can only be downloaded once. Store it securely.")
                                     .font(.caption2)
@@ -624,7 +599,6 @@ struct OnboardingView: View {
                 }
             }
         }
-        } // else
     }
 
     @ViewBuilder
@@ -641,28 +615,30 @@ struct OnboardingView: View {
         }
     }
 
-    private func saveASCCredentials() {
+    private func validateAndSaveASCCredentials() {
+        guard let resolvedASCKeyID else {
+            ascSaveError = "Use the original downloaded .p8 filename so Blitz can detect the Apple key automatically."
+            return
+        }
         ascIsSaving = true
         ascSaveError = nil
         let creds = ASCCredentials(
             issuerId: ascIssuerId.trimmingCharacters(in: .whitespaces),
-            keyId: ascKeyId.trimmingCharacters(in: .whitespaces),
+            keyId: resolvedASCKeyID,
             privateKey: ascPrivateKey.trimmingCharacters(in: .whitespacesAndNewlines)
         )
         Task {
             do {
-                // Save through ASCManager, then await the shared dashboard prewarm
-                // before completing this step so the first My Apps render already
-                // has data or a live loading state.
+                try await AppStoreConnectService(credentials: creds).validateCredentials()
+                // Save through ASCManager, then kick off the shared dashboard prewarm
+                // in the background so the main window can open immediately while
+                // My Apps shows live loading progress.
                 try await appState.ascManager.saveCredentials(
                     creds,
                     projectId: appState.activeProjectId ?? "onboarding",
                     bundleId: appState.activeProject?.metadata.bundleIdentifier
                 )
-                await prewarmDashboardCache()
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    ascSaveSuccess = true
-                }
+                startDashboardPrewarm()
                 // In credential-only mode, we don't need to show the rest of the
                 // onboarding flow — just make sure the settings flag is set and
                 // dismiss onboarding.
@@ -674,6 +650,10 @@ struct OnboardingView: View {
                     }
                     try? await Task.sleep(nanoseconds: 400_000_000)
                     onComplete()
+                } else {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        currentStep += 1
+                    }
                 }
             } catch {
                 ascSaveError = error.localizedDescription
@@ -721,6 +701,12 @@ struct OnboardingView: View {
         )
     }
 
+    private func startDashboardPrewarm() {
+        Task(priority: .utility) {
+            await prewarmDashboardCache()
+        }
+    }
+
     // MARK: - Slide 2: Ask AI
 
     private var slideAskAI: some View {
@@ -765,7 +751,7 @@ struct OnboardingView: View {
 
             // Page dots
             HStack(spacing: 6) {
-                ForEach(0..<totalSteps, id: \.self) { i in
+                ForEach(0..<steps.count, id: \.self) { i in
                     Circle()
                         .fill(i == currentStep ? Color.accentColor : Color.primary.opacity(0.2))
                         .frame(width: 6, height: 6)
@@ -774,25 +760,27 @@ struct OnboardingView: View {
 
             Spacer()
 
-            if currentStep < totalSteps - 1 {
-                // Show "Skip" on the ASC setup slide (step 1)
-                if slideForStep(currentStep) == 1 {
-                    Button("Skip") {
+            if currentSlide == .ascSetup || currentStep < steps.count - 1 {
+                Button {
+                    if currentSlide == .ascSetup {
+                        validateAndSaveASCCredentials()
+                    } else {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             currentStep += 1
                         }
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                }
-
-                Button("Next") {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        currentStep += 1
+                } label: {
+                    if currentSlide == .ascSetup && ascIsSaving {
+                        ProgressView()
+                            .controlSize(.small)
+                            .padding(.horizontal, 8)
+                    } else {
+                        Text("Next")
                     }
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
+                .disabled(currentSlide == .ascSetup && (!ascIsValid || ascIsSaving))
             } else {
                 Button("Get Started") {
                     finishOnboarding()

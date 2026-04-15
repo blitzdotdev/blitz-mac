@@ -169,13 +169,13 @@ enum MCPRegistry {
         // -- ASC Credentials --
         tools.append(tool(
             name: "asc_set_credentials",
-            description: "Pre-fill the App Store Connect API credential form with issuer ID, key ID, and private key file. The user must click 'Save Credentials' to confirm. Works in both onboarding and release tabs.",
+            description: "Pre-fill the App Store Connect API credential form with issuer ID and private key file. `keyId` is optional; when omitted, Blitz derives it from Apple's default `.p8` filename. The user must confirm in the UI. Works in both onboarding and release tabs.",
             properties: [
                 "issuerId": ["type": "string", "description": "Issuer ID (UUID format)"],
-                "keyId": ["type": "string", "description": "Key ID (10-character alphanumeric)"],
+                "keyId": ["type": "string", "description": "Optional key ID (10-character alphanumeric). If omitted, Blitz derives it from a filename like AuthKey_XXXXXXXXXX.p8."],
                 "privateKeyPath": ["type": "string", "description": "Absolute path to the .p8 private key file (e.g. ~/.blitz/AuthKey_XXXXXXXXXX.p8)"]
             ],
-            required: ["issuerId", "keyId", "privateKeyPath"]
+            required: ["issuerId", "privateKeyPath"]
         ))
 
         // -- ASC Form Tools --

@@ -23,8 +23,6 @@ struct ASCVersionPickerBar<Content: View>: View {
                 stateBadge(selectedVersion.attributes.appStoreState ?? "")
             }
 
-            content
-
             Spacer()
 
             if asc.canCreateUpdate, let onCreateUpdate {
@@ -33,6 +31,8 @@ struct ASCVersionPickerBar<Content: View>: View {
                 }
                 .buttonStyle(.borderedProminent)
             }
+
+            content
         }
     }
 

@@ -3,6 +3,8 @@ import SwiftUI
 struct DashboardView: View {
     @Bindable var appState: AppState
     @State private var dashboardSummary = DashboardSummaryStore.shared
+    @State private var appWallRefreshRevision = 0
+    @State private var isRefreshingAllApps = false
 
     private var projects: [Project] { appState.projectManager.projects }
 
@@ -72,6 +74,21 @@ struct DashboardView: View {
             }
 
             Spacer()
+
+            Button {
+                forceRefreshCurrentSubTab()
+            } label: {
+                if isRefreshingCurrentSubTab {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 12, weight: .medium))
+                }
+            }
+            .buttonStyle(.borderless)
+            .disabled(isRefreshingCurrentSubTab)
+            .help(refreshButtonHelpText)
         }
     }
 
@@ -83,7 +100,13 @@ struct DashboardView: View {
         case .myApps:
             myAppsContent
         case .allApps:
-            AllAppsView(appState: appState)
+            AllAppsView(
+                appState: appState,
+                refreshRevision: appWallRefreshRevision,
+                onRefreshStateChange: { isRefreshing in
+                    isRefreshingAllApps = isRefreshing
+                }
+            )
         }
     }
 
@@ -91,8 +114,24 @@ struct DashboardView: View {
     private var showsBlockingSummarySpinner: Bool {
         dashboardSummary.isLoadingSummary && !dashboardSummary.hasLoadedSummary
     }
-    private var showsRefreshSpinner: Bool {
-        dashboardSummary.isLoadingSummary && dashboardSummary.hasLoadedSummary
+    private var summaryLoadingStatusText: String {
+        dashboardSummary.loadingSummaryStatusText ?? "Loading apps…"
+    }
+    private var isRefreshingCurrentSubTab: Bool {
+        switch appState.activeDashboardSubTab {
+        case .myApps:
+            return dashboardSummary.isLoading(for: summaryHydrationKey)
+        case .allApps:
+            return isRefreshingAllApps
+        }
+    }
+    private var refreshButtonHelpText: String {
+        switch appState.activeDashboardSubTab {
+        case .myApps:
+            return "Force refresh My Apps"
+        case .allApps:
+            return "Refresh All Apps"
+        }
     }
 
     private var myAppsContent: some View {
@@ -149,9 +188,10 @@ struct DashboardView: View {
                 VStack(spacing: 12) {
                     ProgressView()
                         .controlSize(.large)
-                    Text("Loading apps…")
+                    Text(summaryLoadingStatusText)
                         .font(.callout)
                         .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                 }
                 .padding(.horizontal, 28)
                 .padding(.vertical, 24)
@@ -180,15 +220,6 @@ struct DashboardView: View {
                 .background(.background, in: RoundedRectangle(cornerRadius: 8))
             }
             .padding(20)
-        }
-        .overlay(alignment: .topTrailing) {
-            if showsRefreshSpinner {
-                ProgressView()
-                    .controlSize(.small)
-                    .padding(12)
-                    .background(.background.secondary, in: Capsule())
-                    .padding(20)
-            }
         }
         .task(id: summaryHydrationKey) {
             await hydrateSummary()
@@ -243,10 +274,10 @@ struct DashboardView: View {
             Group {
                 if let project {
                     ProjectAppIconView(project: project, size: 56, cornerRadius: 12) {
-                        fallbackIcon(name: row.name)
+                        ascIcon(for: row)
                     }
                 } else {
-                    fallbackIcon(name: row.name)
+                    ascIcon(for: row)
                 }
             }
             .padding(3)
@@ -272,6 +303,36 @@ struct DashboardView: View {
         .padding(14)
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private func ascIcon(for row: DashboardAppRow) -> some View {
+        if let iconURL = row.iconURL {
+            AsyncImage(url: iconURL) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                case .empty:
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.accentColor.opacity(0.08))
+                            .frame(width: 56, height: 56)
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                case .failure:
+                    fallbackIcon(name: row.name)
+                @unknown default:
+                    fallbackIcon(name: row.name)
+                }
+            }
+            .frame(width: 56, height: 56)
+        } else {
+            fallbackIcon(name: row.name)
+        }
     }
 
     private func fallbackIcon(name: String) -> some View {
@@ -314,7 +375,7 @@ struct DashboardView: View {
         }
     }
 
-    private func hydrateSummary() async {
+    private func hydrateSummary(force: Bool = false) async {
         let hydrationKey = summaryHydrationKey
         // Make sure credentials are loaded up front — even if there is no active project,
         // the dashboard should show the user's ASC apps as soon as possible.
@@ -329,8 +390,20 @@ struct DashboardView: View {
             for: hydrationKey,
             accountKey: accountKey,
             service: service,
-            projects: appState.projectManager.projects
+            projects: appState.projectManager.projects,
+            force: force
         )
+    }
+
+    private func forceRefreshCurrentSubTab() {
+        switch appState.activeDashboardSubTab {
+        case .myApps:
+            Task {
+                await hydrateSummary(force: true)
+            }
+        case .allApps:
+            appWallRefreshRevision += 1
+        }
     }
 
     // MARK: - Helpers

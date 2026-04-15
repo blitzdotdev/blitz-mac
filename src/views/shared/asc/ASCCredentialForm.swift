@@ -16,10 +16,18 @@ struct ASCCredentialForm: View {
     @State private var showInstructions = false
     @State private var privateKeyFileName: String?
 
+    private var resolvedKeyID: String? {
+        let trimmed = keyId.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            return trimmed
+        }
+        return ASCCredentials.keyID(fromPrivateKeyFilename: privateKeyFileName)
+    }
+
     private var isValid: Bool {
         !issuerId.trimmingCharacters(in: .whitespaces).isEmpty &&
-        !keyId.trimmingCharacters(in: .whitespaces).isEmpty &&
-        !privateKey.trimmingCharacters(in: .whitespaces).isEmpty
+        !privateKey.trimmingCharacters(in: .whitespaces).isEmpty &&
+        resolvedKeyID != nil
     }
 
     var body: some View {
@@ -65,7 +73,7 @@ struct ASCCredentialForm: View {
                                 instructionStep(3, "Click the **+** button to generate a new key")
                                 instructionStep(4, "Set Access to **Admin** and give the key a name")
                                 instructionStep(5, "Click **Generate**")
-                                instructionStep(6, "Copy the **Issuer ID** (shown at the top of the page) and the **Key ID** from the key row")
+                                instructionStep(6, "Copy the **Issuer ID** shown at the top of the page")
                                 instructionStep(7, "Click the **Download** button on the new key row to save the .p8 file")
                                 Text("The .p8 file can only be downloaded once. Store it securely.")
                                     .font(.caption)
@@ -83,12 +91,6 @@ struct ASCCredentialForm: View {
                 VStack(alignment: .leading, spacing: 16) {
                     labeledField("Issuer ID", hint: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx") {
                         TextField("Issuer ID", text: $issuerId)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
-                    }
-
-                    labeledField("Key ID", hint: "10-character alphanumeric string") {
-                        TextField("Key ID", text: $keyId)
                             .textFieldStyle(.roundedBorder)
                             .font(.system(.body, design: .monospaced))
                     }
@@ -129,9 +131,16 @@ struct ASCCredentialForm: View {
                             .buttonStyle(.borderedProminent)
                             .disabled(!isValid || isSaving)
                         }
-                        Text("Upload your .p8 key file")
+                        Text("Upload the original .p8 key file that Apple downloaded for you")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
+
+                        if privateKeyFileName != nil && resolvedKeyID == nil {
+                            Text("Use the original downloaded .p8 filename so Blitz can detect the Apple key automatically.")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
 
@@ -251,11 +260,15 @@ struct ASCCredentialForm: View {
     }
 
     private func save() {
+        guard let resolvedKeyID else {
+            saveError = "Use the original downloaded .p8 filename so Blitz can detect the Apple key automatically."
+            return
+        }
         isSaving = true
         saveError = nil
         let creds = ASCCredentials(
             issuerId: issuerId.trimmingCharacters(in: .whitespaces),
-            keyId: keyId.trimmingCharacters(in: .whitespaces),
+            keyId: resolvedKeyID,
             privateKey: privateKey.trimmingCharacters(in: .whitespacesAndNewlines)
         )
         Task {

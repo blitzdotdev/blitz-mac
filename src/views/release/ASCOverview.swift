@@ -65,19 +65,32 @@ struct ASCOverview: View {
 
     @ViewBuilder
     private var overviewContent: some View {
+        VStack(spacing: 0) {
+            if asc.app != nil {
+                ASCVersionPickerBar(
+                    asc: asc,
+                    selection: selectedVersionBinding,
+                    onCreateUpdate: { asc.showCreateUpdateSheet = true }
+                ) {
+                    if let appId = asc.app?.id {
+                        Link(destination: URL(string: "https://appstoreconnect.apple.com/apps/\(appId)/appstore")!) {
+                            Image(systemName: "arrow.up.right.square")
+                                .font(.callout)
+                        }
+                        .help("Open in App Store Connect")
+                    }
+                    ASCTabRefreshButton(asc: asc, tab: .app, helpText: "Refresh overview data")
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(.bar)
+            }
+
+            Divider()
+
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 headerRow
-
-                if asc.app != nil {
-                    ASCVersionPickerBar(
-                        asc: asc,
-                        selection: selectedVersionBinding,
-                        onCreateUpdate: { asc.showCreateUpdateSheet = true }
-                    )
-                }
-
-                Divider()
 
                 // Version stats + rejection card (original position)
                 versionStatsSection
@@ -94,6 +107,7 @@ struct ASCOverview: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
         }
+        }
     }
 
     // MARK: - Header row
@@ -104,7 +118,6 @@ struct ASCOverview: View {
             Text("Overview")
                 .font(.title2.weight(.semibold))
             Spacer()
-            ASCTabRefreshButton(asc: asc, tab: .app, helpText: "Refresh overview data")
         }
 
         if let app = asc.app {

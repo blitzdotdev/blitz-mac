@@ -161,7 +161,7 @@ struct AppInformationView: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)
-                .background(.background.secondary)
+                .background(.bar)
             }
 
             Divider()

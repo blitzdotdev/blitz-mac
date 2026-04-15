@@ -18,8 +18,14 @@ struct DashboardAppRow: Codable, Identifiable, Sendable, Equatable {
     let ascAppId: String?
     let linkedProjectId: String?
     let status: ASCDashboardProjectStatus?
+    let iconURL: URL?
 
-    static func asc(app: ASCApp, status: ASCDashboardProjectStatus, linkedProjectId: String?) -> DashboardAppRow {
+    static func asc(
+        app: ASCApp,
+        status: ASCDashboardProjectStatus,
+        linkedProjectId: String?,
+        iconURL: URL?
+    ) -> DashboardAppRow {
         DashboardAppRow(
             id: app.bundleId,
             bundleId: app.bundleId,
@@ -27,7 +33,8 @@ struct DashboardAppRow: Codable, Identifiable, Sendable, Equatable {
             source: .asc,
             ascAppId: app.id,
             linkedProjectId: linkedProjectId,
-            status: status
+            status: status,
+            iconURL: iconURL
         )
     }
 
@@ -39,7 +46,8 @@ struct DashboardAppRow: Codable, Identifiable, Sendable, Equatable {
             source: .localOnly,
             ascAppId: nil,
             linkedProjectId: project.id,
-            status: nil
+            status: nil,
+            iconURL: nil
         )
     }
 }
@@ -65,6 +73,7 @@ final class DashboardSummaryStore {
     var appRows: [DashboardAppRow] = []
     var hasLoadedSummary = false
     var isLoadingSummary = false
+    var loadingSummaryStatusText: String?
 
     private(set) var cacheKey: String?
     private var refreshedAt: Date?
@@ -106,6 +115,7 @@ final class DashboardSummaryStore {
         cacheKey = key
         loadedAccountKey = accountKey
         isLoadingSummary = true
+        loadingSummaryStatusText = "Loading apps from App Store Connect…"
     }
 
     func store(
@@ -125,6 +135,7 @@ final class DashboardSummaryStore {
         refreshedAt = Date()
         loadedAccountKey = accountKey
         isLoadingSummary = false
+        loadingSummaryStatusText = nil
         persistCacheIfPossible(accountKey: accountKey)
     }
 
@@ -138,6 +149,7 @@ final class DashboardSummaryStore {
         refreshedAt = Date()
         loadedAccountKey = accountKey
         isLoadingSummary = false
+        loadingSummaryStatusText = nil
         persistCacheIfPossible(accountKey: accountKey)
     }
 
@@ -148,11 +160,13 @@ final class DashboardSummaryStore {
         }
         cacheKey = key
         isLoadingSummary = false
+        loadingSummaryStatusText = nil
     }
 
     func cancelLoading(for key: String) {
         guard cacheKey == key else { return }
         isLoadingSummary = false
+        loadingSummaryStatusText = nil
     }
 
     func refresh(
@@ -181,24 +195,43 @@ final class DashboardSummaryStore {
             return
         }
 
+        if allAscApps.isEmpty {
+            markEmpty(for: key, accountKey: accountKey)
+            return
+        }
+
         var nextSummary = ASCDashboardSummary.empty
         var nextStatuses: [String: ASCDashboardProjectStatus] = [:]
+        var nextIconURLs: [String: URL] = [:]
+        var completedCount = 0
+        loadingSummaryStatusText = "Loading apps 0/\(allAscApps.count)…"
 
         let concurrencyLimit = 6
         var perAppStatuses: [String: ASCDashboardProjectStatus] = [:]
-        await withTaskGroup(of: (String, ASCDashboardProjectStatus?).self) { group in
+        await withTaskGroup(of: (String, ASCDashboardProjectStatus?, URL?).self) { group in
             var iterator = allAscApps.makeIterator()
 
             func enqueueNext() {
                 guard let next = iterator.next() else { return }
-                let appId = next.id
+                let bundleId = next.bundleId
                 group.addTask {
+                    var status: ASCDashboardProjectStatus?
+                    var iconURL: URL?
+
                     do {
-                        let versions = try await service.fetchAppStoreVersions(appId: appId)
-                        return (appId, ASCDashboardProjectStatus(versions: versions))
+                        let versions = try await service.fetchAppStoreVersions(appId: next.id)
+                        status = ASCDashboardProjectStatus(versions: versions)
                     } catch {
-                        return (appId, nil)
+                        status = nil
                     }
+
+                    do {
+                        iconURL = try await service.fetchAppStoreIconURL(app: next)
+                    } catch {
+                        iconURL = nil
+                    }
+
+                    return (bundleId, status, iconURL)
                 }
             }
 
@@ -210,6 +243,11 @@ final class DashboardSummaryStore {
                 if let status = result.1 {
                     perAppStatuses[result.0] = status
                 }
+                if let iconURL = result.2 {
+                    nextIconURLs[result.0] = iconURL
+                }
+                completedCount += 1
+                loadingSummaryStatusText = "Loading apps \(completedCount)/\(allAscApps.count)…"
                 if Task.isCancelled { break }
                 enqueueNext()
             }
@@ -230,7 +268,12 @@ final class DashboardSummaryStore {
             summary: nextSummary,
             projectStatuses: nextStatuses,
             ascApps: allAscApps,
-            appRows: rows(linking: projects, ascApps: allAscApps, projectStatuses: nextStatuses),
+            appRows: rows(
+                linking: projects,
+                ascApps: allAscApps,
+                projectStatuses: nextStatuses,
+                iconURLs: nextIconURLs
+            ),
             for: key,
             accountKey: accountKey
         )
@@ -247,6 +290,7 @@ final class DashboardSummaryStore {
         appRows = []
         hasLoadedSummary = false
         refreshedAt = nil
+        loadingSummaryStatusText = nil
     }
 
     private func restorePersistentCacheIfPossible() {
@@ -293,13 +337,19 @@ final class DashboardSummaryStore {
     }
 
     func rows(linking projects: [Project]) -> [DashboardAppRow] {
-        rows(linking: projects, ascApps: ascApps, projectStatuses: projectStatuses)
+        rows(
+            linking: projects,
+            ascApps: ascApps,
+            projectStatuses: projectStatuses,
+            iconURLs: currentIconURLsByBundleId()
+        )
     }
 
     func rows(
         linking projects: [Project],
         ascApps: [ASCApp],
-        projectStatuses: [String: ASCDashboardProjectStatus]
+        projectStatuses: [String: ASCDashboardProjectStatus],
+        iconURLs: [String: URL]
     ) -> [DashboardAppRow] {
         guard !ascApps.isEmpty else { return appRows }
 
@@ -321,7 +371,8 @@ final class DashboardSummaryStore {
             return DashboardAppRow.asc(
                 app: app,
                 status: projectStatuses[app.bundleId] ?? .empty,
-                linkedProjectId: linkedProjectId
+                linkedProjectId: linkedProjectId,
+                iconURL: iconURLs[app.bundleId]
             )
         }
 
@@ -353,9 +404,23 @@ final class DashboardSummaryStore {
                     primaryLocale: nil,
                     vendorNumber: nil,
                     contentRightsDeclaration: nil
-                )
+                ),
+                relationships: nil
             )
         }
+    }
+
+    private func currentIconURLsByBundleId() -> [String: URL] {
+        var iconURLs: [String: URL] = [:]
+        for row in appRows {
+            guard row.source == .asc,
+                  let bundleId = row.bundleId,
+                  let iconURL = row.iconURL else {
+                continue
+            }
+            iconURLs[bundleId] = iconURL
+        }
+        return iconURLs
     }
 
     private static func persistentCacheURL() -> URL {

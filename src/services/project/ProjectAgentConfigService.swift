@@ -164,9 +164,11 @@ struct ProjectAgentConfigService {
 
         - `asc_web_auth` — Opens the Apple ID login window in Blitz to authenticate a web session.
           Call this first if you get a 401 from iris APIs or if no web session exists.
-        - `asc_set_credentials` — Pre-fills the ASC credential form in Blitz with issuer ID, key ID,
-          and a path to the .p8 private key file. The user must click "Save Credentials" to confirm.
-          Parameters: `issuerId` (string), `keyId` (string), `privateKeyPath` (string, absolute path to .p8 file).
+        - `asc_set_credentials` — Pre-fills the ASC credential form in Blitz with issuer ID
+          and a path to the .p8 private key file. `keyId` is optional and can be derived from an
+          Apple-named file like `AuthKey_<KEYID>.p8`. The user must confirm in the UI.
+          Parameters: `issuerId` (string), `privateKeyPath` (string, absolute path to .p8 file),
+          `keyId` (optional string).
         """
         try? claudeMdContent.write(to: claudeMd, atomically: true, encoding: .utf8)
 

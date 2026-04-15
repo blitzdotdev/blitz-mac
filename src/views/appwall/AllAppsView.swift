@@ -2,6 +2,8 @@ import SwiftUI
 
 struct AllAppsView: View {
     @Bindable var appState: AppState
+    var refreshRevision: Int = 0
+    var onRefreshStateChange: (Bool) -> Void = { _ in }
     @AppStorage("appWallSyncConsented") private var syncConsented: Bool = false
     @AppStorage("appWallSyncPromptShown") private var syncPromptShown: Bool = false
 
@@ -39,6 +41,10 @@ struct AllAppsView: View {
         totalCount > apps.count
     }
 
+    private var isRefreshingForNavbar: Bool {
+        isLoading || isLoadingNextPage || isSummaryLoading
+    }
+
     var body: some View {
         Group {
             if isLoading && apps.isEmpty {
@@ -60,6 +66,27 @@ struct AllAppsView: View {
         }
         .task(id: syncConsented) {
             await handleConsentState()
+        }
+        .onAppear {
+            notifyRefreshStateChanged()
+        }
+        .onDisappear {
+            onRefreshStateChange(false)
+        }
+        .onChange(of: isLoading) { _, _ in
+            notifyRefreshStateChanged()
+        }
+        .onChange(of: isLoadingNextPage) { _, _ in
+            notifyRefreshStateChanged()
+        }
+        .onChange(of: isSummaryLoading) { _, _ in
+            notifyRefreshStateChanged()
+        }
+        .onChange(of: refreshRevision) { oldValue, newValue in
+            guard newValue != oldValue else { return }
+            Task {
+                await refreshFromNavbar()
+            }
         }
         .sheet(isPresented: $showSyncSheet, onDismiss: handleSyncSheetDismissed) {
             AppWallSyncSheet(
@@ -93,6 +120,15 @@ struct AllAppsView: View {
             await loadApps()
             await loadSummary()
         }
+    }
+
+    private func notifyRefreshStateChanged() {
+        onRefreshStateChange(isRefreshingForNavbar)
+    }
+
+    private func refreshFromNavbar() async {
+        await loadApps(reset: true)
+        await loadSummary()
     }
 
     // MARK: - Sub-views

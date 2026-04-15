@@ -9,6 +9,24 @@ struct ASCCredentials: Codable {
     var keyId: String
     var privateKey: String
 
+    static func keyID(fromPrivateKeyFilename filename: String?) -> String? {
+        guard let filename else { return nil }
+        let trimmed = filename.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let basename = URL(fileURLWithPath: trimmed).lastPathComponent
+        let pattern = #"^AuthKey_([A-Za-z0-9]{10})\.p8$"#
+        let nsRange = NSRange(basename.startIndex..<basename.endIndex, in: basename)
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: basename, range: nsRange),
+              match.numberOfRanges == 2,
+              let captureRange = Range(match.range(at: 1), in: basename) else {
+            return nil
+        }
+
+        return String(basename[captureRange]).uppercased()
+    }
+
     static func load() -> ASCCredentials? {
         let url = credentialsURL()
         guard let data = try? Data(contentsOf: url) else { return nil }
@@ -70,11 +88,67 @@ struct ASCPaginatedResponse<T: Decodable>: Decodable {
     }
 }
 
+// MARK: - Shared Assets
+
+struct ASCImageAsset: Codable {
+    let templateUrl: String?
+    let width: Int?
+    let height: Int?
+
+    func renderedURL(width: Int, height: Int, format: String = "png") -> URL? {
+        guard let templateUrl,
+              width > 0,
+              height > 0 else {
+            return nil
+        }
+
+        let urlString = templateUrl
+            .replacingOccurrences(of: "{w}", with: "\(width)")
+            .replacingOccurrences(of: "{h}", with: "\(height)")
+            .replacingOccurrences(of: "{f}", with: format)
+        return URL(string: urlString)
+    }
+}
+
+struct ASCAppStoreIconReference: Codable, Sendable {
+    let appStoreVersionId: String
+    let iconType: String
+    let masked: Bool
+
+    init?(relationshipId: String) {
+        let trimmedId = relationshipId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedId.isEmpty else { return nil }
+
+        let paddingCount = (4 - (trimmedId.count % 4)) % 4
+        let padded = trimmedId + String(repeating: "=", count: paddingCount)
+        guard let data = Data(base64Encoded: padded),
+              let decoded = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+
+        let parts = decoded.split(separator: " ", omittingEmptySubsequences: true)
+        guard parts.count == 4,
+              parts[0] == "build" else {
+            return nil
+        }
+
+        let maskedValue = String(parts[3]).lowercased()
+        guard maskedValue == "true" || maskedValue == "false" else {
+            return nil
+        }
+
+        appStoreVersionId = String(parts[1])
+        iconType = String(parts[2])
+        masked = maskedValue == "true"
+    }
+}
+
 // MARK: - App
 
 struct ASCApp: Codable, Identifiable {
     let id: String
     let attributes: Attributes
+    let relationships: Relationships?
 
     struct Attributes: Codable {
         let bundleId: String
@@ -84,11 +158,28 @@ struct ASCApp: Codable, Identifiable {
         let contentRightsDeclaration: String?
     }
 
+    struct Relationships: Codable {
+        let appStoreIcon: AppStoreIconRelationship?
+
+        struct AppStoreIconRelationship: Codable {
+            let data: RelationshipData?
+
+            struct RelationshipData: Codable {
+                let id: String
+                let type: String
+            }
+        }
+    }
+
     var bundleId: String { attributes.bundleId }
     var name: String { attributes.name }
     var primaryLocale: String? { attributes.primaryLocale }
     var vendorNumber: String? { attributes.vendorNumber }
     var contentRightsDeclaration: String? { attributes.contentRightsDeclaration }
+    var appStoreIconReference: ASCAppStoreIconReference? {
+        guard let relationshipId = relationships?.appStoreIcon?.data?.id else { return nil }
+        return ASCAppStoreIconReference(relationshipId: relationshipId)
+    }
 }
 
 // MARK: - AppStoreVersion
@@ -295,6 +386,27 @@ struct ASCBuild: Decodable, Identifiable {
         let expirationDate: String?
         let expired: Bool?
         let minOsVersion: String?
+        let iconAssetToken: ASCImageAsset?
+    }
+
+    func iconURL(dimension: Int = 1024) -> URL? {
+        attributes.iconAssetToken?.renderedURL(width: dimension, height: dimension)
+    }
+}
+
+struct ASCBuildIcon: Decodable, Identifiable {
+    let id: String
+    let attributes: Attributes
+
+    struct Attributes: Decodable {
+        let iconAsset: ASCImageAsset?
+        let iconType: String?
+        let masked: Bool?
+        let name: String?
+    }
+
+    func imageURL(dimension: Int = 1024) -> URL? {
+        attributes.iconAsset?.renderedURL(width: dimension, height: dimension)
     }
 }
 

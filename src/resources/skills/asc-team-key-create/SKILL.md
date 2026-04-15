@@ -170,10 +170,11 @@ print('WARNING: This .p8 file can only be downloaded ONCE. Keep it safe.')
 After the script succeeds, call the `asc_set_credentials` MCP tool to pre-fill the Blitz credential form:
 
 ```
-asc_set_credentials(issuerId: "<issuer_id>", keyId: "<key_id>", privateKeyPath: "~/.blitz/AuthKey_<key_id>.p8")
+asc_set_credentials(issuerId: "<issuer_id>", privateKeyPath: "~/.blitz/AuthKey_<key_id>.p8")
 ```
 
-This lets the user visually verify the values and click "Save Credentials" in Blitz.
+`keyId` is optional here because Blitz can derive it from Apple's default `AuthKey_<KEYID>.p8` filename.
+This lets the user visually verify the values and confirm in Blitz.
 
 ### 5. Report results to the user
 
@@ -181,7 +182,7 @@ After the script runs, report:
 - Key name and Key ID
 - Issuer ID
 - File path of the saved .p8
-- That the credential form has been pre-filled — they should verify and click Save
+- That the credential form has been pre-filled — they should verify and confirm in Blitz
 
 ## Common Errors
 

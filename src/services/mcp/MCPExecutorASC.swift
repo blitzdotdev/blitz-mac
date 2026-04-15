@@ -270,9 +270,8 @@ extension MCPExecutor {
 
     func executeASCSetCredentials(_ args: [String: Any]) async -> [String: Any] {
         guard let issuerId = args["issuerId"] as? String,
-              let keyId = args["keyId"] as? String,
               let rawPath = args["privateKeyPath"] as? String else {
-            return mcpText("Error: issuerId, keyId, and privateKeyPath are required.")
+            return mcpText("Error: issuerId and privateKeyPath are required.")
         }
 
         let path = NSString(string: rawPath).expandingTildeInPath
@@ -280,6 +279,16 @@ extension MCPExecutor {
               let privateKey = try? String(contentsOfFile: path, encoding: .utf8),
               !privateKey.isEmpty else {
             return mcpText("Error: could not read private key file at \(rawPath)")
+        }
+
+        let explicitKeyId = (args["keyId"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let keyId = (explicitKeyId?.isEmpty == false ? explicitKeyId : nil)
+            ?? ASCCredentials.keyID(fromPrivateKeyFilename: path) else {
+            return mcpText(
+                "Error: keyId was not provided and could not be derived from privateKeyPath. "
+                + "Use Apple's original AuthKey_<KEYID>.p8 filename or pass keyId explicitly."
+            )
         }
 
         await MainActor.run {
@@ -290,7 +299,7 @@ extension MCPExecutor {
                 "privateKeyFileName": URL(fileURLWithPath: path).lastPathComponent
             ]
         }
-        return mcpText("Credentials pre-filled. The user can verify and click 'Save Credentials'.")
+        return mcpText("Credentials pre-filled. The user can verify and confirm in the UI.")
     }
 
     func executeASCConfirmCreatedApp(_ args: [String: Any]) async -> [String: Any] {

@@ -250,6 +250,18 @@ final class AppStoreConnectService {
         return response.data
     }
 
+    /// Proves the API key works without paging through the whole account.
+    func validateCredentials() async throws {
+        _ = try await get(
+            "apps",
+            queryItems: [
+                URLQueryItem(name: "limit", value: "1"),
+                URLQueryItem(name: "fields[apps]", value: "bundleId,name")
+            ],
+            as: ASCPaginatedResponse<ASCApp>.self
+        )
+    }
+
     /// Fetches all apps for the account, optionally filtering by app store version state.
     /// Pass `appStoreStateFilter: "READY_FOR_SALE"` to get only live apps.
     func fetchAllApps(appStoreStateFilter: String? = nil) async throws -> [ASCApp] {
@@ -258,7 +270,7 @@ final class AppStoreConnectService {
 
         var initialQueryItems: [URLQueryItem] = [
             URLQueryItem(name: "limit", value: "200"),
-            URLQueryItem(name: "fields[apps]", value: "bundleId,name,primaryLocale")
+            URLQueryItem(name: "include", value: "appStoreIcon")
         ]
         if let state = appStoreStateFilter {
             initialQueryItems.append(URLQueryItem(name: "filter[appStoreVersions.appStoreState]", value: state))
@@ -337,8 +349,52 @@ final class AppStoreConnectService {
     }
 
     func fetchBuild(id: String) async throws -> ASCBuild {
-        let resp = try await get("builds/\(id)", as: ASCSingleResponse<ASCBuild>.self)
+        let resp = try await get(
+            "builds/\(id)",
+            queryItems: [URLQueryItem(name: "fields[builds]", value: "version,uploadedDate,processingState,expirationDate,expired,minOsVersion,iconAssetToken")],
+            as: ASCSingleResponse<ASCBuild>.self
+        )
         return resp.data
+    }
+
+    func fetchBuild(forAppStoreVersionId versionId: String) async throws -> ASCBuild {
+        let resp = try await get(
+            "appStoreVersions/\(versionId)/build",
+            queryItems: [URLQueryItem(name: "fields[builds]", value: "version,uploadedDate,processingState,expirationDate,expired,minOsVersion,iconAssetToken")],
+            as: ASCSingleResponse<ASCBuild>.self
+        )
+        return resp.data
+    }
+
+    func fetchBuildIcons(buildId: String) async throws -> [ASCBuildIcon] {
+        let resp = try await get(
+            "builds/\(buildId)/icons",
+            queryItems: [URLQueryItem(name: "fields[buildIcons]", value: "iconAsset,iconType,masked,name")],
+            as: ASCListResponse<ASCBuildIcon>.self
+        )
+        return resp.data
+    }
+
+    func fetchAppStoreIconURL(app: ASCApp, dimension: Int = 1024) async throws -> URL? {
+        guard let reference = app.appStoreIconReference else {
+            return nil
+        }
+
+        let build = try await fetchBuild(forAppStoreVersionId: reference.appStoreVersionId)
+
+        do {
+            let icons = try await fetchBuildIcons(buildId: build.id)
+            if let matched = icons.first(where: {
+                ($0.attributes.iconType ?? "") == reference.iconType &&
+                ($0.attributes.masked ?? false) == reference.masked
+            }), let url = matched.imageURL(dimension: dimension) {
+                return url
+            }
+        } catch {
+            // Fall back to the build-level icon token if the explicit icon list is unavailable.
+        }
+
+        return build.iconURL(dimension: dimension)
     }
 
     func fetchBuildUploads(
