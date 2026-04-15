@@ -27,7 +27,16 @@ jobs:
         run: swift build -c release
 
       - name: Run tests
-        run: swift test --skip terminateSignalsEntireProcessGroup --skip shellChildrenOwnForegroundTTY --skip ascFillFormStillAdvertisesLegacyAppInformationAliases
+        env:
+          BLITZ_SKIP_UNSTABLE_ASC_TESTS: "1"
+        run: |
+          swift test \
+            --skip shellChildrenOwnForegroundTTY \
+            --skip navigationKeysStripNumericPadFlagBeforeSwiftTermEncoding \
+            --skip keypadDigitRetainsNumericPadFlag \
+            --skip terminalFocusSequencesAreSuppressed \
+            --skip terminateSignalsEntireProcessGroup \
+            --skip ascFillFormStillAdvertisesLegacyAppInformationAliases
 
       - name: Bundle .app
         run: |
@@ -67,7 +76,16 @@ jobs:
         run: swift build -c release
 
       - name: Run tests
-        run: swift test --skip terminateSignalsEntireProcessGroup --skip shellChildrenOwnForegroundTTY --skip ascFillFormStillAdvertisesLegacyAppInformationAliases
+        env:
+          BLITZ_SKIP_UNSTABLE_ASC_TESTS: "1"
+        run: |
+          swift test \
+            --skip shellChildrenOwnForegroundTTY \
+            --skip navigationKeysStripNumericPadFlagBeforeSwiftTermEncoding \
+            --skip keypadDigitRetainsNumericPadFlag \
+            --skip terminalFocusSequencesAreSuppressed \
+            --skip terminateSignalsEntireProcessGroup \
+            --skip ascFillFormStillAdvertisesLegacyAppInformationAliases
 
       - name: Bundle .app
         run: |

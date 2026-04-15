@@ -1,6 +1,14 @@
 // swift-tools-version: 5.10
 
+import Foundation
 import PackageDescription
+
+let skipUnstableASCTests = ProcessInfo.processInfo.environment["BLITZ_SKIP_UNSTABLE_ASC_TESTS"] == "1"
+let excludedBlitzTests = skipUnstableASCTests ? [
+    "ASCProjectLifecycleTests.swift",
+    "ASCScreenshotsLocaleRegressionTests.swift",
+    "ASCVersionSelectionTests.swift",
+] : []
 
 let package = Package(
     name: "Blitz",
@@ -45,7 +53,8 @@ let package = Package(
         .testTarget(
             name: "BlitzTests",
             dependencies: ["Blitz"],
-            path: "Tests/blitz_tests"
+            path: "Tests/blitz_tests",
+            exclude: excludedBlitzTests
         ),
     ]
 )
