@@ -34,7 +34,10 @@ final class AppShotsFlowManager {
         availableFrames.first(where: { $0.name == selectedFrameName })
     }
 
-    var canGenerate: Bool { !captures.isEmpty && !templates.isEmpty }
+    var includedCaptures: [CapturedShot] { captures.filter { $0.included } }
+    var blankWarningCount: Int { captures.filter { $0.warning != nil }.count }
+
+    var canGenerate: Bool { !includedCaptures.isEmpty && !templates.isEmpty }
 
     var totalRendersExpected: Int {
         guard !generated.isEmpty else { return 0 }
@@ -164,10 +167,16 @@ final class AppShotsFlowManager {
         captures.removeAll { $0.id == id }
     }
 
+    func toggleCaptureInclusion(id: UUID) {
+        guard let idx = captures.firstIndex(where: { $0.id == id }) else { return }
+        captures[idx].included.toggle()
+    }
+
     // MARK: - Generate
 
     func generate(projectName: String) async {
-        guard !captures.isEmpty else { return }
+        let activeCaptures = includedCaptures
+        guard !activeCaptures.isEmpty else { return }
         guard let projectId = currentProjectId else {
             generationError = "No active project."
             return
@@ -184,9 +193,9 @@ final class AppShotsFlowManager {
         let rawSubtitle = subtitle.isEmpty ? nil : subtitle
         let frame = useFrame ? selectedFrame : nil
 
-        // Seed each set with empty screenshot placeholders so the UI can render skeletons.
+        // Seed each set with empty screenshot placeholders for included captures only.
         let labels: [UUID: String] = Dictionary(
-            uniqueKeysWithValues: captures.enumerated().map { ($0.element.id, "Screen \($0.offset + 1)") }
+            uniqueKeysWithValues: activeCaptures.enumerated().map { ($0.element.id, "Screen \($0.offset + 1)") }
         )
         generated = chosen.map { template in
             let copy = AppShotsCopywriter.copy(
@@ -195,7 +204,7 @@ final class AppShotsFlowManager {
                 category: template.category,
                 seed: projectName
             )
-            let placeholders = captures.map { capture in
+            let placeholders = activeCaptures.map { capture in
                 GeneratedScreenshot(captureId: capture.id, captureLabel: labels[capture.id] ?? "Screen")
             }
             return GeneratedSet(
@@ -214,7 +223,7 @@ final class AppShotsFlowManager {
         let request = GenerationRequest(
             headline: effectiveHeadline,
             subtitle: rawSubtitle,
-            captures: captures,
+            captures: activeCaptures,
             frame: frame,
             projectName: projectName,
             outputDir: store.outputDir

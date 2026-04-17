@@ -14,9 +14,14 @@ struct CapturedShot: Identifiable, Equatable {
     let id: UUID
     let path: String
     let image: NSImage
+    /// Whether to feed this capture into generation. Defaults true; auto-set to false for blanks.
+    var included: Bool
+    /// Heuristic warning (e.g. "Looks nearly blank"). Non-nil means we detected something off.
+    var warning: String?
 
-    init(id: UUID = UUID(), path: String, image: NSImage) {
+    init(id: UUID = UUID(), path: String, image: NSImage, included: Bool = true, warning: String? = nil) {
         self.id = id; self.path = path; self.image = image
+        self.included = included; self.warning = warning
     }
 }
 

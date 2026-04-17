@@ -73,94 +73,150 @@ struct AppShotsToggleRow: View {
 }
 
 // MARK: - Set card
-
-/// Preview card for a generated (or in-flight) set. A "set" contains N screenshots
-/// (one per source capture). The card shows up to 3 inline + a "+N" badge if more.
+//
+// Big multi-thumb card: up to 3 inline thumbs + "+N" overflow tile + meta row.
+// Each thumb stretches via `flex: 1 1 0` equivalent so thumbs are large enough
+// to read as real App Store screenshots, not icons.
 struct AppShotsSetCard: View {
     let set: GeneratedSet
     var onOpen: (() -> Void)? = nil
 
-    private static let maxInline = 3
+    private static let inlineLimit = 3
 
     var body: some View {
-        Button {
-            onOpen?()
-        } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                thumbnailStrip
+        Button { onOpen?() } label: {
+            VStack(spacing: 14) {
+                thumbStrip
                 meta
             }
-            .padding(8)
-            .background(RoundedRectangle(cornerRadius: 12).fill(AppShotsTokens.insetBackground))
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(AppShotsTokens.subtleStroke))
+            .padding(16)
+            .frame(maxWidth: .infinity)
+            .background(RoundedRectangle(cornerRadius: 14).fill(AppShotsTokens.panelBackground))
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(AppShotsTokens.subtleStroke))
+            .shadow(color: Color.black.opacity(0.05), radius: 3, y: 1)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
 
-    private var thumbnailStrip: some View {
-        let inline = Array(set.screenshots.prefix(Self.maxInline))
-        let overflow = max(0, set.screenshots.count - Self.maxInline)
-        return HStack(spacing: 6) {
-            ForEach(inline) { shot in
-                screenshotThumb(shot)
+    // MARK: Thumb strip
+
+    private var thumbStrip: some View {
+        let visibleCount = min(Self.inlineLimit, set.screenshots.count)
+        let visible = Array(set.screenshots.prefix(visibleCount))
+        let overflow = max(0, set.screenshots.count - visibleCount)
+        return HStack(alignment: .top, spacing: 8) {
+            ForEach(visible) { shot in
+                thumbnail(shot: shot)
+                    .frame(maxWidth: .infinity)
             }
             if overflow > 0 {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(paletteColor.opacity(0.85))
-                    Text("+\(overflow)")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.white)
-                }
-                .aspectRatio(9/16, contentMode: .fit)
+                overflowTile(count: overflow)
+                    .frame(maxWidth: .infinity)
             }
         }
     }
 
-    private func screenshotThumb(_ shot: GeneratedScreenshot) -> some View {
+    private func thumbnail(shot: GeneratedScreenshot) -> some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 8).fill(paletteColor)
+            LinearGradient(colors: [paletteStart, paletteEnd], startPoint: .topLeading, endPoint: .bottomTrailing)
+
             if let image = shot.image {
                 Image(nsImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .aspectRatio(contentMode: .fill)
             } else if shot.error != nil {
-                Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                failedPattern
             } else {
-                ProgressView().controlSize(.small).tint(.white)
+                loadingSpinner
             }
         }
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(AppShotsTokens.subtleStroke))
-        .aspectRatio(9/16, contentMode: .fit)
+        .aspectRatio(9/19.5, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.black.opacity(0.08), lineWidth: 1))
+        .help(shot.error.map { "Render failed — \($0)" } ?? "")
     }
+
+    private var failedPattern: some View {
+        ZStack {
+            Rectangle().fill(Color(red: 1.0, green: 0.95, blue: 0.87))
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.title2)
+                .foregroundStyle(.orange)
+        }
+    }
+
+    private var loadingSpinner: some View {
+        ZStack {
+            Color.gray.opacity(0.08)
+            ProgressView()
+                .controlSize(.small)
+                .tint(.accentColor)
+        }
+    }
+
+    private func overflowTile(count: Int) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 12).fill(AppShotsTokens.insetBackground)
+            Text("+\(count)")
+                .font(.body.weight(.bold))
+                .foregroundStyle(.secondary)
+        }
+        .aspectRatio(9/19.5, contentMode: .fit)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                .foregroundStyle(AppShotsTokens.subtleStroke)
+        )
+    }
+
+    // MARK: Meta row
 
     private var meta: some View {
-        HStack(spacing: 6) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(set.template.name).font(.caption.weight(.semibold))
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(set.template.name)
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(1)
                 Text("\(set.template.category.capitalized) · \(set.screenshots.count) shot\(set.screenshots.count == 1 ? "" : "s")")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            if set.isReady {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
                     .font(.caption)
-            } else {
-                Text("\(set.readyCount)/\(set.screenshots.count)")
-                    .font(.caption2.weight(.medium))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
+            Spacer(minLength: 4)
+            statusBadge
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, 2)
     }
 
-    private var paletteColor: Color {
-        if let hex = set.template.palette?.background, let c = Color(hex: hex) { return c }
-        return Color.gray.opacity(0.3)
+    @ViewBuilder
+    private var statusBadge: some View {
+        let failed = set.screenshots.filter { $0.error != nil }.count
+        if failed > 0 {
+            Text("\(set.readyCount)/\(set.screenshots.count)")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.orange)
+        } else if set.isReady {
+            HStack(spacing: 3) {
+                Image(systemName: "checkmark")
+                Text("ready")
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.green)
+        } else {
+            Text("rendering…")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: Palette
+
+    private var paletteStart: Color {
+        Color(hex: set.template.palette?.background ?? "#4b5563") ?? .gray
+    }
+    private var paletteEnd: Color {
+        paletteStart.opacity(0.78)
     }
 }
 

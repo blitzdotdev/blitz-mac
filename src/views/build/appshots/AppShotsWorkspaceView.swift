@@ -125,12 +125,18 @@ private struct CapturesPanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PanelHeader(title: "Captures", trailing: "\(manager.captures.count)")
+            PanelHeader(title: "Captures", trailing: headerTrailing)
             actions
             list
         }
         .frame(maxHeight: .infinity)
         .background(AppShotsTokens.panelBackground)
+    }
+
+    private var headerTrailing: String {
+        let active = manager.includedCaptures.count
+        let total = manager.captures.count
+        return total == 0 ? "0" : "\(active) of \(total) active"
     }
 
     private var actions: some View {
@@ -192,7 +198,7 @@ private struct CapturesPanel: View {
                 .font(.caption).foregroundStyle(.secondary)
                 .padding(.top, 2)
         } else {
-            Text("Tap Capture while navigating your app.")
+            Text("Tap Capture while navigating your app. Uncheck any blank/wrong screen to skip it.")
                 .font(.caption).foregroundStyle(.secondary)
                 .padding(.top, 2)
         }
@@ -205,9 +211,15 @@ private struct CapturesPanel: View {
                     emptyState
                 } else {
                     ForEach(Array(manager.captures.enumerated()), id: \.element.id) { index, shot in
-                        CaptureRow(index: index + 1, shot: shot) {
-                            manager.removeCapture(id: shot.id)
-                        }
+                        CaptureRow(
+                            index: index + 1,
+                            shot: shot,
+                            onToggle: { manager.toggleCaptureInclusion(id: shot.id) },
+                            onRemove: { manager.removeCapture(id: shot.id) }
+                        )
+                    }
+                    if manager.blankWarningCount > 0 {
+                        blankWarnBanner
                     }
                 }
             }
@@ -234,15 +246,47 @@ private struct CapturesPanel: View {
                 .foregroundStyle(AppShotsTokens.subtleStroke)
         )
     }
+
+    private var blankWarnBanner: some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            let n = manager.blankWarningCount
+            Text("\(n) capture\(n == 1 ? "" : "s") look blank. Auto-excluded — tick the box to include.")
+                .font(.caption)
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.1)))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.orange.opacity(0.35)))
+    }
 }
 
 private struct CaptureRow: View {
     let index: Int
     let shot: CapturedShot
+    let onToggle: () -> Void
     let onRemove: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
+            Button(action: onToggle) {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(shot.included ? Color.accentColor : Color.clear)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .strokeBorder(shot.included ? Color.accentColor : AppShotsTokens.subtleStroke, lineWidth: 1.5)
+                    )
+                    .overlay(
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.white)
+                            .opacity(shot.included ? 1 : 0)
+                    )
+                    .frame(width: 16, height: 16)
+            }
+            .buttonStyle(.plain)
+            .help(shot.included ? "Include in generation" : "Skip during generation")
+
             Image(nsImage: shot.image)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
@@ -250,14 +294,25 @@ private struct CaptureRow: View {
                 .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: 5))
                 .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(AppShotsTokens.subtleStroke))
+                .saturation(shot.included ? 1 : 0.2)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text("Screen \(index)")
-                    .font(.caption.weight(.medium))
+                HStack(spacing: 4) {
+                    Text("Screen \(index)")
+                        .font(.caption.weight(.medium))
+                    if let warn = shot.warning {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                            .help(warn)
+                    }
+                }
                 Text(byteSize)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
+            .opacity(shot.included ? 1 : 0.55)
+
             Spacer()
             Button(action: onRemove) {
                 Image(systemName: "xmark")
@@ -268,7 +323,7 @@ private struct CaptureRow: View {
             .buttonStyle(.plain)
         }
         .padding(6)
-        .background(RoundedRectangle(cornerRadius: 8).fill(AppShotsTokens.insetBackground))
+        .background(RoundedRectangle(cornerRadius: 8).fill(AppShotsTokens.panelBackground))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(AppShotsTokens.subtleStroke))
     }
 
