@@ -119,6 +119,7 @@ struct AppShotsSetCard: View {
 
     private func thumbnail(shot: GeneratedScreenshot) -> some View {
         ZStack {
+            // Always paint the template's palette gradient underneath — that's the card's identity.
             LinearGradient(colors: [paletteStart, paletteEnd], startPoint: .topLeading, endPoint: .bottomTrailing)
 
             if let image = shot.image {
@@ -126,9 +127,11 @@ struct AppShotsSetCard: View {
                     .resizable()
                     .aspectRatio(contentMode: .fill)
             } else if shot.error != nil {
-                failedPattern
+                failedOverlay
             } else {
-                loadingSpinner
+                // During generation: render a preview skeleton so the user sees the template
+                // style (not an empty gray void). Headline overlay + phone mockup.
+                previewSkeleton
             }
         }
         .aspectRatio(9/19.5, contentMode: .fit)
@@ -137,37 +140,99 @@ struct AppShotsSetCard: View {
         .help(shot.error.map { "Render failed — \($0)" } ?? "")
     }
 
-    private var failedPattern: some View {
+    /// Preview of what the template will look like — shown during generation so the
+    /// thumbnail doesn't read as "empty gray placeholder".
+    private var previewSkeleton: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .topLeading) {
+                // Headline overlay at top
+                Text(set.headline)
+                    .font(.system(size: max(7, geo.size.width * 0.11), weight: .bold))
+                    .foregroundStyle(headlineColor)
+                    .shadow(color: .black.opacity(headlineColor == .white ? 0.18 : 0), radius: 1, y: 1)
+                    .lineLimit(2)
+                    .padding(.horizontal, geo.size.width * 0.10)
+                    .padding(.top, geo.size.height * 0.09)
+
+                // Phone mockup rising from the bottom with 3 faint content stripes
+                phoneMockup(in: geo.size)
+                    .frame(
+                        width: geo.size.width * 0.76,
+                        height: geo.size.height * 0.62
+                    )
+                    .offset(x: geo.size.width * 0.12, y: geo.size.height * 0.33)
+            }
+        }
+    }
+
+    private func phoneMockup(in size: CGSize) -> some View {
+        ZStack(alignment: .top) {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(LinearGradient(
+                    colors: [Color(red: 0.17, green: 0.17, blue: 0.18),
+                             Color(red: 0.08, green: 0.08, blue: 0.09)],
+                    startPoint: .top, endPoint: .bottom))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.14), lineWidth: 1.2))
+
+            // Dynamic island / notch
+            Capsule()
+                .fill(Color.black)
+                .frame(width: size.width * 0.26, height: size.height * 0.044)
+                .offset(y: size.height * 0.02)
+
+            // Three faint content stripes suggesting app content
+            VStack(spacing: size.height * 0.025) {
+                stripe
+                stripe
+                stripe
+            }
+            .padding(.horizontal, size.width * 0.14)
+            .padding(.top, size.height * 0.14)
+        }
+    }
+
+    private var stripe: some View {
+        RoundedRectangle(cornerRadius: 2)
+            .fill(Color.white.opacity(0.06))
+            .frame(height: 6)
+    }
+
+    private var failedOverlay: some View {
         ZStack {
-            Rectangle().fill(Color(red: 1.0, green: 0.95, blue: 0.87))
+            // Hatched amber — clearly "something went wrong" but still palette-contextual.
+            Rectangle().fill(Color(red: 1.0, green: 0.96, blue: 0.90))
+                .overlay(
+                    Rectangle().fill(LinearGradient(
+                        stops: [.init(color: Color.orange.opacity(0.18), location: 0),
+                                .init(color: .clear, location: 0.5),
+                                .init(color: Color.orange.opacity(0.18), location: 1)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing))
+                )
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.title2)
                 .foregroundStyle(.orange)
         }
     }
 
-    private var loadingSpinner: some View {
-        ZStack {
-            Color.gray.opacity(0.08)
-            ProgressView()
-                .controlSize(.small)
-                .tint(.accentColor)
-        }
-    }
-
+    /// Overflow tile matches the card's palette family (not gray), so the row reads as one set.
     private func overflowTile(count: Int) -> some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 12).fill(AppShotsTokens.insetBackground)
-            Text("+\(count)")
-                .font(.body.weight(.bold))
-                .foregroundStyle(.secondary)
+            LinearGradient(
+                colors: [paletteStart.opacity(0.35), paletteEnd.opacity(0.25)],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            )
+            VStack(spacing: 2) {
+                Text("+\(count)")
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(headlineColor.opacity(0.9))
+                Text("more")
+                    .font(.caption2)
+                    .foregroundStyle(headlineColor.opacity(0.65))
+            }
         }
         .aspectRatio(9/19.5, contentMode: .fit)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
-                .foregroundStyle(AppShotsTokens.subtleStroke)
-        )
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.black.opacity(0.08), lineWidth: 1))
     }
 
     // MARK: Meta row
@@ -217,6 +282,18 @@ struct AppShotsSetCard: View {
     }
     private var paletteEnd: Color {
         paletteStart.opacity(0.78)
+    }
+    /// Pick light or dark text based on palette luminance.
+    private var headlineColor: Color {
+        let lum = paletteLuminance
+        return lum < 0.6 ? .white : Color.black.opacity(0.85)
+    }
+    private var paletteLuminance: Double {
+        guard let hex = set.template.palette?.background,
+              let c = Color(hex: hex) else { return 0 }
+        let ns = NSColor(c).usingColorSpace(.deviceRGB)
+        guard let ns else { return 0 }
+        return 0.2126 * Double(ns.redComponent) + 0.7152 * Double(ns.greenComponent) + 0.0722 * Double(ns.blueComponent)
     }
 }
 

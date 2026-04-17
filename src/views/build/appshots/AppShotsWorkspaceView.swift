@@ -365,40 +365,68 @@ private struct SetsPanel: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
+            // Accent-tinted icon tile
+            RoundedRectangle(cornerRadius: 18)
+                .fill(LinearGradient(
+                    colors: [Color.accentColor.opacity(0.14), Color.purple.opacity(0.14)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                ))
+                .frame(width: 72, height: 72)
+                .overlay(
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 28, weight: .medium))
+                        .foregroundStyle(Color.accentColor)
+                )
+
             Text("Your 8 sets will appear here")
                 .font(.title3.weight(.semibold))
-            Text("Capture screens on the left, set a headline on the right, then click **Generate 8 sets**.")
+            Text("Capture screens on the left and pick a headline on the right — we'll render 8 polished template sets in about a minute.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 380)
+                .frame(maxWidth: 400)
 
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
-                ForEach(0..<8, id: \.self) { _ in
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(AppShotsTokens.insetBackground)
-                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(AppShotsTokens.subtleStroke))
-                        .aspectRatio(9/16, contentMode: .fit)
-                }
+            Divider().frame(maxWidth: 420).padding(.top, 4)
+
+            HStack(spacing: 8) {
+                stepTile(num: "01", title: "Capture", body: "Screens from your simulator.")
+                stepTile(num: "02", title: "Write", body: "One headline for all sets.")
+                stepTile(num: "03", title: "Generate", body: "8 ready-to-ship sets.")
             }
-            .opacity(0.6)
-            .padding(.top, 14)
-            .padding(.horizontal, 24)
+            .frame(maxWidth: 460)
         }
-        .padding(40)
+        .padding(32)
+        .frame(maxWidth: 560)
+        .background(RoundedRectangle(cornerRadius: 16).fill(AppShotsTokens.panelBackground))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(AppShotsTokens.subtleStroke))
+        .shadow(color: Color.black.opacity(0.05), radius: 3, y: 1)
         .frame(maxWidth: .infinity)
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [8, 6]))
-                .foregroundStyle(AppShotsTokens.subtleStroke)
-        )
+        .padding(.top, 40)
+    }
+
+    private func stepTile(num: String, title: String, body: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(num)
+                .font(.caption2.weight(.bold))
+                .tracking(0.5)
+                .foregroundStyle(.tertiary)
+            Text(title)
+                .font(.caption.weight(.semibold))
+            Text(body)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10).fill(AppShotsTokens.insetBackground))
     }
 
     private var liveGrid: some View {
         LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: 200), spacing: 14)],
-            spacing: 14
+            columns: [GridItem(.adaptive(minimum: 380), spacing: 16)],
+            spacing: 16
         ) {
             ForEach(manager.generated) { set in
                 AppShotsSetCard(set: set) {
@@ -484,20 +512,7 @@ private struct InspectorPanel: View {
 
     private var generateFooter: some View {
         VStack(spacing: 8) {
-            Button {
-                Task { await manager.generate(projectName: projectName) }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                    Text(generateButtonLabel)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 6)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(!manager.canGenerate || manager.step == .generating)
-
+            primaryButton
             Text(generateHint)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -508,19 +523,51 @@ private struct InspectorPanel: View {
         .overlay(Divider(), alignment: .top)
     }
 
-    private var generateButtonLabel: String {
-        switch manager.step {
-        case .generating: return "Generating…"
-        case .done where !manager.generated.isEmpty: return "Regenerate"
-        default: return "Generate 8 sets"
+    @ViewBuilder
+    private var primaryButton: some View {
+        // Behavior depends on state. In .done we don't have captures in memory,
+        // so "Regenerate" can't reuse them — we ship the user back to the capture step.
+        if manager.step == .done && !manager.generated.isEmpty {
+            Button {
+                manager.regenerate()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.clockwise")
+                    Text("New generation")
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+        } else {
+            Button {
+                Task { await manager.generate(projectName: projectName) }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                    Text(manager.step == .generating ? "Generating…" : "Generate 8 sets")
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(!manager.canGenerate || manager.step == .generating)
         }
     }
 
     private var generateHint: String {
+        if manager.step == .done && !manager.generated.isEmpty {
+            return "Capture new screens, then generate again."
+        }
+        if manager.step == .generating { return "Hold tight — rendering all templates in parallel." }
+        if manager.includedCaptures.isEmpty && !manager.captures.isEmpty {
+            return "All captures excluded — tick at least one to generate."
+        }
         if manager.captures.isEmpty { return "Add at least one capture to start." }
-        if manager.step == .generating { return "Hold tight — rendering 8 templates in parallel." }
-        if manager.step == .done { return "Edit headline/frame and regenerate anytime." }
-        return "Will render 8 templates with your headline."
+        let n = manager.includedCaptures.count
+        return "Will render 8 templates × \(n) capture\(n == 1 ? "" : "s") = \(n * 8) screenshots."
     }
 }
 
