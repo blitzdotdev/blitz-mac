@@ -263,7 +263,6 @@ struct AppShotsSetDetailSheet: View {
                     scroller
                     footer
                 }
-                .overlay(floatingClose, alignment: .topTrailing)
             } else {
                 VStack(spacing: 12) {
                     Text("This set is no longer available.")
@@ -275,25 +274,6 @@ struct AppShotsSetDetailSheet: View {
         }
         .frame(minWidth: 860, minHeight: 720)
         .background(paper)
-    }
-
-    /// Close chip floats in the top-right corner so the header row stays clean.
-    private var floatingClose: some View {
-        Button {
-            onClose()
-        } label: {
-            Image(systemName: "xmark")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 26, height: 26)
-                .background(Circle().fill(Color.primary.opacity(0.06)))
-                .overlay(Circle().strokeBorder(Color.primary.opacity(0.08)))
-        }
-        .buttonStyle(.plain)
-        .keyboardShortcut(.cancelAction)
-        .help("Close")
-        .padding(.top, 16)
-        .padding(.trailing, 18)
     }
 
     // MARK: - Surface
@@ -318,63 +298,22 @@ struct AppShotsSetDetailSheet: View {
             .frame(height: 4)
     }
 
-    // MARK: - Header
+    // MARK: - Header — compact, single horizontal row
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 24) {
-            VStack(alignment: .leading, spacing: 10) {
-                categoryLabel
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(set.template.name)
-                    .font(.system(size: 26, weight: .semibold))
-                    .tracking(-0.3)
+                    .font(.system(size: 15, weight: .semibold))
                 metaRow
             }
             Spacer(minLength: 12)
-            actionButtons
-                .padding(.trailing, 38) // leave room for the floating close chip
-        }
-        .padding(.horizontal, 28)
-        .padding(.top, 22)
-        .padding(.bottom, 18)
-        .overlay(hairline, alignment: .bottom)
-    }
-
-    private var categoryLabel: some View {
-        HStack(spacing: 8) {
-            Circle().fill(paletteColor).frame(width: 6, height: 6)
-            Text(set.template.category.uppercased())
-                .font(.system(size: 10, weight: .bold))
-                .tracking(1.8)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var metaRow: some View {
-        HStack(spacing: 10) {
-            Text("\(set.screenshots.count) shot\(set.screenshots.count == 1 ? "" : "s")")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
-            pip
-            Text("\u{201C}\(set.headline)\u{201D}")
-                .font(.system(size: 12))
-                .italic()
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        }
-    }
-
-    private var pip: some View {
-        Circle().fill(Color.secondary.opacity(0.35)).frame(width: 3, height: 3)
-    }
-
-    private var actionButtons: some View {
-        HStack(spacing: 8) {
             if let folder = folderPath {
                 Button {
                     NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: folder)
                 } label: { Label("Show in Finder", systemImage: "folder") }
                 .buttonStyle(.bordered)
-                .controlSize(.regular)
+                .controlSize(.small)
             }
             Button {
                 // Placeholder for the ASC upload flow — stub for now.
@@ -382,9 +321,47 @@ struct AppShotsSetDetailSheet: View {
                 Label("Upload to ASC", systemImage: "arrow.up.forward.circle.fill")
             }
             .buttonStyle(.borderedProminent)
-            .controlSize(.regular)
+            .controlSize(.small)
             .disabled(readyCount == 0)
+
+            Button {
+                onClose()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22, height: 22)
+            }
+            .buttonStyle(.borderless)
+            .keyboardShortcut(.cancelAction)
+            .help("Close")
         }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+        .overlay(hairline, alignment: .bottom)
+    }
+
+    private var metaRow: some View {
+        HStack(spacing: 6) {
+            Circle().fill(paletteColor).frame(width: 6, height: 6)
+            Text(set.template.category.capitalized)
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(.secondary)
+            dot
+            Text("\(set.screenshots.count) shot\(set.screenshots.count == 1 ? "" : "s")")
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+            dot
+            Text("\u{201C}\(set.headline)\u{201D}")
+                .font(.system(size: 11.5))
+                .italic()
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+    }
+
+    private var dot: some View {
+        Text("·").font(.system(size: 11.5)).foregroundStyle(.tertiary)
     }
 
     // MARK: - Scroller
@@ -408,15 +385,17 @@ struct AppShotsSetDetailSheet: View {
     }
 
     /// The column below each phone (label row + ShotCopyEditor + spacing) is
-    /// ~220pt — reserve that much so the editor isn't clipped by the footer.
+    /// ~200pt — reserve that much so the editor isn't clipped by the footer.
     private func cardHeight(for height: CGFloat) -> CGFloat {
-        let reserved: CGFloat = 240
+        let reserved: CGFloat = 220
         let available = max(280, height - reserved)
-        return min(available, 560)
+        return min(available, 580)
     }
 
     private func shotCard(_ shot: GeneratedScreenshot, index: Int, height: CGFloat) -> some View {
-        let width = height * 9 / 16
+        // Match iPhone screenshot aspect (9:19.5) so there's no letterbox
+        // revealing the palette fill behind the image.
+        let width = height * 9 / 19.5
         return VStack(alignment: .leading, spacing: 14) {
             ZStack {
                 RoundedRectangle(cornerRadius: 26).fill(paletteColor)
