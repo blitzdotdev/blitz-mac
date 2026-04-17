@@ -235,17 +235,41 @@ struct AppShotsSetCard: View {
 
 /// Modal that shows every screenshot in a set at full size and lets the user
 /// ship them straight to App Store Connect.
+///
+/// Takes the manager + setId (not the set itself) so the sheet re-reads live state
+/// after retries / regenerates.
 struct AppShotsSetDetailSheet: View {
-    let set: GeneratedSet
+    let manager: AppShotsFlowManager
+    let setId: String
+    let projectName: String
     let onClose: () -> Void
 
+    /// Live lookup: the sheet re-reads from the manager each render so retries update in place.
+    /// Methods below assume this is non-nil — `body` guards first.
+    private var set: GeneratedSet {
+        manager.generated.first(where: { $0.id == setId })
+            ?? GeneratedSet(id: setId, template: ASCManager.AppShotTemplate(id: setId, name: "—", category: "—", description: "", deviceCount: 1, palette: nil), headline: "", subtitle: nil, screenshots: [])
+    }
+    private var setExists: Bool { manager.generated.contains(where: { $0.id == setId }) }
+
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider().opacity(0.35)
-            scroller
-            Divider().opacity(0.35)
-            footer
+        Group {
+            if setExists {
+                VStack(spacing: 0) {
+                    header
+                    Divider().opacity(0.35)
+                    scroller
+                    Divider().opacity(0.35)
+                    footer
+                }
+            } else {
+                VStack(spacing: 12) {
+                    Text("This set is no longer available.")
+                        .font(.headline)
+                    Button("Close") { onClose() }
+                }
+                .padding(40)
+            }
         }
         .frame(minWidth: 820, minHeight: 600)
         .background(backdrop)
@@ -255,18 +279,40 @@ struct AppShotsSetDetailSheet: View {
 
     private var backdrop: some View {
         ZStack {
-            AppShotsTokens.cardSurface
+            Color(nsColor: .textBackgroundColor)
             LinearGradient(
                 colors: [
-                    paletteColor.opacity(0.22),
-                    paletteColor.opacity(0.08),
-                    .clear
+                    washColor.opacity(0.34),
+                    washColor.opacity(0.12),
+                    .clear,
                 ],
                 startPoint: .top,
                 endPoint: .center
             )
+            RadialGradient(
+                colors: [washColor.opacity(0.18), .clear],
+                center: UnitPoint(x: 0.88, y: 0.78),
+                startRadius: 60,
+                endRadius: 520
+            )
         }
         .ignoresSafeArea()
+    }
+
+    /// A pastel "lifted" version of the template palette — palette mixed toward
+    /// white so dark palettes (navy, charcoal) still read as a visible tint
+    /// instead of muddying into gray.
+    private var washColor: Color {
+        guard let ns = NSColor(paletteColor).usingColorSpace(.deviceRGB) else { return paletteColor }
+        let mix: Double = 0.55
+        let r = Double(ns.redComponent)
+        let g = Double(ns.greenComponent)
+        let b = Double(ns.blueComponent)
+        return Color(
+            red: r + (1 - r) * mix,
+            green: g + (1 - g) * mix,
+            blue: b + (1 - b) * mix
+        )
     }
 
     // MARK: - Header
@@ -390,8 +436,8 @@ struct AppShotsSetDetailSheet: View {
             }
             .frame(width: width, height: height)
             .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(Color.black.opacity(0.10)))
-            .shadow(color: paletteColor.opacity(0.28), radius: 18, y: 10)
-            .shadow(color: Color.black.opacity(0.10), radius: 3, y: 2)
+            .shadow(color: paletteColor.opacity(0.35), radius: 28, y: 18)
+            .shadow(color: Color.black.opacity(0.14), radius: 4, y: 2)
 
             HStack(spacing: 6) {
                 Text("Screen \(index)")
@@ -405,7 +451,13 @@ struct AppShotsSetDetailSheet: View {
                 Spacer(minLength: 4)
                 if shot.error != nil {
                     Button {
-                        // Hook for retry — wired in caller later.
+                        Task {
+                            await manager.retryScreenshot(
+                                setId: setId,
+                                screenshotId: shot.id,
+                                projectName: projectName
+                            )
+                        }
                     } label: {
                         Image(systemName: "arrow.clockwise").font(.caption2)
                     }

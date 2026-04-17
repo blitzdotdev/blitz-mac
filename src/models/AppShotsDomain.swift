@@ -18,10 +18,20 @@ struct CapturedShot: Identifiable, Equatable {
     var included: Bool
     /// Heuristic warning (e.g. "Looks nearly blank"). Non-nil means we detected something off.
     var warning: String?
+    /// Per-capture headline. Empty means "use the manager's default headline".
+    /// App Store screenshots typically progress through different feature pitches,
+    /// so each screen owns its own copy.
+    var headline: String
+    /// Per-capture subtitle. Empty = fall back to manager default (which may itself be blank,
+    /// in which case the copywriter varies per template).
+    var subtitle: String
 
-    init(id: UUID = UUID(), path: String, image: NSImage, included: Bool = true, warning: String? = nil) {
+    init(id: UUID = UUID(), path: String, image: NSImage,
+         included: Bool = true, warning: String? = nil,
+         headline: String = "", subtitle: String = "") {
         self.id = id; self.path = path; self.image = image
         self.included = included; self.warning = warning
+        self.headline = headline; self.subtitle = subtitle
     }
 }
 

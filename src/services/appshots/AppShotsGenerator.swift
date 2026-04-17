@@ -50,34 +50,68 @@ enum AppShotsGenerator {
         try? FileManager.default.createDirectory(atPath: request.outputDir, withIntermediateDirectories: true)
         let stamp = Int(Date().timeIntervalSince1970)
 
-        await withTaskGroup(of: Outcome.self) { group in
-            for template in templates {
-                let copy = AppShotsCopywriter.copy(
-                    base: request.headline,
-                    userSubtitle: request.subtitle,
+        // Build a quick lookup: captureId → (effective headline, effective subtitle).
+        // Per-capture copy wins; request-level headline/subtitle is the fallback.
+        let copyByCapture: [UUID: (headline: String, subtitle: String?)] = Dictionary(
+            uniqueKeysWithValues: request.captures.map { capture in
+                let h = capture.headline.isEmpty ? request.headline : capture.headline
+                let s = capture.subtitle.isEmpty ? request.subtitle : capture.subtitle
+                return (capture.id, (h, s))
+            }
+        )
+
+        // Build a flat job list. ASC plugin can't handle ~48 simultaneous `apply`
+        // calls — it throws transient "template not found" errors. Throttle below.
+        struct Job { let templateId: String; let category: String; let captureId: UUID; let screenshotPath: String; let outPath: String }
+        var jobs: [Job] = []
+        for template in templates {
+            for source in sources {
+                let outPath = "\(request.outputDir)/\(stamp)_\(template.id)_\(source.captureId.uuidString).png"
+                jobs.append(Job(
+                    templateId: template.id,
                     category: template.category,
+                    captureId: source.captureId,
+                    screenshotPath: source.path,
+                    outPath: outPath
+                ))
+            }
+        }
+
+        // Cap concurrent ASC CLI invocations.
+        let maxConcurrent = 4
+        await withTaskGroup(of: Outcome.self) { group in
+            var next = 0
+            func enqueue() {
+                guard next < jobs.count else { return }
+                let job = jobs[next]
+                next += 1
+                let perCapture = copyByCapture[job.captureId] ?? (request.headline, request.subtitle)
+                let copy = AppShotsCopywriter.copy(
+                    base: perCapture.headline,
+                    userSubtitle: perCapture.subtitle,
+                    category: job.category,
                     seed: request.projectName
                 )
-                for source in sources {
-                    let outPath = "\(request.outputDir)/\(stamp)_\(template.id)_\(source.captureId.uuidString).png"
-                    group.addTask {
-                        do {
-                            let resultPath = try await ASCManager.appShotsTemplatesApply(
-                                templateId: template.id,
-                                screenshot: source.path,
-                                headline: copy.headline,
-                                subtitle: copy.subtitle,
-                                imageOutput: outPath
-                            )
-                            return Outcome(templateId: template.id, captureId: source.captureId, result: .success(resultPath))
-                        } catch {
-                            return Outcome(templateId: template.id, captureId: source.captureId, result: .failure(error))
-                        }
+                group.addTask {
+                    do {
+                        let resultPath = try await ASCManager.appShotsTemplatesApply(
+                            templateId: job.templateId,
+                            screenshot: job.screenshotPath,
+                            headline: copy.headline,
+                            subtitle: copy.subtitle,
+                            imageOutput: job.outPath
+                        )
+                        return Outcome(templateId: job.templateId, captureId: job.captureId, result: .success(resultPath))
+                    } catch {
+                        return Outcome(templateId: job.templateId, captureId: job.captureId, result: .failure(error))
                     }
                 }
             }
-            for await outcome in group {
+
+            for _ in 0..<min(maxConcurrent, jobs.count) { enqueue() }
+            while let outcome = await group.next() {
                 await onProgress(outcome)
+                enqueue()
             }
         }
     }

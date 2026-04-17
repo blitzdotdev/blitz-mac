@@ -9,8 +9,10 @@ final class AppShotsFlowManager {
 
     var step: AppShotsStep = .hero
     var captures: [CapturedShot] = []
-    var headline: String = ""
-    var subtitle: String = ""
+    /// Fallback headline — used for any capture whose per-row headline is blank.
+    var defaultHeadline: String = ""
+    /// Fallback subtitle — if blank, the copywriter varies per template.
+    var defaultSubtitle: String = ""
     var useFrame: Bool = true
     var selectedFrameName: String = "iPhone 17 Pro Max"
     var templates: [ASCManager.AppShotTemplate] = []
@@ -77,15 +79,15 @@ final class AppShotsFlowManager {
             adopt(persisted: persisted)
             step = .done
         } else {
-            headline = ""
-            subtitle = ""
+            defaultHeadline = ""
+            defaultSubtitle = ""
             step = .hero
         }
     }
 
     private func adopt(persisted: PersistedSets) {
-        headline = persisted.headline
-        subtitle = persisted.subtitle ?? ""
+        defaultHeadline = persisted.headline
+        defaultSubtitle = persisted.subtitle ?? ""
         if let frameName = persisted.deviceFrameName {
             selectedFrameName = frameName
             useFrame = true
@@ -108,8 +110,8 @@ final class AppShotsFlowManager {
     func resetToHero() {
         captures = []
         generated = []
-        headline = ""
-        subtitle = ""
+        defaultHeadline = ""
+        defaultSubtitle = ""
         generationError = nil
         captureError = nil
         if isRecording { recorder.stop(); isRecording = false }
@@ -118,6 +120,33 @@ final class AppShotsFlowManager {
             try? FileManager.default.removeItem(atPath: "\(store.outputDir)/sets.json")
         }
         step = .hero
+    }
+
+    // MARK: - Per-capture copy
+
+    /// Resolve the effective headline for a capture: its own override, else default, else project name.
+    func effectiveHeadline(for capture: CapturedShot, projectName: String) -> String {
+        if !capture.headline.isEmpty { return capture.headline }
+        if !defaultHeadline.isEmpty { return defaultHeadline }
+        return projectName
+    }
+
+    /// Resolve the effective subtitle for a capture: its own override, else default, else nil
+    /// (nil triggers the copywriter's per-template variation).
+    func effectiveSubtitle(for capture: CapturedShot) -> String? {
+        if !capture.subtitle.isEmpty { return capture.subtitle }
+        if !defaultSubtitle.isEmpty { return defaultSubtitle }
+        return nil
+    }
+
+    func updateCaptureHeadline(id: UUID, headline: String) {
+        guard let idx = captures.firstIndex(where: { $0.id == id }) else { return }
+        captures[idx].headline = headline
+    }
+
+    func updateCaptureSubtitle(id: UUID, subtitle: String) {
+        guard let idx = captures.firstIndex(where: { $0.id == id }) else { return }
+        captures[idx].subtitle = subtitle
     }
 
     // MARK: - Capture
@@ -189,8 +218,8 @@ final class AppShotsFlowManager {
         }
 
         generationError = nil
-        let effectiveHeadline = headline.isEmpty ? projectName : headline
-        let rawSubtitle = subtitle.isEmpty ? nil : subtitle
+        let fallbackHeadline = defaultHeadline.isEmpty ? projectName : defaultHeadline
+        let fallbackSubtitle = defaultSubtitle.isEmpty ? nil : defaultSubtitle
         let frame = useFrame ? selectedFrame : nil
 
         // Seed each set with empty screenshot placeholders for included captures only.
@@ -198,9 +227,10 @@ final class AppShotsFlowManager {
             uniqueKeysWithValues: activeCaptures.enumerated().map { ($0.element.id, "Screen \($0.offset + 1)") }
         )
         generated = chosen.map { template in
-            let copy = AppShotsCopywriter.copy(
-                base: effectiveHeadline,
-                userSubtitle: rawSubtitle,
+            // Set-level summary uses the fallback; each screenshot records its own copy at render time.
+            let setCopy = AppShotsCopywriter.copy(
+                base: fallbackHeadline,
+                userSubtitle: fallbackSubtitle,
                 category: template.category,
                 seed: projectName
             )
@@ -210,8 +240,8 @@ final class AppShotsFlowManager {
             return GeneratedSet(
                 id: template.id,
                 template: template,
-                headline: copy.headline,
-                subtitle: copy.subtitle,
+                headline: setCopy.headline,
+                subtitle: setCopy.subtitle,
                 screenshots: placeholders
             )
         }
@@ -221,8 +251,8 @@ final class AppShotsFlowManager {
         store.ensureOutputDir()
 
         let request = GenerationRequest(
-            headline: effectiveHeadline,
-            subtitle: rawSubtitle,
+            headline: fallbackHeadline,
+            subtitle: fallbackSubtitle,
             captures: activeCaptures,
             frame: frame,
             projectName: projectName,
@@ -238,8 +268,8 @@ final class AppShotsFlowManager {
         }
 
         let snapshot = AppShotsStore.snapshot(
-            headline: effectiveHeadline,
-            subtitle: rawSubtitle,
+            headline: fallbackHeadline,
+            subtitle: fallbackSubtitle,
             deviceFrame: frame,
             sets: generated
         )
@@ -257,8 +287,59 @@ final class AppShotsFlowManager {
             let resolved = (path as NSString).expandingTildeInPath
             generated[setIdx].screenshots[shotIdx].imagePath = resolved
             generated[setIdx].screenshots[shotIdx].image = NSImage(contentsOfFile: resolved)
+            generated[setIdx].screenshots[shotIdx].error = nil
         case .failure(let error):
             generated[setIdx].screenshots[shotIdx].error = error.localizedDescription
         }
+    }
+
+    // MARK: - Retry
+
+    /// Re-render a single failed shot. Rebuilds a one-template, one-capture request so the plugin
+    /// isn't stressed by the 40+ concurrent calls that triggered the original failure.
+    func retryScreenshot(setId: String, screenshotId: UUID, projectName: String) async {
+        guard let setIdx = generated.firstIndex(where: { $0.id == setId }),
+              let shotIdx = generated[setIdx].screenshots.firstIndex(where: { $0.id == screenshotId }),
+              let projectId = currentProjectId else { return }
+
+        let shot = generated[setIdx].screenshots[shotIdx]
+        let template = generated[setIdx].template
+        guard let capture = captures.first(where: { $0.id == shot.captureId }) else { return }
+
+        // Clear error + image so the UI shows the loading state again.
+        generated[setIdx].screenshots[shotIdx].error = nil
+        generated[setIdx].screenshots[shotIdx].imagePath = nil
+        generated[setIdx].screenshots[shotIdx].image = nil
+
+        let store = AppShotsStore(projectId: projectId)
+        let fallbackHeadline = defaultHeadline.isEmpty ? projectName : defaultHeadline
+        let fallbackSubtitle = defaultSubtitle.isEmpty ? nil : defaultSubtitle
+        let frame = useFrame ? selectedFrame : nil
+
+        let request = GenerationRequest(
+            headline: fallbackHeadline,
+            subtitle: fallbackSubtitle,
+            captures: [capture],
+            frame: frame,
+            projectName: projectName,
+            outputDir: store.outputDir
+        )
+
+        await AppShotsGenerator.run(
+            request: request,
+            templates: [template],
+            frameCompositor: useFrame ? compositor : nil
+        ) { [weak self] outcome in
+            self?.applyOutcome(outcome)
+        }
+
+        // Persist refreshed results.
+        let snapshot = AppShotsStore.snapshot(
+            headline: fallbackHeadline,
+            subtitle: fallbackSubtitle,
+            deviceFrame: frame,
+            sets: generated
+        )
+        store.save(snapshot)
     }
 }

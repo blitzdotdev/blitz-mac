@@ -26,7 +26,12 @@ struct AppShotsWorkspaceView: View {
             }
         }
         .sheet(item: $openSet) { set in
-            AppShotsSetDetailSheet(set: set) { openSet = nil }
+            AppShotsSetDetailSheet(
+                manager: manager,
+                setId: set.id,
+                projectName: projectName,
+                onClose: { openSet = nil }
+            )
         }
     }
 
