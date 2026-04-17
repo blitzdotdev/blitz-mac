@@ -358,59 +358,205 @@
 
   /* ============== DETAIL SHEET ============== */
   .sheet-backdrop {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: none;
-    z-index: 100; align-items: center; justify-content: center; padding: 40px;
+    position: fixed; inset: 0; background: rgba(15,15,18,0.42);
+    backdrop-filter: blur(4px) saturate(0.95);
+    display: none; z-index: 100;
+    align-items: center; justify-content: center; padding: 32px;
   }
-  .sheet-backdrop.on { display: flex; }
+  .sheet-backdrop.on { display: flex; animation: sheetFade .22s ease-out both; }
+  @keyframes sheetFade { from { opacity: 0; } to { opacity: 1; } }
+
   .sheet {
-    background: var(--panel); border-radius: 14px; width: min(920px, 100%); max-height: 100%;
-    box-shadow: var(--shadow-lg); display: flex; flex-direction: column; overflow: hidden;
+    position: relative;
+    background: #FAF9F6;                            /* warm paper — not system gray */
+    border-radius: 18px; width: min(1080px, 100%); height: min(880px, 100%);
+    box-shadow: 0 24px 80px rgba(0,0,0,0.22), 0 8px 24px rgba(0,0,0,0.12);
+    display: flex; flex-direction: column; overflow: hidden;
+    animation: sheetPop .28s cubic-bezier(.2,.8,.2,1) both;
   }
+  @keyframes sheetPop { from { transform: translateY(12px) scale(.985); } to { transform: none; } }
+
+  /* 4pt palette band — brand identity without colonising the canvas */
+  .sheet .palette-strip {
+    height: 4px;
+    background: linear-gradient(90deg,
+      var(--c1, #3b82f6),
+      var(--c2, #1d4ed8) 40%,
+      var(--c1, #3b82f6));
+    flex-shrink: 0;
+  }
+
+  /* Compact header — title + meta on left, inline buttons + close on right */
   .sheet-head {
-    padding: 14px 16px; border-bottom: 1px solid var(--border);
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
     display: flex; align-items: center; gap: 10px;
+    flex-shrink: 0;
   }
-  .sheet-head .title { font-size: 15px; font-weight: 600; }
+  .sheet-head .head-left { min-width: 0; }
+  .sheet-head .title { font-size: 15px; font-weight: 600; color: var(--text); }
   .sheet-head .meta { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; }
-  .sheet-body { flex: 1; overflow-y: auto; padding: 18px; }
-  .sheet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 14px; }
-  .shot-card {
-    background: var(--inset); border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
-    position: relative;
+  .sheet-head .meta .cat-dot {
+    display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--c1, var(--accent)); margin-right: 5px;
+    vertical-align: 1px;
   }
-  .shot-card .shot-img {
-    aspect-ratio: 9/16;
+  .sheet-head .meta .quote { font-style: italic; }
+  .sheet-head .head-spacer { flex: 1; }
+
+  /* Horizontal scroller — App Store-style preview */
+  .sheet-body {
+    flex: 1; overflow: hidden; min-height: 0;
+    padding: 0;
+    background:
+      radial-gradient(1200px 400px at 50% -20%, rgba(0,0,0,0.025), transparent 70%),
+      #FAF9F6;
+  }
+  .shots-scroller {
+    height: 100%; overflow-x: auto; overflow-y: hidden;
+    padding: 28px 28px 28px;
+    display: flex; gap: 24px; align-items: stretch;
+    scroll-behavior: smooth;
+  }
+  .shots-scroller::-webkit-scrollbar { height: 10px; }
+  .shots-scroller::-webkit-scrollbar-track { background: transparent; }
+  .shots-scroller::-webkit-scrollbar-thumb {
+    background: rgba(0,0,0,0.15); border-radius: 999px;
+    border: 3px solid #FAF9F6;
+  }
+  .shots-scroller::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
+
+  /* Shot column — phone + label + editor */
+  .shot-col {
+    flex: 0 0 auto; width: 260px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+
+  .shot-frame {
+    width: 260px; aspect-ratio: 9/16;
+    border-radius: 24px;
     background: linear-gradient(135deg, var(--c1, #e5e7eb), var(--c2, #d4d4d8));
-    position: relative;
+    border: 1px solid rgba(0,0,0,0.06);
+    position: relative; overflow: hidden;
+    box-shadow:
+      0 32px 48px -12px color-mix(in srgb, var(--c1, #3b82f6) 38%, transparent),
+      0 4px 8px rgba(0,0,0,0.10);
   }
-  .shot-card .shot-img .phone {
-    position: absolute; bottom: 14%; left: 16%; right: 16%; height: 55%;
-    background: rgba(0,0,0,0.2); border-radius: 8px;
+  .shot-frame .overlay-head {
+    position: absolute; top: 9%; left: 10%; right: 10%;
+    color: #fff; font-weight: 700; line-height: 1.15;
+    font-size: 14px;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.25);
+    letter-spacing: -0.012em;
   }
-  .shot-card.failed .shot-img {
+  .shot-col.on-light .shot-frame .overlay-head { color: var(--text); text-shadow: none; }
+  .shot-frame .mini-phone {
+    position: absolute; bottom: 5%; left: 13%; right: 13%; height: 65%;
+    background: linear-gradient(180deg, #2a2a2e, #141416);
+    border-radius: 14px 14px 3px 3px;
+    border: 1.5px solid rgba(255,255,255,0.14);
+    overflow: hidden;
+  }
+  .shot-frame .mini-phone::before {
+    content: ""; position: absolute; top: 4%; left: 50%; transform: translateX(-50%);
+    width: 32%; height: 6%; background: #000; border-radius: 999px;
+  }
+  .shot-frame .mini-phone::after {
+    content: ""; position: absolute; inset: 15% 10% 8%;
+    background:
+      linear-gradient(rgba(255,255,255,0.08), rgba(255,255,255,0.08)) top / 100% 22% no-repeat,
+      linear-gradient(rgba(255,255,255,0.08), rgba(255,255,255,0.08)) center / 100% 22% no-repeat,
+      linear-gradient(rgba(255,255,255,0.08), rgba(255,255,255,0.08)) bottom / 100% 22% no-repeat;
+    border-radius: 4px;
+  }
+  .shot-frame.failed {
     background: repeating-linear-gradient(45deg, #fff7ed 0 10px, #ffedd5 10px 20px);
+    border-color: #fdba74;
     display: grid; place-items: center;
+    box-shadow: 0 8px 20px rgba(251,146,60,0.22), 0 2px 6px rgba(0,0,0,0.06);
   }
-  .shot-card.failed .failed-tag {
-    background: #fff; padding: 6px 10px; border-radius: 6px; color: var(--warn);
+  .shot-frame.failed .failed-tag {
+    background: #fff; padding: 8px 12px; border-radius: 8px; color: var(--warn);
     font-size: 11px; font-weight: 600; border: 1px solid #fdba74;
+    display: inline-flex; align-items: center; gap: 6px;
   }
-  .shot-card .label {
-    padding: 8px 10px; display: flex; align-items: center; justify-content: space-between; gap: 6px;
-    border-top: 1px solid var(--border); background: var(--panel);
+
+  /* Label row below phone — 01 [captureLabel] ... 👁 📁 */
+  .shot-label {
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 4px;
   }
-  .shot-card .label .name { font-size: 11.5px; font-weight: 500; }
-  .shot-card .label .actions { display: flex; gap: 2px; }
-  .shot-card .label .icon-btn {
-    width: 22px; height: 22px; border-radius: 4px; background: transparent; border: 0;
-    display: grid; place-items: center; cursor: pointer; color: var(--text-mute); font-size: 11px;
+  .shot-label .index {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.03em;
+    color: rgba(0,0,0,0.55);
   }
-  .shot-card .label .icon-btn:hover { background: var(--surface-hover); color: var(--text); }
+  .shot-label .name {
+    font-size: 11px; font-weight: 500; color: rgba(0,0,0,0.80);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+  }
+  .shot-label .sp { flex: 1; }
+  .shot-label .icon-btn {
+    width: 22px; height: 22px; border-radius: 5px; background: transparent; border: 0;
+    display: grid; place-items: center; cursor: pointer;
+    color: var(--text-mute); font-size: 11px;
+  }
+  .shot-label .icon-btn:hover { background: rgba(0,0,0,0.05); color: var(--text); }
+
+  /* Inline copy editor — direct manipulation under the phone */
+  .copy-editor {
+    background: #ffffff; border: 1px solid rgba(0,0,0,0.08); border-radius: 10px;
+    padding: 10px; display: flex; flex-direction: column; gap: 7px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  }
+  .copy-editor .ce-field { display: flex; flex-direction: column; gap: 4px; }
+  .copy-editor .ce-label {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
+    color: var(--text-mute); text-transform: uppercase;
+  }
+  .copy-editor .ce-input {
+    width: 100%; background: #FAF9F6;
+    border: 1px solid rgba(0,0,0,0.08); border-radius: 6px;
+    padding: 6px 8px; font: inherit; font-size: 12px; color: var(--text);
+    transition: border-color .12s, box-shadow .12s;
+  }
+  .copy-editor .ce-input::placeholder { color: var(--text-mute); }
+  .copy-editor .ce-input:focus {
+    outline: none;
+    border-color: var(--c1, var(--accent));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--c1, var(--accent)) 18%, transparent);
+  }
+  .copy-editor .ce-regen-row {
+    display: flex; align-items: center; gap: 8px;
+    padding-top: 2px;
+  }
+  .copy-editor .ce-fallback {
+    font-size: 10.5px; color: var(--text-mute);
+  }
+  .copy-editor .ce-regen-row .sp { flex: 1; }
+  .copy-editor .ce-regen {
+    padding: 4px 10px; font-size: 11px; font-weight: 500;
+    border: 1px solid rgba(0,0,0,0.14); border-radius: 6px;
+    background: #fff; color: var(--text); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .copy-editor .ce-regen:hover { background: #f5f5f7; }
+
+  /* Footer — minimal with hairline top */
   .sheet-foot {
-    padding: 12px 16px; border-top: 1px solid var(--border);
-    display: flex; gap: 8px; align-items: center; background: var(--inset);
+    padding: 14px 28px;
+    display: flex; gap: 12px; align-items: center;
+    border-top: 1px solid rgba(0,0,0,0.06);
+    background: #FAF9F6; flex-shrink: 0;
   }
+  .sheet-foot .foot-icon { color: var(--text-mute); font-size: 12px; }
   .sheet-foot .note { flex: 1; font-size: 11.5px; color: var(--text-dim); }
+  .sheet-foot .change-locale {
+    background: transparent; border: 0; cursor: pointer;
+    color: var(--accent); font: inherit; font-size: 11.5px; font-weight: 500;
+    padding: 4px 6px;
+  }
+  .sheet-foot .change-locale:hover { text-decoration: underline; }
 
   /* Tooltip */
   [data-tooltip] { position: relative; }
@@ -597,23 +743,37 @@
 
 <!-- Detail sheet -->
 <div class="sheet-backdrop" id="sheet-backdrop" onclick="if(event.target===this)closeSheet()">
-  <div class="sheet">
+  <div class="sheet" id="sheet">
+    <div class="palette-strip"></div>
+    <button class="sheet-close" onclick="closeSheet()" aria-label="Close">✕</button>
+
     <div class="sheet-head">
-      <div>
-        <div class="title" id="sheet-title">Bold Gradient</div>
-        <div class="meta" id="sheet-meta">Bold · 8 shots · "Plan your day in seconds"</div>
+      <div class="head-left">
+        <div class="category">
+          <span class="cat-dot"></span>
+          <span id="sheet-cat">BOLD</span>
+        </div>
+        <h1 class="sheet-title" id="sheet-title">Bold Gradient</h1>
+        <div class="sheet-meta">
+          <span id="sheet-count">8 shots</span>
+          <span class="pip"></span>
+          <span class="quote">“<span id="sheet-headline">Plan your day in seconds</span>”</span>
+        </div>
       </div>
-      <div class="spacer"></div>
-      <button class="btn sm">📁 Show in Finder</button>
-      <button class="btn sm primary">↗ Upload to ASC</button>
-      <button class="btn sm ghost" onclick="closeSheet()">✕</button>
+      <div class="head-right">
+        <button class="btn">📁 Show in Finder</button>
+        <button class="btn primary">↗ Upload to ASC</button>
+      </div>
     </div>
+
     <div class="sheet-body">
-      <div class="sheet-grid" id="sheet-grid"></div>
+      <div class="shots-scroller" id="sheet-shots"></div>
     </div>
+
     <div class="sheet-foot">
-      <div class="note">Uploading sends these 8 PNGs to the <b>en-US</b> locale in App Store Connect.</div>
-      <button class="btn sm">Change locale →</button>
+      <span class="foot-icon">↗</span>
+      <div class="note">Uploading sends these <b id="sheet-foot-count">8</b> PNGs to the <b>en-US</b> locale in App Store Connect.</div>
+      <button class="change-locale">Change locale</button>
     </div>
   </div>
 </div>
@@ -796,22 +956,70 @@ function renderSets(state, includedCount) {
 
 function openSheet(template) {
   const t = template || TEMPLATES[0];
+  const headline = document.getElementById('headline').value || 'Plan your day in seconds';
+  const included = SAMPLE_CAPTURES.filter(c => c.included);
+
+  // Tokens so the whole sheet inherits the palette (strip, shadows, focus rings)
+  const sheet = document.getElementById('sheet');
+  sheet.classList.remove(...Array.from(sheet.classList).filter(c => c.startsWith('c-')));
+  sheet.classList.remove('on-light');
+  sheet.classList.add(t.cls);
+  if (t.light) sheet.classList.add('on-light');
+
   document.getElementById('sheet-title').textContent = t.name;
-  document.getElementById('sheet-meta').textContent = `${t.cat} · ${document.getElementById('headline').value || 'Plan your day in seconds'}`;
-  const grid = document.getElementById('sheet-grid');
-  grid.innerHTML = '';
-  const included = SAMPLE_CAPTURES.filter(c => c.included).length;
-  for (let i = 0; i < included; i++) {
-    const isFailed = (t.name === 'Playful Pop' && i >= included - 2);
-    const card = document.createElement('div');
-    card.className = `shot-card ${t.cls}${isFailed ? ' failed' : ''}`;
-    card.innerHTML = isFailed
-      ? `<div class="shot-img"><div class="failed-tag">Render failed</div></div>
-         <div class="label"><div class="name">Screen ${i+1}</div><div class="actions"><button class="icon-btn" data-tooltip="Retry">↻</button></div></div>`
-      : `<div class="shot-img"><div class="phone"></div></div>
-         <div class="label"><div class="name">Screen ${i+1}</div><div class="actions"><button class="icon-btn" data-tooltip="Preview">👁</button><button class="icon-btn" data-tooltip="Show in Finder">📁</button></div></div>`;
-    grid.appendChild(card);
-  }
+  document.getElementById('sheet-cat').textContent = t.cat.toUpperCase();
+  document.getElementById('sheet-count').textContent = `${included.length} shot${included.length === 1 ? '' : 's'}`;
+  document.getElementById('sheet-headline').textContent = headline;
+  document.getElementById('sheet-foot-count').textContent = included.length;
+
+  const scroller = document.getElementById('sheet-shots');
+  scroller.innerHTML = '';
+
+  included.forEach((cap, i) => {
+    const isFailed = (t.name === 'Playful Pop' && i >= included.length - 2);
+    const col = document.createElement('div');
+    col.className = `shot-col ${t.cls}${t.light ? ' on-light' : ''}`;
+    const idx = String(i + 1).padStart(2, '0');
+
+    const frame = isFailed
+      ? `<div class="shot-frame failed"><div class="failed-tag">⚠ Render failed</div></div>`
+      : `<div class="shot-frame">
+           <div class="overlay-head">${headline}</div>
+           <div class="mini-phone"></div>
+         </div>`;
+
+    const actions = isFailed
+      ? `<button class="icon-btn" data-tooltip="Retry render">↻</button>`
+      : `<button class="icon-btn" data-tooltip="Preview">👁</button>
+         <button class="icon-btn" data-tooltip="Show in Finder">📁</button>`;
+
+    col.innerHTML = `
+      ${frame}
+      <div class="shot-label">
+        <span class="index">${idx}</span>
+        <span class="name">${cap.label}</span>
+        <span class="sp"></span>
+        ${actions}
+      </div>
+      <div class="copy-editor">
+        <div class="ce-field">
+          <label class="ce-label">Headline</label>
+          <input class="ce-input" value="${i === 0 ? headline : ''}" placeholder="${headline}" />
+        </div>
+        <div class="ce-field">
+          <label class="ce-label">Subtitle · varies if blank</label>
+          <input class="ce-input" placeholder="Optional" />
+        </div>
+        <div class="ce-regen-row">
+          <span class="ce-fallback">${i === 0 ? '' : 'Falls back to default'}</span>
+          <span class="sp"></span>
+          <button class="ce-regen">↻ Regenerate</button>
+        </div>
+      </div>
+    `;
+    scroller.appendChild(col);
+  });
+
   document.getElementById('sheet-backdrop').classList.add('on');
 }
 function closeSheet() { document.getElementById('sheet-backdrop').classList.remove('on'); }
