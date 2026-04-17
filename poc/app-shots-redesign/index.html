@@ -2,498 +2,553 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>App Shots — Redesign Prototype</title>
+<title>App Shots — workspace journey</title>
 <style>
   :root {
-    --bg: #0f0f10;
-    --panel: #18181b;
-    --panel-2: #1f1f23;
+    --bg: #0b0b0d;
+    --panel: #15151a;
+    --panel-2: #1c1c22;
     --border: rgba(255,255,255,0.08);
-    --border-strong: rgba(255,255,255,0.16);
+    --border-strong: rgba(255,255,255,0.18);
     --text: #f5f5f7;
-    --text-dim: rgba(245,245,247,0.6);
-    --text-mute: rgba(245,245,247,0.38);
+    --text-dim: rgba(245,245,247,0.66);
+    --text-mute: rgba(245,245,247,0.42);
     --accent: #2563eb;
     --accent-2: #7c3aed;
     --success: #22c55e;
+    --warn: #f59e0b;
   }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    -webkit-font-smoothing: antialiased;
-    font-size: 13px;
+    background: var(--bg); color: var(--text);
+    -webkit-font-smoothing: antialiased; font-size: 13px;
   }
 
-  /* ================= App chrome ================= */
-  .window {
-    height: 100vh;
-    display: grid;
-    grid-template-columns: 220px 260px 1fr;
-    overflow: hidden;
-  }
-  .sidebar {
-    background: var(--panel);
-    border-right: 1px solid var(--border);
-    padding: 40px 10px 10px;
-  }
-  .side-group { color: var(--text-mute); font-size: 10px; text-transform: uppercase; letter-spacing: .1em; padding: 10px 10px 4px; }
-  .side-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; color: var(--text-dim); cursor: pointer; }
-  .side-item:hover { background: rgba(255,255,255,0.04); color: var(--text); }
-  .side-item.active { background: rgba(37,99,235,0.15); color: #fff; }
-  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-mute); }
-  .side-item.active .dot { background: var(--accent); }
+  /* ============== App chrome ============== */
+  .window { height: 100vh; display: grid; grid-template-columns: 220px 1fr; overflow: hidden; }
+  .sidebar { background: #fff; color: #111; border-right: 1px solid rgba(0,0,0,0.08); padding: 40px 10px 10px; }
+  .sidebar .group { color: rgba(0,0,0,0.45); font-size: 10px; text-transform: uppercase; letter-spacing: .1em; padding: 10px 10px 4px; }
+  .sidebar .item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; color: rgba(0,0,0,0.7); cursor: pointer; }
+  .sidebar .item:hover { background: rgba(0,0,0,0.04); color: #111; }
+  .sidebar .item.active { background: var(--accent); color: #fff; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .6; }
 
-  /* Left panel (controls) */
-  .left-panel {
-    background: var(--panel-2);
-    border-right: 1px solid var(--border);
-    padding: 16px;
-    overflow-y: auto;
-  }
-  .left-title { font-weight: 600; font-size: 14px; margin-bottom: 12px; }
-  .field { margin-bottom: 14px; }
-  .field label { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-mute); margin-bottom: 6px; }
-  .field input, .field textarea, .field select {
-    width: 100%; background: #0b0b0d; border: 1px solid var(--border); color: var(--text);
-    padding: 6px 8px; border-radius: 6px; font: inherit;
-  }
+  .main { background: var(--bg); position: relative; overflow: hidden; color: var(--text); display: flex; flex-direction: column; }
+
+  /* ============== Subtab bar ============== */
+  .tabbar { height: 40px; border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 16px; gap: 20px; font-size: 12px; color: var(--text-dim); background: var(--panel); flex-shrink: 0; }
+  .tabbar .tab { padding: 10px 0; cursor: pointer; }
+  .tabbar .tab.on { color: var(--text); border-bottom: 2px solid var(--accent); margin-bottom: -1px; }
+
+  /* ============== Buttons ============== */
   .btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-    padding: 8px 12px; border-radius: 7px; border: 1px solid var(--border-strong); background: transparent;
+    padding: 7px 11px; border-radius: 7px; border: 1px solid var(--border-strong); background: transparent;
     color: var(--text); cursor: pointer; font: inherit;
   }
-  .btn:hover { background: rgba(255,255,255,0.05); }
-  .btn.primary { background: var(--accent); border-color: var(--accent); }
+  .btn:hover { background: rgba(255,255,255,0.06); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   .btn.primary:hover { background: #1d4ed8; }
+  .btn.primary:disabled, .btn:disabled { opacity: .35; cursor: not-allowed; }
   .btn.ghost { border-color: transparent; color: var(--text-dim); }
-  .btn.block { width: 100%; }
+  .btn.lg { padding: 14px 26px; font-size: 14px; border-radius: 10px; }
+  .btn.sm { padding: 4px 8px; font-size: 11px; border-radius: 5px; }
+  .btn .ic { width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; }
+  .icon-btn {
+    width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border);
+    background: transparent; color: var(--text-dim); cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .icon-btn:hover { background: rgba(255,255,255,0.05); color: var(--text); }
 
-  /* Right main area */
-  .main { position: relative; overflow: hidden; background: radial-gradient(ellipse at top, rgba(37,99,235,0.08), transparent 60%), var(--bg); }
-  .main > section { position: absolute; inset: 0; display: none; overflow: auto; }
-  .main > section.on { display: block; }
-
-  /* ================= State 1 — empty / hero CTA ================= */
-  .empty {
-    height: 100%;
+  /* ============== State 1 — Hero ============== */
+  .hero-stage {
+    flex: 1;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    padding: 40px; text-align: center;
+    padding: 48px 40px; gap: 18px; text-align: center;
+    background: radial-gradient(ellipse at top, rgba(37,99,235,0.06), transparent 60%);
   }
-  .empty .badge {
-    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px;
-    border-radius: 999px; background: rgba(37,99,235,0.12); border: 1px solid rgba(37,99,235,0.3);
-    color: #93c5fd; font-size: 11px; margin-bottom: 20px;
+  .hero-stage .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 12px; border-radius: 999px;
+    background: rgba(37,99,235,0.12); border: 1px solid rgba(37,99,235,0.3);
+    color: #93c5fd; font-size: 11px;
   }
-  .empty h1 { font-size: 26px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 10px; }
-  .empty p { color: var(--text-dim); max-width: 460px; margin-bottom: 28px; line-height: 1.5; }
-  .hero-cta {
+  .hero-stage h1 { font-size: 32px; font-weight: 600; letter-spacing: -0.01em; max-width: 720px; }
+  .hero-stage p { color: var(--text-dim); max-width: 560px; line-height: 1.55; font-size: 15px; }
+  .hero-stage .cta {
     display: inline-flex; align-items: center; gap: 10px;
-    padding: 16px 28px; font-size: 15px; font-weight: 600; border: 0; border-radius: 12px; cursor: pointer;
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
-    color: #fff; box-shadow: 0 10px 30px rgba(37,99,235,0.4);
-    transition: transform .15s;
+    padding: 16px 30px; font-size: 15.5px; font-weight: 600;
+    border: 0; border-radius: 14px; cursor: pointer;
+    background: var(--accent); color: #fff;
+    box-shadow: 0 14px 40px rgba(37,99,235,0.4);
+    transition: transform .15s, box-shadow .15s;
   }
-  .hero-cta:hover { transform: translateY(-1px); }
-  .hero-cta svg { width: 18px; height: 18px; }
-  .empty .alt { margin-top: 16px; display: flex; gap: 10px; color: var(--text-mute); font-size: 12px; }
-  .empty .alt a { color: var(--text-dim); text-decoration: underline; cursor: pointer; }
+  .hero-stage .cta:hover { transform: translateY(-1px); box-shadow: 0 18px 50px rgba(37,99,235,0.5); }
+  .hero-stage .meta { color: var(--text-mute); font-size: 12px; }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; max-width: 760px; width: 100%; margin-top: 28px; }
+  .tile { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; text-align: left; }
+  .tile .n { font-size: 10px; color: var(--text-mute); margin-bottom: 6px; letter-spacing: .08em; }
+  .tile .t { font-weight: 600; font-size: 12.5px; margin-bottom: 4px; }
+  .tile .d { color: var(--text-dim); font-size: 11.5px; line-height: 1.45; }
 
-  .flow-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; max-width: 640px; margin-top: 36px; }
-  .flow-tile { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; text-align: left; }
-  .flow-tile .n { font-size: 10px; color: var(--text-mute); margin-bottom: 6px; }
-  .flow-tile .t { font-weight: 600; font-size: 12px; margin-bottom: 4px; }
-  .flow-tile .d { color: var(--text-dim); font-size: 11px; line-height: 1.45; }
+  /* ============== State 2 — Workspace ============== */
+  .workspace { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 
-  /* ================= State 2 — capturing (iphone-mcp) ================= */
-  .capturing { height: 100%; display: grid; grid-template-columns: 1fr 380px; gap: 0; }
-  .capturing .stage { display: flex; align-items: center; justify-content: center; padding: 30px; }
-  .phone {
-    width: 260px; aspect-ratio: 9/19.5; border-radius: 40px; padding: 10px;
-    background: linear-gradient(180deg, #2a2a2e, #141416);
-    border: 1px solid rgba(255,255,255,0.1);
-    box-shadow: 0 30px 60px rgba(0,0,0,0.5);
-    position: relative;
+  .ws-toolbar {
+    height: 44px; padding: 0 14px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px; background: var(--panel);
+    flex-shrink: 0;
   }
-  .phone .screen { width: 100%; height: 100%; border-radius: 32px; background: #0b0b0d; overflow: hidden; position: relative; }
-  .phone .notch { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); width: 90px; height: 26px; background: #000; border-radius: 14px; z-index: 2; }
-  .phone .screen .fake-app { padding: 60px 16px 16px; }
-  .phone .fake-app .row { height: 48px; background: rgba(255,255,255,0.06); border-radius: 10px; margin-bottom: 10px; }
-  .phone .fake-app .row:nth-child(odd) { background: rgba(37,99,235,0.18); }
-  .capture-log { background: var(--panel); border-left: 1px solid var(--border); padding: 16px; overflow-y: auto; }
-  .capture-log h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .1em; color: var(--text-mute); margin-bottom: 12px; }
-  .step { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px dashed var(--border); }
-  .step:last-child { border-bottom: 0; }
-  .step .ic { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; flex-shrink: 0; margin-top: 1px; }
-  .step .ic.ok { background: rgba(34,197,94,0.15); color: var(--success); }
-  .step .ic.run { background: rgba(37,99,235,0.18); color: #93c5fd; }
-  .step .ic.idle { background: rgba(255,255,255,0.05); color: var(--text-mute); }
-  .step .body .t { font-weight: 500; font-size: 12px; }
-  .step .body .d { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
-  .spinner { width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.1); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  .ws-toolbar .crumbs { color: var(--text-dim); font-size: 12px; display: flex; align-items: center; gap: 8px; }
+  .ws-toolbar .crumbs strong { color: var(--text); font-weight: 600; }
+  .ws-toolbar .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 500;
+    border: 1px solid var(--border); background: rgba(255,255,255,0.04);
+    color: var(--text-dim);
+  }
+  .ws-toolbar .pill.gen { background: rgba(37,99,235,0.15); color: #93c5fd; border-color: rgba(37,99,235,0.3); }
+  .ws-toolbar .pill.done { background: rgba(34,197,94,0.12); color: #86efac; border-color: rgba(34,197,94,0.3); }
+  .ws-toolbar .spacer { flex: 1; }
+
+  .ws-grid {
+    flex: 1; display: grid; grid-template-columns: 260px 1fr 280px;
+    min-height: 0;
+  }
+
+  .ws-panel { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .ws-panel.left { border-right: 1px solid var(--border); background: var(--panel); }
+  .ws-panel.right { border-left: 1px solid var(--border); background: var(--panel); }
+  .ws-head {
+    padding: 14px 14px 8px;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .ws-head .title { font-size: 11px; font-weight: 600; letter-spacing: .08em; color: var(--text-mute); text-transform: uppercase; }
+  .ws-head .count { font-size: 11px; color: var(--text-mute); }
+  .ws-body { flex: 1; overflow-y: auto; padding: 0 14px 14px; min-height: 0; }
+
+  /* ----- Captures column ----- */
+  .cap-actions { display: flex; flex-direction: column; gap: 6px; padding: 0 14px 12px; }
+  .cap-actions .btn { width: 100%; justify-content: flex-start; padding: 8px 10px; }
+  .cap-actions .btn.primary { justify-content: center; }
+  .cap-actions .hint { font-size: 11px; color: var(--text-mute); padding: 4px 2px 0; line-height: 1.3; }
+  .cap-list { display: flex; flex-direction: column; gap: 8px; }
+  .cap-item {
+    display: flex; gap: 8px; align-items: center;
+    padding: 6px; border-radius: 8px; border: 1px solid var(--border);
+    background: rgba(255,255,255,0.02); cursor: grab;
+  }
+  .cap-item .thumb {
+    width: 38px; height: 76px; border-radius: 5px;
+    background: linear-gradient(180deg, #475569, #1e293b);
+    flex-shrink: 0;
+  }
+  .cap-item .info { flex: 1; min-width: 0; }
+  .cap-item .info .label { font-size: 12px; font-weight: 500; }
+  .cap-item .info .meta { font-size: 10.5px; color: var(--text-mute); margin-top: 1px; }
+  .cap-item .x { color: var(--text-mute); cursor: pointer; padding: 4px; }
+  .cap-item .x:hover { color: var(--text); }
+  .cap-empty {
+    border: 1.5px dashed var(--border); border-radius: 10px;
+    padding: 24px 12px; text-align: center;
+    color: var(--text-mute); font-size: 12px; line-height: 1.5;
+  }
+  .cap-empty .arrow { font-size: 18px; margin-bottom: 4px; }
+
+  .cap-status {
+    margin-top: 12px; padding: 8px 10px;
+    background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.25);
+    border-radius: 8px; font-size: 11.5px; color: #fbbf24; line-height: 1.4;
+  }
+
+  /* ----- Sets column (center) ----- */
+  .ws-panel.center .ws-body { padding: 0 18px 18px; }
+  .sets-empty {
+    border-radius: 12px; padding: 40px 30px; text-align: center;
+    border: 1.5px dashed var(--border);
+    color: var(--text-dim);
+  }
+  .sets-empty h3 { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+  .sets-empty p { font-size: 13px; line-height: 1.5; max-width: 360px; margin: 0 auto 14px; }
+  .sets-empty .ghost-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 18px; opacity: .35; }
+  .sets-empty .ghost { aspect-ratio: 9/16; border-radius: 8px; background: rgba(255,255,255,0.04); border: 1px solid var(--border); }
+
+  .sets-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+  .set { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; transition: transform .15s, border-color .15s; position: relative; }
+  .set:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+  .set .art {
+    aspect-ratio: 9/16; padding: 14px;
+    background: linear-gradient(135deg, var(--c1, #2563eb), var(--c2, #1d4ed8));
+    display: flex; flex-direction: column; gap: 6px; position: relative;
+  }
+  .set .art .head { font-weight: 700; color: #fff; font-size: 12px; line-height: 1.15; letter-spacing: -0.01em; }
+  .set .art .sub { color: rgba(255,255,255,0.72); font-size: 9px; line-height: 1.3; }
+  .set .art .phone {
+    position: absolute; bottom: 12px; left: 22%; right: 22%; height: 50%;
+    background: linear-gradient(180deg, #1c1917, #0c0a09);
+    border: 1.5px solid rgba(255,255,255,0.12);
+    border-radius: 14px;
+  }
+  .set .art.framed .phone {
+    background: linear-gradient(180deg, #404040, #171717);
+    box-shadow: inset 0 0 0 2px #2a2a2a;
+  }
+  .set .meta { padding: 8px 10px; display: flex; align-items: center; justify-content: space-between; }
+  .set .meta .name { font-weight: 600; font-size: 11.5px; }
+  .set .meta .cat { font-size: 10px; color: var(--text-mute); margin-top: 1px; }
+  .set .meta .check { color: var(--success); font-size: 12px; opacity: 0; }
+  .set.done .meta .check { opacity: 1; }
+  .set .spinner-wrap { position: absolute; inset: 0 0 38px 0; display: grid; place-items: center; background: rgba(0,0,0,0.4); border-radius: 10px 10px 0 0; }
+  .spinner { width: 18px; height: 18px; border: 2px solid rgba(255,255,255,0.2); border-top-color: #fff; border-radius: 50%; animation: spin .8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .progress-bar { height: 4px; background: rgba(255,255,255,0.06); border-radius: 2px; overflow: hidden; margin-top: 18px; }
-  .progress-bar > div { height: 100%; width: 45%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); animation: pulse 2s ease-in-out infinite; }
-  @keyframes pulse { 0%,100% { width: 30%; } 50% { width: 75%; } }
 
-  /* ================= State 3 — results grid (8 template sets) ================= */
-  .results { padding: 20px 24px; }
-  .results-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
-  .results-top h2 { font-size: 17px; font-weight: 600; }
-  .results-top .sub { color: var(--text-dim); font-size: 12px; margin-top: 3px; }
-  .filters { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
-  .pill { padding: 4px 12px; border-radius: 999px; background: transparent; color: var(--text-dim); border: 1px solid var(--border); cursor: pointer; font-size: 11px; }
-  .pill.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-
-  .set-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
-  .set-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; cursor: pointer; transition: transform .15s, border-color .15s; }
-  .set-card:hover { border-color: var(--border-strong); transform: translateY(-2px); }
-  .set-card .shots { display: flex; gap: 6px; padding: 14px; background: linear-gradient(135deg, var(--c1, #1f2937), var(--c2, #0f172a)); aspect-ratio: 1.6; }
-  .set-card .shot { flex: 1; border-radius: 12px; background: rgba(255,255,255,0.08); position: relative; overflow: hidden; }
-  .set-card .shot::before { content: ""; position: absolute; inset: 8px; border-radius: 8px; background: rgba(255,255,255,0.04); }
-  .set-card .shot .copy { position: absolute; top: 12px; left: 12px; right: 12px; font-size: 9px; color: rgba(255,255,255,0.82); font-weight: 700; line-height: 1.2; }
-  .set-card .meta { padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; }
-  .set-card .meta .name { font-weight: 600; font-size: 12px; }
-  .set-card .meta .cat { font-size: 10px; color: var(--text-mute); text-transform: uppercase; letter-spacing: .08em; }
-  .set-card .meta .tag { font-size: 10px; padding: 2px 6px; border-radius: 4px; background: rgba(124,58,237,0.15); color: #c4b5fd; }
-
-  /* ================= State 4 — detail + chat refine ================= */
-  .detail { height: 100%; display: grid; grid-template-columns: 1fr 360px; }
-  .detail .preview-area { padding: 20px 24px; overflow: auto; }
-  .detail-top { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
-  .detail-top .title { font-size: 16px; font-weight: 600; }
-  .detail-top .category { font-size: 11px; color: var(--text-mute); text-transform: uppercase; letter-spacing: .08em; }
-  .detail-shots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-  .detail-shot { aspect-ratio: 9/19.5; border-radius: 18px; background: linear-gradient(180deg, #0f172a, #1e293b); position: relative; overflow: hidden; border: 1px solid var(--border); }
-  .detail-shot .hero { position: absolute; top: 18px; left: 18px; right: 18px; font-weight: 700; color: #fff; font-size: 13px; line-height: 1.2; }
-  .detail-shot .sub { position: absolute; top: 60px; left: 18px; right: 18px; color: rgba(255,255,255,0.6); font-size: 10px; line-height: 1.3; }
-  .detail-shot .device {
-    position: absolute; bottom: 10px; left: 14%; right: 14%; height: 56%;
-    border-radius: 20px; background: linear-gradient(180deg, #333, #111);
-    border: 2px solid rgba(255,255,255,0.1);
+  .set .actions {
+    position: absolute; top: 6px; right: 6px;
+    display: flex; gap: 4px; opacity: 0; transition: opacity .15s;
   }
+  .set:hover .actions { opacity: 1; }
+  .set .ic-btn {
+    width: 24px; height: 24px; border-radius: 5px;
+    background: rgba(0,0,0,0.55); color: #fff;
+    display: grid; place-items: center; font-size: 10.5px; cursor: pointer;
+    backdrop-filter: blur(4px);
+  }
+  .set .ic-btn:hover { background: rgba(0,0,0,0.75); }
 
-  .chat-panel { background: var(--panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; }
-  .chat-head { padding: 14px 16px; border-bottom: 1px solid var(--border); }
-  .chat-head h3 { font-size: 13px; font-weight: 600; }
-  .chat-head .hint { font-size: 11px; color: var(--text-dim); margin-top: 3px; }
-  .chat-log { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
-  .msg { max-width: 85%; padding: 8px 12px; border-radius: 12px; font-size: 12px; line-height: 1.45; }
-  .msg.user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
-  .msg.ai { align-self: flex-start; background: rgba(255,255,255,0.06); color: var(--text); border-bottom-left-radius: 4px; }
-  .msg.ai .tool { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; color: #93c5fd; background: rgba(37,99,235,0.12); padding: 2px 7px; border-radius: 6px; margin-right: 6px; font-weight: 500; }
-  .chat-input { padding: 12px 14px; border-top: 1px solid var(--border); display: flex; gap: 8px; }
-  .chat-input textarea { flex: 1; resize: none; height: 36px; background: #0b0b0d; border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 8px 10px; font: inherit; }
-  .quick-actions { display: flex; gap: 6px; padding: 0 14px 12px; flex-wrap: wrap; }
-  .qa { font-size: 11px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); cursor: pointer; }
-  .qa:hover { color: var(--text); border-color: var(--border-strong); }
+  /* ----- Inspector (right) ----- */
+  .insp-section { padding: 0 14px 14px; }
+  .insp-section + .insp-section { border-top: 1px solid var(--border); padding-top: 14px; }
+  .field { margin-bottom: 12px; }
+  .field label {
+    display: block; font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--text-mute); margin-bottom: 6px;
+  }
+  .field input, .field select {
+    width: 100%; background: #0b0b0d;
+    border: 1px solid var(--border); color: var(--text);
+    padding: 7px 9px; border-radius: 6px; font: inherit;
+  }
+  .field input:focus, .field select:focus { outline: none; border-color: var(--accent); }
 
-  /* ================= State switcher (prototype only) ================= */
-  .switcher { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); background: rgba(20,20,24,0.95); border: 1px solid var(--border-strong); backdrop-filter: blur(12px); border-radius: 999px; padding: 6px; display: flex; gap: 4px; z-index: 50; box-shadow: 0 10px 30px rgba(0,0,0,0.4); }
-  .switcher button { padding: 6px 14px; border: 0; background: transparent; color: var(--text-dim); cursor: pointer; border-radius: 999px; font-size: 11px; font-weight: 500; }
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; }
+  .toggle-row .label { font-size: 12.5px; font-weight: 500; }
+  .toggle-row .hint { font-size: 11px; color: var(--text-mute); margin-top: 2px; line-height: 1.3; }
+  .toggle { position: relative; width: 32px; height: 18px; border-radius: 10px; background: rgba(255,255,255,0.15); cursor: pointer; flex-shrink: 0; }
+  .toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: left .15s; }
+  .toggle.on { background: var(--accent); }
+  .toggle.on::after { left: 16px; }
+
+  .generate-section { padding: 14px; border-top: 1px solid var(--border); }
+  .generate-section .btn { width: 100%; padding: 11px 14px; font-weight: 600; }
+  .generate-section .hint { font-size: 11px; color: var(--text-mute); margin-top: 8px; text-align: center; line-height: 1.4; }
+
+  /* progress strip during generation */
+  .progress-strip {
+    height: 2px; background: rgba(255,255,255,0.05);
+    position: relative; overflow: hidden;
+  }
+  .progress-strip > div {
+    height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    width: 25%; animation: slide 1.2s ease-in-out infinite;
+  }
+  @keyframes slide { 0%, 100% { transform: translateX(-100%); width: 30%; } 50% { transform: translateX(300%); width: 50%; } }
+
+  /* state switcher */
+  .switcher {
+    position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+    background: rgba(22,22,26,0.95); border: 1px solid var(--border-strong);
+    backdrop-filter: blur(12px); border-radius: 999px; padding: 5px;
+    display: flex; gap: 4px; z-index: 50; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  }
+  .switcher button { padding: 6px 12px; border: 0; background: transparent; color: var(--text-dim); cursor: pointer; border-radius: 999px; font-size: 11px; font-weight: 500; }
   .switcher button.on { background: var(--accent); color: #fff; }
 
-  /* template colors */
+  /* palettes */
   .c-bold { --c1:#2563eb; --c2:#1d4ed8; }
-  .c-minimal { --c1:#e5e7eb; --c2:#d1d5db; }
-  .c-minimal .copy, .c-minimal .cat { color: #111 !important; }
-  .c-minimal .shot { background: rgba(0,0,0,0.04); }
+  .c-minimal { --c1:#f4f4f5; --c2:#e4e4e7; }
+  .c-minimal .head { color: #111 !important; }
+  .c-minimal .sub { color: rgba(0,0,0,0.6) !important; }
   .c-elegant { --c1:#1f2937; --c2:#0f172a; }
-  .c-playful { --c1:#f59e0b; --c2:#ef4444; }
+  .c-playful { --c1:#f97316; --c2:#ef4444; }
   .c-pro { --c1:#0f766e; --c2:#064e3b; }
   .c-show { --c1:#7c3aed; --c2:#4c1d95; }
-  .c-dark { --c1:#09090b; --c2:#1c1917; }
+  .c-midnight { --c1:#09090b; --c2:#1c1917; }
   .c-sunset { --c1:#db2777; --c2:#7c2d12; }
 </style>
 </head>
 <body>
 
 <div class="window">
-  <!-- sidebar -->
   <aside class="sidebar">
-    <div class="side-group">Build</div>
-    <div class="side-item"><span class="dot"></span> Simulator</div>
-    <div class="side-item"><span class="dot"></span> Database</div>
-    <div class="side-item active"><span class="dot"></span> App Shots</div>
-    <div class="side-item"><span class="dot"></span> Tests</div>
-    <div class="side-group">Release</div>
-    <div class="side-item"><span class="dot"></span> App Info</div>
-    <div class="side-item"><span class="dot"></span> TestFlight</div>
+    <div class="group">Projects</div>
+    <div class="item"><span class="dot"></span>Dashboard</div>
+    <div class="item active"><span class="dot"></span>demo</div>
+    <div class="group">Release</div>
+    <div class="item"><span class="dot"></span>App Information</div>
+    <div class="item"><span class="dot"></span>Screenshots</div>
+    <div class="item"><span class="dot"></span>Review</div>
+    <div class="group">TestFlight</div>
+    <div class="item"><span class="dot"></span>Builds</div>
+    <div class="item"><span class="dot"></span>Groups</div>
   </aside>
 
-  <!-- left controls panel -->
-  <aside class="left-panel">
-    <div class="left-title">App Shots</div>
-
-    <div class="field">
-      <label>Source</label>
-      <div class="btn block" style="justify-content:flex-start; gap:8px;">
-        <span style="color:var(--text-mute);">🖼️</span>
-        <span id="sourceLabel" style="font-size:12px;">No screenshots</span>
-      </div>
-    </div>
-
-    <div class="field">
-      <label>Headline</label>
-      <input value="Plan your day in seconds" />
-    </div>
-    <div class="field">
-      <label>Subtitle</label>
-      <input value="AI-powered focus, built for you" />
-    </div>
-
-    <div class="field">
-      <label>Device Frame</label>
-      <select><option>iPhone 17 Pro Max</option><option>iPhone 17</option><option>iPhone 16 Pro</option></select>
-    </div>
-
-    <div class="field">
-      <label>Theme</label>
-      <div style="display:flex; flex-direction:column; gap:4px;">
-        <div class="btn" style="justify-content:flex-start; font-size:11px;">🌙 Midnight</div>
-        <div class="btn" style="justify-content:flex-start; font-size:11px;">☀️ Daylight</div>
-        <div class="btn" style="justify-content:flex-start; font-size:11px;">🎨 Vibrant</div>
-      </div>
-    </div>
-
-    <button class="btn primary block" style="margin-top:8px;">✨ Regenerate All</button>
-  </aside>
-
-  <!-- main area -->
   <main class="main">
+    <div class="tabbar">
+      <div class="tab">Overview</div>
+      <div class="tab">Simulator</div>
+      <div class="tab">Tests</div>
+      <div class="tab">Icon</div>
+      <div class="tab on">App Shots</div>
+    </div>
 
-    <!-- STATE 1: Empty / Hero CTA -->
-    <section id="state-empty" class="on">
-      <div class="empty">
-        <div class="badge">✨ No screenshots on App Store Connect yet</div>
-        <h1>Let AI create your screenshots</h1>
-        <p>We'll drive your app on a connected device, capture the best screens, and lay them into 8 polished template sets — ready to review and ship.</p>
-        <button class="hero-cta" onclick="go('capturing')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
-          Generate screenshots with AI
-        </button>
-        <div class="alt">
-          <span>Takes about 5 minutes.</span>
-          <a>Or upload screenshots manually →</a>
-        </div>
-
-        <div class="flow-tiles">
-          <div class="flow-tile">
-            <div class="n">01</div><div class="t">Drive your app</div>
-            <div class="d">Blitz uses iphone-mcp to navigate your app and capture key screens.</div>
-          </div>
-          <div class="flow-tile">
-            <div class="n">02</div><div class="t">Frame & write</div>
-            <div class="d">AI adds device frames, writes headlines, picks palettes per template.</div>
-          </div>
-          <div class="flow-tile">
-            <div class="n">03</div><div class="t">8 sets, ready</div>
-            <div class="d">Pick your favorite, then chat with AI to refine copy, color, or layout.</div>
-          </div>
-        </div>
+    <!-- ====================== STATE 1 — HERO (first arrival only) ====================== -->
+    <div class="hero-stage" id="hero-stage" style="display:none;">
+      <span class="badge">✦ No screenshot sets yet</span>
+      <h1>Build your App Store screenshots in one session</h1>
+      <p>Capture a few screens from your simulator, write one headline — we lay them into 8 polished template sets you can ship.</p>
+      <button class="cta" onclick="go('workspace-empty')">Get started →</button>
+      <div class="meta">About 1 minute · device frames included · always editable</div>
+      <div class="tiles">
+        <div class="tile"><div class="n">01 CAPTURE</div><div class="t">Screens from your sim</div><div class="d">Capture or Record while you tap through your app. Uploading PNGs works too.</div></div>
+        <div class="tile"><div class="n">02 FRAME & WRITE</div><div class="t">Frame + per-template copy</div><div class="d">Auto device-frame; subtitles vary so the 8 sets actually feel distinct.</div></div>
+        <div class="tile"><div class="n">03 LIVE WORKSPACE</div><div class="t">Always editable</div><div class="d">Add captures, change the headline, or regenerate — all in one place, anytime.</div></div>
       </div>
-    </section>
+    </div>
 
-    <!-- STATE 2: Capturing via iphone-mcp -->
-    <section id="state-capturing">
-      <div class="capturing">
-        <div class="stage">
-          <div class="phone">
-            <div class="notch"></div>
-            <div class="screen">
-              <div class="fake-app">
-                <div class="row"></div>
-                <div class="row"></div>
-                <div class="row"></div>
-                <div class="row"></div>
-                <div class="row"></div>
+    <!-- ====================== STATE 2 — WORKSPACE ====================== -->
+    <div class="workspace" id="workspace">
+      <!-- Toolbar -->
+      <div class="ws-toolbar">
+        <div class="crumbs">
+          <strong>demo</strong>
+          <span>·</span>
+          <span>App Shots</span>
+        </div>
+        <span class="pill" id="status-pill">Ready · 0 captures</span>
+        <div class="spacer"></div>
+        <button class="btn sm">↗ Export all</button>
+        <button class="btn sm">↻ Reset</button>
+      </div>
+
+      <!-- Generation progress (visible during gen) -->
+      <div class="progress-strip" id="progress-strip" style="display:none;"><div></div></div>
+
+      <!-- 3-column grid -->
+      <div class="ws-grid">
+
+        <!-- LEFT — Captures -->
+        <aside class="ws-panel left">
+          <div class="ws-head">
+            <div class="title">Captures</div>
+            <div class="count" id="cap-count">0</div>
+          </div>
+          <div class="cap-actions">
+            <button class="btn primary"><span>📷</span> Capture screen</button>
+            <button class="btn"><span>●</span> Record flow</button>
+            <button class="btn"><span>↥</span> Upload PNGs</button>
+            <div class="hint">Tap Capture while navigating your app on the booted simulator.</div>
+          </div>
+          <div class="ws-body">
+            <div id="cap-list" class="cap-list"></div>
+            <div id="cap-empty" class="cap-empty">
+              <div class="arrow">↑</div>
+              No captures yet —<br/>start with <b>Capture screen</b> above.
+            </div>
+            <div class="cap-status" id="cap-status" style="display:none;">
+              📷 Recording — tap around your simulator. A frame every 2s, dups skipped.
+            </div>
+          </div>
+        </aside>
+
+        <!-- CENTER — Sets -->
+        <section class="ws-panel center">
+          <div class="ws-head">
+            <div class="title">Screenshot sets</div>
+            <div class="count" id="sets-count">0 of 8</div>
+          </div>
+          <div class="ws-body">
+            <!-- Empty state -->
+            <div id="sets-empty" class="sets-empty">
+              <h3>Your 8 sets will appear here</h3>
+              <p>Capture some screens, write a headline, then click <b>Generate 8 sets</b> on the right.</p>
+              <div class="ghost-grid">
+                <div class="ghost"></div><div class="ghost"></div><div class="ghost"></div><div class="ghost"></div>
+                <div class="ghost"></div><div class="ghost"></div><div class="ghost"></div><div class="ghost"></div>
+              </div>
+            </div>
+
+            <!-- Live grid -->
+            <div id="sets-grid" class="sets-grid" style="display:none;"></div>
+          </div>
+        </section>
+
+        <!-- RIGHT — Inspector -->
+        <aside class="ws-panel right">
+          <div class="ws-head">
+            <div class="title">Inspector</div>
+          </div>
+          <div class="ws-body" style="padding-top: 0;">
+            <div class="insp-section">
+              <div class="field">
+                <label>Headline</label>
+                <input id="headline" value="" placeholder="e.g. Plan your day in seconds" />
+              </div>
+              <div class="field">
+                <label>Subtitle (optional · varies if blank)</label>
+                <input value="" placeholder="e.g. AI focus, built for you" />
+              </div>
+            </div>
+
+            <div class="insp-section">
+              <div class="toggle-row">
+                <div>
+                  <div class="label">Apply device frame</div>
+                  <div class="hint">Wrap each capture in an iPhone bezel.</div>
+                </div>
+                <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+              </div>
+              <div class="field" style="margin-top: 10px;">
+                <label>Device</label>
+                <select>
+                  <option>iPhone 17 Pro Max</option>
+                  <option>iPhone 17 Pro</option>
+                  <option>iPhone 17</option>
+                  <option>iPhone 16 Pro Max</option>
+                  <option>iPhone Air</option>
+                </select>
               </div>
             </div>
           </div>
-        </div>
-        <div class="capture-log">
-          <h3>Agent Progress</h3>
-          <div class="step">
-            <div class="ic ok">✓</div>
-            <div class="body"><div class="t">Connected to iPhone 17 Pro</div><div class="d">via iphone-mcp • device_id ABC123</div></div>
-          </div>
-          <div class="step">
-            <div class="ic ok">✓</div>
-            <div class="body"><div class="t">Captured Home screen</div><div class="d">1 / 5 — home.png</div></div>
-          </div>
-          <div class="step">
-            <div class="ic ok">✓</div>
-            <div class="body"><div class="t">Captured Today view</div><div class="d">2 / 5 — today.png</div></div>
-          </div>
-          <div class="step">
-            <div class="ic run"><div class="spinner"></div></div>
-            <div class="body"><div class="t">Navigating to Focus Mode</div><div class="d">tapping "Start focus" — capturing in 2s</div></div>
-          </div>
-          <div class="step">
-            <div class="ic idle">4</div>
-            <div class="body"><div class="t">Capture stats screen</div><div class="d">queued</div></div>
-          </div>
-          <div class="step">
-            <div class="ic idle">5</div>
-            <div class="body"><div class="t">Generate 8 template sets</div><div class="d">queued — headlines + palettes per template</div></div>
-          </div>
-          <div class="progress-bar"><div></div></div>
-          <div style="margin-top:14px; font-size:11px; color:var(--text-dim); text-align:center;">About 3 min remaining</div>
-          <div style="margin-top:14px; display:flex; gap:8px;">
-            <button class="btn block" style="font-size:11px;">Pause</button>
-            <button class="btn block ghost" style="font-size:11px;">Cancel</button>
-          </div>
-        </div>
-      </div>
-    </section>
 
-    <!-- STATE 3: Results grid -->
-    <section id="state-results">
-      <div class="results">
-        <div class="results-top">
-          <div>
-            <h2>8 template sets</h2>
-            <div class="sub">Generated from 5 screenshots • tap a set to refine with AI</div>
-          </div>
-          <div style="display:flex; gap:8px;">
-            <button class="btn">Upload to ASC</button>
-            <button class="btn primary">Regenerate</button>
-          </div>
-        </div>
-
-        <div class="filters">
-          <button class="pill on">All</button>
-          <button class="pill">Bold</button>
-          <button class="pill">Minimal</button>
-          <button class="pill">Elegant</button>
-          <button class="pill">Playful</button>
-          <button class="pill">Professional</button>
-          <button class="pill">Showcase</button>
-        </div>
-
-        <div class="set-grid">
-          <!-- 8 sets -->
-          <div class="set-card c-bold" onclick="go('detail')">
-            <div class="shots"><div class="shot"><div class="copy">Plan your day in seconds</div></div><div class="shot"><div class="copy">Stay in deep focus</div></div><div class="shot"><div class="copy">See progress instantly</div></div></div>
-            <div class="meta"><div><div class="name">Bold Gradient</div><div class="cat">Bold</div></div><div class="tag">AI copy</div></div>
-          </div>
-          <div class="set-card c-minimal">
-            <div class="shots"><div class="shot"><div class="copy">Plan your day</div></div><div class="shot"><div class="copy">Focus. Finish.</div></div><div class="shot"><div class="copy">See the wins</div></div></div>
-            <div class="meta"><div><div class="name">Minimal Light</div><div class="cat">Minimal</div></div><div class="tag">AI copy</div></div>
-          </div>
-          <div class="set-card c-elegant">
-            <div class="shots"><div class="shot"><div class="copy">A calmer way to plan</div></div><div class="shot"><div class="copy">Quiet, focused work</div></div><div class="shot"><div class="copy">Beautiful progress</div></div></div>
-            <div class="meta"><div><div class="name">Elegant Serif</div><div class="cat">Elegant</div></div><div class="tag">AI copy</div></div>
-          </div>
-          <div class="set-card c-playful">
-            <div class="shots"><div class="shot"><div class="copy">Make today count!</div></div><div class="shot"><div class="copy">Focus on fun 🎯</div></div><div class="shot"><div class="copy">Big streaks ahead</div></div></div>
-            <div class="meta"><div><div class="name">Playful Pop</div><div class="cat">Playful</div></div><div class="tag">AI copy</div></div>
-          </div>
-          <div class="set-card c-pro">
-            <div class="shots"><div class="shot"><div class="copy">Enterprise-ready focus</div></div><div class="shot"><div class="copy">Deep work mode</div></div><div class="shot"><div class="copy">Team analytics</div></div></div>
-            <div class="meta"><div><div class="name">Professional</div><div class="cat">Professional</div></div><div class="tag">AI copy</div></div>
-          </div>
-          <div class="set-card c-show">
-            <div class="shots"><div class="shot"><div class="copy">Your day, redefined</div></div><div class="shot"><div class="copy">Focus mode</div></div><div class="shot"><div class="copy">Beautiful stats</div></div></div>
-            <div class="meta"><div><div class="name">Showcase Violet</div><div class="cat">Showcase</div></div><div class="tag">AI copy</div></div>
-          </div>
-          <div class="set-card c-dark">
-            <div class="shots"><div class="shot"><div class="copy">Plan. Focus. Done.</div></div><div class="shot"><div class="copy">Deep work</div></div><div class="shot"><div class="copy">Progress that sticks</div></div></div>
-            <div class="meta"><div><div class="name">Midnight</div><div class="cat">Bold</div></div><div class="tag">AI copy</div></div>
-          </div>
-          <div class="set-card c-sunset">
-            <div class="shots"><div class="shot"><div class="copy">Built for momentum</div></div><div class="shot"><div class="copy">Focus that flows</div></div><div class="shot"><div class="copy">Finish strong</div></div></div>
-            <div class="meta"><div><div class="name">Sunset</div><div class="cat">Playful</div></div><div class="tag">AI copy</div></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- STATE 4: Detail + Chat refine -->
-    <section id="state-detail">
-      <div class="detail">
-        <div class="preview-area">
-          <div class="detail-top">
-            <button class="btn" onclick="go('results')">← All sets</button>
-            <div style="flex:1; display:flex; align-items:baseline; gap:10px;">
-              <div class="title">Bold Gradient</div>
-              <div class="category">Bold · 4 shots</div>
-            </div>
-            <button class="btn">Export</button>
-            <button class="btn primary">Upload to ASC</button>
-          </div>
-
-          <div class="detail-shots">
-            <div class="detail-shot" style="background: linear-gradient(180deg,#2563eb,#1d4ed8);">
-              <div class="hero">Plan your day<br/>in seconds</div>
-              <div class="sub">AI-powered focus, built for you</div>
-              <div class="device"></div>
-            </div>
-            <div class="detail-shot" style="background: linear-gradient(180deg,#1d4ed8,#1e3a8a);">
-              <div class="hero">Stay in deep<br/>focus</div>
-              <div class="sub">Block distractions automatically</div>
-              <div class="device"></div>
-            </div>
-            <div class="detail-shot" style="background: linear-gradient(180deg,#1e3a8a,#312e81);">
-              <div class="hero">See progress<br/>instantly</div>
-              <div class="sub">Clean stats, clear streaks</div>
-              <div class="device"></div>
-            </div>
-            <div class="detail-shot" style="background: linear-gradient(180deg,#312e81,#4c1d95);">
-              <div class="hero">Built for<br/>momentum</div>
-              <div class="sub">Finish what matters most</div>
-              <div class="device"></div>
-            </div>
-          </div>
-        </div>
-
-        <aside class="chat-panel">
-          <div class="chat-head">
-            <h3>Refine with AI</h3>
-            <div class="hint">Ask to change copy, colors, or layout for this set</div>
-          </div>
-          <div class="chat-log">
-            <div class="msg ai">I generated 4 shots for <b>Bold Gradient</b> using your captures and headlines like "Plan your day in seconds". Want to tweak anything?</div>
-            <div class="msg user">Make the headlines shorter and more punchy</div>
-            <div class="msg ai"><span class="tool">🛠 app-shots.rewrite</span>Rewrote all 4 headlines to ≤4 words. Updated preview on the left.</div>
-            <div class="msg user">Swap shot 3 for the stats screen</div>
-            <div class="msg ai"><span class="tool">🛠 iphone-mcp.navigate</span>Captured stats.png and replaced shot 3. Want me to keep the same headline?</div>
-          </div>
-          <div class="quick-actions">
-            <button class="qa">Shorter headlines</button>
-            <button class="qa">Warmer palette</button>
-            <button class="qa">Add device frame</button>
-            <button class="qa">Translate → ES</button>
-          </div>
-          <div class="chat-input">
-            <textarea placeholder="Ask to refine this set…"></textarea>
-            <button class="btn primary">Send</button>
+          <div class="generate-section">
+            <button class="btn primary" id="generate-btn" onclick="simulateGenerate()">✦ Generate 8 sets</button>
+            <div class="hint" id="generate-hint">Add at least one capture to start.</div>
           </div>
         </aside>
+
       </div>
-    </section>
+    </div>
 
   </main>
 </div>
 
-<!-- state switcher for prototype -->
+<!-- prototype state switcher -->
 <div class="switcher">
-  <button class="on" data-s="empty" onclick="go('empty')">1 · Empty</button>
-  <button data-s="capturing" onclick="go('capturing')">2 · Capturing</button>
-  <button data-s="results" onclick="go('results')">3 · 8 Sets</button>
-  <button data-s="detail" onclick="go('detail')">4 · Refine</button>
+  <button data-s="hero" onclick="go('hero')">1 · Hero (first visit)</button>
+  <button class="on" data-s="workspace-empty" onclick="go('workspace-empty')">2 · Empty workspace</button>
+  <button data-s="workspace-captured" onclick="go('workspace-captured')">3 · Captured</button>
+  <button data-s="workspace-generating" onclick="go('workspace-generating')">4 · Generating</button>
+  <button data-s="workspace-done" onclick="go('workspace-done')">5 · Done</button>
 </div>
 
 <script>
-  function go(state) {
-    document.querySelectorAll('.main > section').forEach(el => el.classList.remove('on'));
-    document.getElementById('state-' + state).classList.add('on');
-    document.querySelectorAll('.switcher button').forEach(b => b.classList.toggle('on', b.dataset.s === state));
-    const label = { empty: 'No screenshots', capturing: 'Capturing…', results: '5 screenshots · 8 sets', detail: 'Bold Gradient' }[state];
-    document.getElementById('sourceLabel').textContent = label;
+const TEMPLATES = [
+  { name: "Bold Gradient", cat: "Bold", cls: "c-bold", sub: "Move fast. Finish strong." },
+  { name: "Minimal Light", cat: "Minimal", cls: "c-minimal", sub: "Less noise. More focus." },
+  { name: "Elegant Serif", cat: "Elegant", cls: "c-elegant", sub: "A calmer way to work." },
+  { name: "Playful Pop", cat: "Playful", cls: "c-playful", sub: "Your day, but way better." },
+  { name: "Professional", cat: "Professional", cls: "c-pro", sub: "Reliable, fast, measurable." },
+  { name: "Showcase Violet", cat: "Showcase", cls: "c-show", sub: "Beautifully yours." },
+  { name: "Midnight", cat: "Bold", cls: "c-midnight", sub: "Quiet power, everyday." },
+  { name: "Sunset", cat: "Playful", cls: "c-sunset", sub: "Finish strong." },
+];
+
+function setCaptures(n) {
+  const list = document.getElementById('cap-list');
+  const empty = document.getElementById('cap-empty');
+  list.innerHTML = '';
+  if (n === 0) { empty.style.display = 'block'; }
+  else {
+    empty.style.display = 'none';
+    for (let i = 1; i <= n; i++) {
+      const item = document.createElement('div');
+      item.className = 'cap-item';
+      item.innerHTML = `<div class="thumb"></div><div class="info"><div class="label">Screen ${i}</div><div class="meta">2.4 MB · just now</div></div><div class="x">✕</div>`;
+      list.appendChild(item);
+    }
   }
+  document.getElementById('cap-count').textContent = n;
+  document.getElementById('status-pill').textContent = n === 0 ? 'Ready · 0 captures' : `Ready · ${n} captures`;
+  document.getElementById('generate-btn').disabled = n === 0;
+  document.getElementById('generate-hint').textContent = n === 0 ? 'Add at least one capture to start.' : `Will render ${TEMPLATES.length} templates with your headline.`;
+}
+
+function setSets(state) {
+  const empty = document.getElementById('sets-empty');
+  const grid = document.getElementById('sets-grid');
+  const count = document.getElementById('sets-count');
+  const pill = document.getElementById('status-pill');
+  const progress = document.getElementById('progress-strip');
+
+  if (state === 'empty') {
+    empty.style.display = 'block';
+    grid.style.display = 'none';
+    count.textContent = '0 of 8';
+    progress.style.display = 'none';
+    return;
+  }
+
+  empty.style.display = 'none';
+  grid.style.display = 'grid';
+  grid.innerHTML = '';
+
+  const headline = document.getElementById('headline').value || 'Plan your day in seconds';
+  const useFrame = document.querySelector('.toggle').classList.contains('on');
+  const doneCount = state === 'generating' ? 2 : 8;
+
+  TEMPLATES.forEach((t, i) => {
+    const isDone = i < doneCount;
+    const setEl = document.createElement('div');
+    setEl.className = `set ${t.cls} ${isDone ? 'done' : ''}`;
+    setEl.innerHTML = `
+      <div class="art ${useFrame ? 'framed' : ''}">
+        <div class="head">${headline}</div>
+        <div class="sub">${t.sub}</div>
+        <div class="phone"></div>
+      </div>
+      <div class="meta">
+        <div><div class="name">${t.name}</div><div class="cat">${t.cat}</div></div>
+        <div class="check">✓</div>
+      </div>
+      ${state === 'done' ? `<div class="actions"><div class="ic-btn">📁</div><div class="ic-btn">👁</div></div>` : ''}
+      ${!isDone ? `<div class="spinner-wrap"><div class="spinner"></div></div>` : ''}
+    `;
+    grid.appendChild(setEl);
+  });
+
+  if (state === 'generating') {
+    pill.className = 'pill gen';
+    pill.textContent = `Generating · ${doneCount} of 8`;
+    count.textContent = `${doneCount} of 8`;
+    progress.style.display = 'block';
+  } else {
+    pill.className = 'pill done';
+    pill.textContent = '8 of 8 · ready';
+    count.textContent = '8 of 8';
+    progress.style.display = 'none';
+  }
+}
+
+function simulateGenerate() { go('workspace-generating'); setTimeout(() => go('workspace-done'), 1200); }
+
+function go(state) {
+  document.getElementById('hero-stage').style.display = (state === 'hero') ? 'flex' : 'none';
+  document.getElementById('workspace').style.display = (state === 'hero') ? 'none' : 'flex';
+  document.querySelectorAll('.switcher button').forEach(b => b.classList.toggle('on', b.dataset.s === state));
+
+  if (state === 'hero')                  { setCaptures(0); setSets('empty'); }
+  if (state === 'workspace-empty')       { setCaptures(0); setSets('empty'); }
+  if (state === 'workspace-captured')    { document.getElementById('headline').value = 'Plan your day in seconds'; setCaptures(3); setSets('empty'); }
+  if (state === 'workspace-generating')  { document.getElementById('headline').value = 'Plan your day in seconds'; setCaptures(3); setSets('generating'); }
+  if (state === 'workspace-done')        { document.getElementById('headline').value = 'Plan your day in seconds'; setCaptures(3); setSets('done'); }
+}
+
+// init
+go('workspace-empty');
 </script>
 </body>
 </html>
