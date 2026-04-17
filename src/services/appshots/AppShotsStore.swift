@@ -57,8 +57,11 @@ struct AppShotsStore {
             )
             let screenshots = entry.screenshots.map { s in
                 GeneratedScreenshot(
-                    captureId: UUID(), // synthetic — real captures are gone
+                    captureId: UUID(), // synthetic — real CapturedShot is gone after restart
                     captureLabel: s.captureLabel,
+                    sourceScreenshot: s.sourceScreenshot ?? "",
+                    headline: s.headline ?? "",
+                    subtitle: s.subtitle ?? "",
                     imagePath: s.imagePath,
                     image: NSImage(contentsOfFile: s.imagePath)
                 )
@@ -67,7 +70,7 @@ struct AppShotsStore {
                 id: entry.templateId,
                 template: template,
                 headline: persisted.headline,
-                subtitle: entry.screenshots.first?.captureLabel.isEmpty == false ? persisted.subtitle : persisted.subtitle,
+                subtitle: persisted.subtitle,
                 screenshots: screenshots
             )
         }
@@ -83,7 +86,13 @@ struct AppShotsStore {
         let entries = sets.map { set -> PersistedSets.Entry in
             let shots = set.screenshots.compactMap { shot -> PersistedSets.Screenshot? in
                 guard let path = shot.imagePath, shot.image != nil else { return nil }
-                return PersistedSets.Screenshot(captureLabel: shot.captureLabel, imagePath: path)
+                return PersistedSets.Screenshot(
+                    captureLabel: shot.captureLabel,
+                    imagePath: path,
+                    sourceScreenshot: shot.sourceScreenshot,
+                    headline: shot.headline,
+                    subtitle: shot.subtitle
+                )
             }
             return PersistedSets.Entry(
                 templateId: set.template.id,

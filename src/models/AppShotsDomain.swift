@@ -52,19 +52,53 @@ struct GenerationRequest {
     let outputDir: String
 }
 
-/// One rendered screenshot inside a set.
+/// One rendered screenshot inside a set. Carries its own copy + source path so edits
+/// and retries work without needing the live `CapturedShot` (which isn't persisted).
 struct GeneratedScreenshot: Identifiable {
     let id: UUID
-    let captureId: UUID         // which source capture this came from
+    let captureId: UUID         // which source capture this came from (may not be live)
     let captureLabel: String    // "Screen 1", "Screen 2", …
+    let sourceScreenshot: String
+    /// Copy used for this specific shot. User-editable in the detail sheet.
+    var headline: String
+    var subtitle: String
     var imagePath: String?
     var image: NSImage?
     var error: String?
 
-    init(id: UUID = UUID(), captureId: UUID, captureLabel: String,
+    init(id: UUID = UUID(),
+         captureId: UUID, captureLabel: String, sourceScreenshot: String,
+         headline: String = "", subtitle: String = "",
          imagePath: String? = nil, image: NSImage? = nil, error: String? = nil) {
-        self.id = id; self.captureId = captureId; self.captureLabel = captureLabel
-        self.imagePath = imagePath; self.image = image; self.error = error
+        self.id = id
+        self.captureId = captureId
+        self.captureLabel = captureLabel
+        self.sourceScreenshot = sourceScreenshot
+        self.headline = headline
+        self.subtitle = subtitle
+        self.imagePath = imagePath
+        self.image = image
+        self.error = error
+    }
+
+    // MARK: - Domain behavior
+
+    /// Headline that should actually render: own value → default → project name.
+    func effectiveHeadline(defaultHeadline: String, projectName: String) -> String {
+        if !headline.isEmpty { return headline }
+        if !defaultHeadline.isEmpty { return defaultHeadline }
+        return projectName
+    }
+
+    /// Subtitle to render: own value → default → nil (copywriter varies per template).
+    func effectiveSubtitle(defaultSubtitle: String) -> String? {
+        if !subtitle.isEmpty { return subtitle }
+        if !defaultSubtitle.isEmpty { return defaultSubtitle }
+        return nil
+    }
+
+    var canRender: Bool {
+        !sourceScreenshot.isEmpty && FileManager.default.fileExists(atPath: sourceScreenshot)
     }
 }
 
@@ -101,7 +135,12 @@ struct PersistedSets: Codable {
     struct Screenshot: Codable {
         let captureLabel: String
         let imagePath: String
+        /// v3+ fields — optional so older payloads still decode.
+        let sourceScreenshot: String?
+        let headline: String?
+        let subtitle: String?
     }
 
-    static let currentFormatVersion = 2
+    /// v3 adds per-shot `headline`, `subtitle`, `sourceScreenshot` so edits survive restarts.
+    static let currentFormatVersion = 3
 }

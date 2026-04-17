@@ -227,7 +227,6 @@ final class AppShotsFlowManager {
             uniqueKeysWithValues: activeCaptures.enumerated().map { ($0.element.id, "Screen \($0.offset + 1)") }
         )
         generated = chosen.map { template in
-            // Set-level summary uses the fallback; each screenshot records its own copy at render time.
             let setCopy = AppShotsCopywriter.copy(
                 base: fallbackHeadline,
                 userSubtitle: fallbackSubtitle,
@@ -235,7 +234,13 @@ final class AppShotsFlowManager {
                 seed: projectName
             )
             let placeholders = activeCaptures.map { capture in
-                GeneratedScreenshot(captureId: capture.id, captureLabel: labels[capture.id] ?? "Screen")
+                GeneratedScreenshot(
+                    captureId: capture.id,
+                    captureLabel: labels[capture.id] ?? "Screen",
+                    sourceScreenshot: capture.path,
+                    headline: capture.headline,  // may be empty; fallback resolved at render time
+                    subtitle: capture.subtitle
+                )
             }
             return GeneratedSet(
                 id: template.id,
@@ -293,33 +298,58 @@ final class AppShotsFlowManager {
         }
     }
 
-    // MARK: - Retry
+    // MARK: - Per-shot edits
 
-    /// Re-render a single failed shot. Rebuilds a one-template, one-capture request so the plugin
-    /// isn't stressed by the 40+ concurrent calls that triggered the original failure.
-    func retryScreenshot(setId: String, screenshotId: UUID, projectName: String) async {
+    /// Update a shot's headline in place. Safe after app restart — doesn't depend on live captures.
+    func updateShotHeadline(setId: String, screenshotId: UUID, headline: String) {
+        guard let setIdx = generated.firstIndex(where: { $0.id == setId }),
+              let shotIdx = generated[setIdx].screenshots.firstIndex(where: { $0.id == screenshotId })
+        else { return }
+        generated[setIdx].screenshots[shotIdx].headline = headline
+    }
+
+    func updateShotSubtitle(setId: String, screenshotId: UUID, subtitle: String) {
+        guard let setIdx = generated.firstIndex(where: { $0.id == setId }),
+              let shotIdx = generated[setIdx].screenshots.firstIndex(where: { $0.id == screenshotId })
+        else { return }
+        generated[setIdx].screenshots[shotIdx].subtitle = subtitle
+    }
+
+    /// Re-render a single shot using its own current copy + sourceScreenshot.
+    /// Used for "retry failed" and "apply edited text" — same call, same effect.
+    func applyShotChanges(setId: String, screenshotId: UUID, projectName: String) async {
         guard let setIdx = generated.firstIndex(where: { $0.id == setId }),
               let shotIdx = generated[setIdx].screenshots.firstIndex(where: { $0.id == screenshotId }),
               let projectId = currentProjectId else { return }
 
         let shot = generated[setIdx].screenshots[shotIdx]
         let template = generated[setIdx].template
-        guard let capture = captures.first(where: { $0.id == shot.captureId }) else { return }
 
-        // Clear error + image so the UI shows the loading state again.
+        guard shot.canRender, let sourceImage = NSImage(contentsOfFile: shot.sourceScreenshot) else {
+            generated[setIdx].screenshots[shotIdx].error = "Source screenshot missing — can't re-render."
+            return
+        }
+
+        // Reset status so UI shows loading again.
         generated[setIdx].screenshots[shotIdx].error = nil
         generated[setIdx].screenshots[shotIdx].imagePath = nil
         generated[setIdx].screenshots[shotIdx].image = nil
 
         let store = AppShotsStore(projectId: projectId)
-        let fallbackHeadline = defaultHeadline.isEmpty ? projectName : defaultHeadline
-        let fallbackSubtitle = defaultSubtitle.isEmpty ? nil : defaultSubtitle
+        let headline = shot.effectiveHeadline(defaultHeadline: defaultHeadline, projectName: projectName)
+        let subtitle = shot.effectiveSubtitle(defaultSubtitle: defaultSubtitle)
         let frame = useFrame ? selectedFrame : nil
 
         let request = GenerationRequest(
-            headline: fallbackHeadline,
-            subtitle: fallbackSubtitle,
-            captures: [capture],
+            headline: headline,
+            subtitle: subtitle,
+            captures: [CapturedShot(
+                id: shot.captureId,
+                path: shot.sourceScreenshot,
+                image: sourceImage,
+                headline: headline,
+                subtitle: subtitle ?? ""
+            )],
             frame: frame,
             projectName: projectName,
             outputDir: store.outputDir
@@ -333,13 +363,16 @@ final class AppShotsFlowManager {
             self?.applyOutcome(outcome)
         }
 
-        // Persist refreshed results.
-        let snapshot = AppShotsStore.snapshot(
-            headline: fallbackHeadline,
-            subtitle: fallbackSubtitle,
+        store.save(AppShotsStore.snapshot(
+            headline: defaultHeadline.isEmpty ? projectName : defaultHeadline,
+            subtitle: defaultSubtitle.isEmpty ? nil : defaultSubtitle,
             deviceFrame: frame,
             sets: generated
-        )
-        store.save(snapshot)
+        ))
+    }
+
+    /// Back-compat alias — same behavior, kept so existing callers don't break.
+    func retryScreenshot(setId: String, screenshotId: UUID, projectName: String) async {
+        await applyShotChanges(setId: setId, screenshotId: screenshotId, projectName: projectName)
     }
 }

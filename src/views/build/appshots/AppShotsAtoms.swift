@@ -535,116 +535,75 @@ struct ShotCopyEditor: View {
     let shot: GeneratedScreenshot
     let projectName: String
 
-    @State private var isRegenerating = false
-
-    private var capture: CapturedShot? {
-        manager.captures.first(where: { $0.id == shot.captureId })
-    }
-
-    /// Has the user edited the copy since the last render? (Compare live capture values
-    /// to what the shot was rendered with.) Simpler proxy: show Regenerate whenever
-    /// there's a capture at all — the button is harmless if they haven't changed anything.
-    private var hasCapture: Bool { capture != nil }
+    @State private var isApplying = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            headlineField
-            subtitleField
-            regenerateRow
+        VStack(alignment: .leading, spacing: 8) {
+            field(label: "Headline", binding: headlineBinding, prompt: headlinePrompt)
+            field(label: "Subtitle · varies if blank", binding: subtitleBinding, prompt: "Optional")
+            statusRow
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 10).fill(AppShotsTokens.cardSurface))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(AppShotsTokens.subtleStroke))
     }
 
-    private var headlineField: some View {
+    private func field(label: String, binding: Binding<String>, prompt: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            AppShotsLabel(text: "Headline")
-            TextField(
-                "",
-                text: Binding(
-                    get: { capture?.headline ?? "" },
-                    set: { newValue in
-                        guard let id = capture?.id else { return }
-                        manager.updateCaptureHeadline(id: id, headline: newValue)
-                    }
-                ),
-                prompt: Text(headlinePrompt).font(.caption)
-            )
-            .textFieldStyle(.plain)
-            .font(.caption)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .background(RoundedRectangle(cornerRadius: 6).fill(AppShotsTokens.canvasBackground))
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(AppShotsTokens.subtleStroke))
-            .disabled(!hasCapture)
+            AppShotsLabel(text: label)
+            TextField("", text: binding, prompt: Text(prompt).font(.caption))
+                .textFieldStyle(.plain)
+                .font(.caption)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(RoundedRectangle(cornerRadius: 6).fill(AppShotsTokens.canvasBackground))
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(AppShotsTokens.subtleStroke))
+                .onSubmit(apply)
         }
     }
 
-    private var subtitleField: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            AppShotsLabel(text: "Subtitle · varies if blank")
-            TextField(
-                "",
-                text: Binding(
-                    get: { capture?.subtitle ?? "" },
-                    set: { newValue in
-                        guard let id = capture?.id else { return }
-                        manager.updateCaptureSubtitle(id: id, subtitle: newValue)
-                    }
-                ),
-                prompt: Text("Optional").font(.caption)
-            )
-            .textFieldStyle(.plain)
-            .font(.caption)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .background(RoundedRectangle(cornerRadius: 6).fill(AppShotsTokens.canvasBackground))
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(AppShotsTokens.subtleStroke))
-            .disabled(!hasCapture)
-        }
+    private var headlineBinding: Binding<String> {
+        Binding(
+            get: { shot.headline },
+            set: { manager.updateShotHeadline(setId: setId, screenshotId: shot.id, headline: $0) }
+        )
+    }
+    private var subtitleBinding: Binding<String> {
+        Binding(
+            get: { shot.subtitle },
+            set: { manager.updateShotSubtitle(setId: setId, screenshotId: shot.id, subtitle: $0) }
+        )
     }
 
-    private var regenerateRow: some View {
+    @ViewBuilder
+    private var statusRow: some View {
         HStack(spacing: 6) {
-            if !manager.defaultHeadline.isEmpty,
-               capture?.headline.isEmpty == true {
-                Text("Falls back to default")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+            if isApplying {
+                ProgressView().controlSize(.mini)
+                Text("Applying…").font(.caption2).foregroundStyle(.secondary)
+            } else {
+                Image(systemName: "return").font(.caption2).foregroundStyle(.secondary)
+                Text("Press Return to re-render").font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
-            Button {
-                Task {
-                    isRegenerating = true
-                    await manager.retryScreenshot(
-                        setId: setId,
-                        screenshotId: shot.id,
-                        projectName: projectName
-                    )
-                    isRegenerating = false
-                }
-            } label: {
-                HStack(spacing: 5) {
-                    if isRegenerating {
-                        ProgressView().controlSize(.mini)
-                    } else {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    Text(isRegenerating ? "Rendering…" : "Regenerate")
-                }
-                .font(.caption.weight(.medium))
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(isRegenerating || !hasCapture)
         }
-        .padding(.top, 2)
+    }
+
+    private func apply() {
+        guard !isApplying else { return }
+        Task {
+            isApplying = true
+            await manager.applyShotChanges(
+                setId: setId,
+                screenshotId: shot.id,
+                projectName: projectName
+            )
+            isApplying = false
+        }
     }
 
     private var headlinePrompt: String {
-        if !manager.defaultHeadline.isEmpty { return manager.defaultHeadline }
-        return "Headline for this screen"
+        manager.defaultHeadline.isEmpty ? "Headline for this screen" : manager.defaultHeadline
     }
 }
 
