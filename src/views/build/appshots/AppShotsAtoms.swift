@@ -244,6 +244,8 @@ struct AppShotsSetDetailSheet: View {
     let projectName: String
     let onClose: () -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
+
     /// Live lookup: the sheet re-reads from the manager each render so retries update in place.
     /// Methods below assume this is non-nil — `body` guards first.
     private var set: GeneratedSet {
@@ -256,12 +258,12 @@ struct AppShotsSetDetailSheet: View {
         Group {
             if setExists {
                 VStack(spacing: 0) {
+                    paletteStrip
                     header
-                    Divider().opacity(0.35)
                     scroller
-                    Divider().opacity(0.35)
                     footer
                 }
+                .overlay(floatingClose, alignment: .topTrailing)
             } else {
                 VStack(spacing: 12) {
                     Text("This set is no longer available.")
@@ -271,66 +273,108 @@ struct AppShotsSetDetailSheet: View {
                 .padding(40)
             }
         }
-        .frame(minWidth: 820, minHeight: 600)
-        .background(backdrop)
+        .frame(minWidth: 860, minHeight: 720)
+        .background(paper)
     }
 
-    // MARK: - Backdrop
-
-    private var backdrop: some View {
-        ZStack {
-            Color(nsColor: .textBackgroundColor)
-            LinearGradient(
-                colors: [
-                    washColor.opacity(0.34),
-                    washColor.opacity(0.12),
-                    .clear,
-                ],
-                startPoint: .top,
-                endPoint: .center
-            )
-            RadialGradient(
-                colors: [washColor.opacity(0.18), .clear],
-                center: UnitPoint(x: 0.88, y: 0.78),
-                startRadius: 60,
-                endRadius: 520
-            )
+    /// Close chip floats in the top-right corner so the header row stays clean.
+    private var floatingClose: some View {
+        Button {
+            onClose()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(Color.primary.opacity(0.06)))
+                .overlay(Circle().strokeBorder(Color.primary.opacity(0.08)))
         }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.cancelAction)
+        .help("Close")
+        .padding(.top, 16)
+        .padding(.trailing, 18)
+    }
+
+    // MARK: - Surface
+    //
+    // Editorial "paper" instead of system gray. Warm off-white in light,
+    // deep ink in dark — the screenshots get a proper surface to sit on.
+
+    private var paper: some View {
+        (colorScheme == .dark
+            ? Color(red: 0.070, green: 0.070, blue: 0.085)
+            : Color(red: 0.980, green: 0.976, blue: 0.968)
+        )
         .ignoresSafeArea()
     }
 
-    /// A pastel "lifted" version of the template palette — palette mixed toward
-    /// white so dark palettes (navy, charcoal) still read as a visible tint
-    /// instead of muddying into gray.
-    private var washColor: Color {
-        guard let ns = NSColor(paletteColor).usingColorSpace(.deviceRGB) else { return paletteColor }
-        let mix: Double = 0.55
-        let r = Double(ns.redComponent)
-        let g = Double(ns.greenComponent)
-        let b = Double(ns.blueComponent)
-        return Color(
-            red: r + (1 - r) * mix,
-            green: g + (1 - g) * mix,
-            blue: b + (1 - b) * mix
-        )
+    /// 4-pt palette band at the very top — brand identity without colonising the canvas.
+    private var paletteStrip: some View {
+        Rectangle()
+            .fill(LinearGradient(
+                colors: [paletteColor, paletteColor.opacity(0.55), paletteColor],
+                startPoint: .leading, endPoint: .trailing))
+            .frame(height: 4)
     }
 
     // MARK: - Header
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 14) {
-            palettePuck
-            VStack(alignment: .leading, spacing: 4) {
-                Text(set.template.name).font(.title3.weight(.semibold))
+        HStack(alignment: .center, spacing: 24) {
+            VStack(alignment: .leading, spacing: 10) {
+                categoryLabel
+                Text(set.template.name)
+                    .font(.system(size: 26, weight: .semibold))
+                    .tracking(-0.3)
                 metaRow
             }
             Spacer(minLength: 12)
+            actionButtons
+                .padding(.trailing, 38) // leave room for the floating close chip
+        }
+        .padding(.horizontal, 28)
+        .padding(.top, 22)
+        .padding(.bottom, 18)
+        .overlay(hairline, alignment: .bottom)
+    }
+
+    private var categoryLabel: some View {
+        HStack(spacing: 8) {
+            Circle().fill(paletteColor).frame(width: 6, height: 6)
+            Text(set.template.category.uppercased())
+                .font(.system(size: 10, weight: .bold))
+                .tracking(1.8)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var metaRow: some View {
+        HStack(spacing: 10) {
+            Text("\(set.screenshots.count) shot\(set.screenshots.count == 1 ? "" : "s")")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+            pip
+            Text("\u{201C}\(set.headline)\u{201D}")
+                .font(.system(size: 12))
+                .italic()
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+    }
+
+    private var pip: some View {
+        Circle().fill(Color.secondary.opacity(0.35)).frame(width: 3, height: 3)
+    }
+
+    private var actionButtons: some View {
+        HStack(spacing: 8) {
             if let folder = folderPath {
                 Button {
                     NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: folder)
                 } label: { Label("Show in Finder", systemImage: "folder") }
                 .buttonStyle(.bordered)
-                .controlSize(.small)
+                .controlSize(.regular)
             }
             Button {
                 // Placeholder for the ASC upload flow — stub for now.
@@ -338,64 +382,12 @@ struct AppShotsSetDetailSheet: View {
                 Label("Upload to ASC", systemImage: "arrow.up.forward.circle.fill")
             }
             .buttonStyle(.borderedProminent)
-            .controlSize(.small)
+            .controlSize(.regular)
             .disabled(readyCount == 0)
-
-            Button {
-                onClose()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 24, height: 24)
-                    .background(Circle().fill(Color.primary.opacity(0.06)))
-            }
-            .buttonStyle(.borderless)
-            .keyboardShortcut(.cancelAction)
-            .help("Close")
-        }
-        .padding(.horizontal, 22)
-        .padding(.vertical, 16)
-    }
-
-    private var palettePuck: some View {
-        RoundedRectangle(cornerRadius: 9)
-            .fill(LinearGradient(
-                colors: [paletteColor, paletteColor.opacity(0.70)],
-                startPoint: .topLeading, endPoint: .bottomTrailing))
-            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.white.opacity(0.22), lineWidth: 0.5))
-            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.black.opacity(0.08)))
-            .shadow(color: paletteColor.opacity(0.30), radius: 6, y: 2)
-            .frame(width: 32, height: 32)
-    }
-
-    private var metaRow: some View {
-        HStack(spacing: 8) {
-            categoryChip
-            Text("\(set.screenshots.count) shot\(set.screenshots.count == 1 ? "" : "s")")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text("·").font(.caption).foregroundStyle(.tertiary)
-            Text("\u{201C}\(set.headline)\u{201D}")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
         }
     }
 
-    private var categoryChip: some View {
-        Text(set.template.category.capitalized)
-            .font(.caption2.weight(.semibold))
-            .textCase(.uppercase)
-            .tracking(0.4)
-            .foregroundStyle(.primary.opacity(0.82))
-            .padding(.horizontal, 7)
-            .padding(.vertical, 2.5)
-            .background(Capsule().fill(paletteColor.opacity(0.16)))
-            .overlay(Capsule().strokeBorder(paletteColor.opacity(0.28)))
-    }
-
-    // MARK: - Horizontal screenshots row
+    // MARK: - Scroller
     //
     // App Store listings are horizontal — so is the preview. All N screenshots
     // stay at the same height, user scrolls left-right. Feels like the store itself.
@@ -403,86 +395,85 @@ struct AppShotsSetDetailSheet: View {
     private var scroller: some View {
         GeometryReader { geo in
             ScrollView(.horizontal, showsIndicators: true) {
-                HStack(alignment: .top, spacing: 20) {
+                HStack(alignment: .top, spacing: 22) {
                     ForEach(Array(set.screenshots.enumerated()), id: \.element.id) { index, shot in
                         shotCard(shot, index: index + 1, height: cardHeight(for: geo.size.height))
                     }
                 }
-                .padding(.horizontal, 26)
-                .padding(.vertical, 24)
+                .padding(.horizontal, 28)
+                .padding(.top, 28)
+                .padding(.bottom, 24)
             }
         }
     }
 
-    /// Pick a consistent card height from the available vertical space.
+    /// The column below each phone (label row + ShotCopyEditor + spacing) is
+    /// ~220pt — reserve that much so the editor isn't clipped by the footer.
     private func cardHeight(for height: CGFloat) -> CGFloat {
-        let available = max(240, height - 88)
+        let reserved: CGFloat = 240
+        let available = max(280, height - reserved)
         return min(available, 560)
     }
 
     private func shotCard(_ shot: GeneratedScreenshot, index: Int, height: CGFloat) -> some View {
         let width = height * 9 / 16
-        return VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: 14) {
             ZStack {
-                RoundedRectangle(cornerRadius: 22).fill(paletteColor)
+                RoundedRectangle(cornerRadius: 26).fill(paletteColor)
                 if let image = shot.image {
                     Image(nsImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .clipShape(RoundedRectangle(cornerRadius: 22))
+                        .clipShape(RoundedRectangle(cornerRadius: 26))
                 } else if shot.error != nil {
                     failedBadge
                 }
             }
             .frame(width: width, height: height)
-            .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(Color.black.opacity(0.10)))
-            .shadow(color: paletteColor.opacity(0.35), radius: 28, y: 18)
-            .shadow(color: Color.black.opacity(0.14), radius: 4, y: 2)
+            .overlay(RoundedRectangle(cornerRadius: 26).strokeBorder(Color.primary.opacity(0.06)))
+            .shadow(color: paletteColor.opacity(0.40), radius: 32, y: 22)
+            .shadow(color: Color.black.opacity(0.14), radius: 5, y: 3)
 
-            HStack(spacing: 6) {
-                Text("Screen \(index)")
-                    .font(.caption.weight(.semibold))
-                Text("·")
-                    .foregroundStyle(.tertiary)
-                Text(shot.captureLabel)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Spacer(minLength: 4)
-                if shot.error != nil {
-                    Button {
-                        Task {
-                            await manager.retryScreenshot(
-                                setId: setId,
-                                screenshotId: shot.id,
-                                projectName: projectName
-                            )
-                        }
-                    } label: {
-                        Image(systemName: "arrow.clockwise").font(.caption2)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.orange)
-                    .help("Retry this render")
-                } else if let path = shot.imagePath {
-                    iconButton(systemName: "eye", tooltip: "Preview") {
-                        NSWorkspace.shared.open(URL(fileURLWithPath: path))
-                    }
-                    iconButton(systemName: "folder", tooltip: "Show in Finder") {
-                        NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: "")
-                    }
-                }
-            }
+            shotLabelRow(shot: shot, index: index, width: width)
+
+            ShotCopyEditor(
+                manager: manager,
+                setId: setId,
+                shot: shot,
+                projectName: projectName
+            )
             .frame(width: width)
         }
+    }
+
+    private func shotLabelRow(shot: GeneratedScreenshot, index: Int, width: CGFloat) -> some View {
+        HStack(spacing: 8) {
+            Text(String(format: "%02d", index))
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .tracking(0.5)
+                .foregroundStyle(.primary.opacity(0.55))
+            Text(shot.captureLabel)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.primary.opacity(0.80))
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            if let path = shot.imagePath, shot.error == nil {
+                iconButton(systemName: "eye", tooltip: "Preview") {
+                    NSWorkspace.shared.open(URL(fileURLWithPath: path))
+                }
+                iconButton(systemName: "folder", tooltip: "Show in Finder") {
+                    NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: "")
+                }
+            }
+        }
+        .frame(width: width)
     }
 
     private func iconButton(systemName: String, tooltip: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.caption2)
+                .font(.system(size: 10, weight: .medium))
                 .frame(width: 22, height: 22)
-                .background(Circle().fill(Color.primary.opacity(0.05)))
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
@@ -499,7 +490,7 @@ struct AppShotsSetDetailSheet: View {
                 .foregroundStyle(.orange)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(RoundedRectangle(cornerRadius: 18).fill(Color.orange.opacity(0.10)))
+        .background(RoundedRectangle(cornerRadius: 22).fill(Color.orange.opacity(0.10)))
     }
 
     // MARK: - Footer
@@ -507,20 +498,26 @@ struct AppShotsSetDetailSheet: View {
     private var footer: some View {
         HStack(spacing: 10) {
             Image(systemName: "arrow.up.forward.circle")
-                .foregroundStyle(.secondary)
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
             Text(footerText)
-                .font(.caption)
+                .font(.system(size: 11))
                 .foregroundStyle(.secondary)
             Spacer()
             Button("Change locale") {
                 // Placeholder — future locale picker.
             }
             .buttonStyle(.plain)
-            .font(.caption.weight(.medium))
+            .font(.system(size: 11, weight: .medium))
             .foregroundStyle(Color.accentColor)
         }
-        .padding(.horizontal, 22)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 28)
+        .padding(.vertical, 14)
+        .overlay(hairline, alignment: .top)
+    }
+
+    private var hairline: some View {
+        Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 1)
     }
 
     private var footerText: String {
@@ -544,6 +541,131 @@ struct AppShotsSetDetailSheet: View {
     private var folderPath: String? {
         guard let path = set.screenshots.compactMap({ $0.imagePath }).first else { return nil }
         return (path as NSString).deletingLastPathComponent
+    }
+}
+
+// MARK: - Shot copy editor
+//
+// Inline headline/subtitle edit below each shot in the detail sheet.
+// Direct manipulation: change the copy right under the thing it describes,
+// hit Regenerate to re-render just that shot.
+
+struct ShotCopyEditor: View {
+    let manager: AppShotsFlowManager
+    let setId: String
+    let shot: GeneratedScreenshot
+    let projectName: String
+
+    @State private var isRegenerating = false
+
+    private var capture: CapturedShot? {
+        manager.captures.first(where: { $0.id == shot.captureId })
+    }
+
+    /// Has the user edited the copy since the last render? (Compare live capture values
+    /// to what the shot was rendered with.) Simpler proxy: show Regenerate whenever
+    /// there's a capture at all — the button is harmless if they haven't changed anything.
+    private var hasCapture: Bool { capture != nil }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            headlineField
+            subtitleField
+            regenerateRow
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 10).fill(AppShotsTokens.cardSurface))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(AppShotsTokens.subtleStroke))
+    }
+
+    private var headlineField: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            AppShotsLabel(text: "Headline")
+            TextField(
+                "",
+                text: Binding(
+                    get: { capture?.headline ?? "" },
+                    set: { newValue in
+                        guard let id = capture?.id else { return }
+                        manager.updateCaptureHeadline(id: id, headline: newValue)
+                    }
+                ),
+                prompt: Text(headlinePrompt).font(.caption)
+            )
+            .textFieldStyle(.plain)
+            .font(.caption)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(RoundedRectangle(cornerRadius: 6).fill(AppShotsTokens.canvasBackground))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(AppShotsTokens.subtleStroke))
+            .disabled(!hasCapture)
+        }
+    }
+
+    private var subtitleField: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            AppShotsLabel(text: "Subtitle · varies if blank")
+            TextField(
+                "",
+                text: Binding(
+                    get: { capture?.subtitle ?? "" },
+                    set: { newValue in
+                        guard let id = capture?.id else { return }
+                        manager.updateCaptureSubtitle(id: id, subtitle: newValue)
+                    }
+                ),
+                prompt: Text("Optional").font(.caption)
+            )
+            .textFieldStyle(.plain)
+            .font(.caption)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(RoundedRectangle(cornerRadius: 6).fill(AppShotsTokens.canvasBackground))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(AppShotsTokens.subtleStroke))
+            .disabled(!hasCapture)
+        }
+    }
+
+    private var regenerateRow: some View {
+        HStack(spacing: 6) {
+            if !manager.defaultHeadline.isEmpty,
+               capture?.headline.isEmpty == true {
+                Text("Falls back to default")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                Task {
+                    isRegenerating = true
+                    await manager.retryScreenshot(
+                        setId: setId,
+                        screenshotId: shot.id,
+                        projectName: projectName
+                    )
+                    isRegenerating = false
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    if isRegenerating {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    Text(isRegenerating ? "Rendering…" : "Regenerate")
+                }
+                .font(.caption.weight(.medium))
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(isRegenerating || !hasCapture)
+        }
+        .padding(.top, 2)
+    }
+
+    private var headlinePrompt: String {
+        if !manager.defaultHeadline.isEmpty { return manager.defaultHeadline }
+        return "Headline for this screen"
     }
 }
 
