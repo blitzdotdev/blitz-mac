@@ -384,12 +384,12 @@ struct AppShotsSetDetailSheet: View {
         }
     }
 
-    /// The column below each phone (label row + ShotCopyEditor + spacing) is
-    /// ~200pt — reserve that much so the editor isn't clipped by the footer.
+    /// Reserve ~360pt below each phone for the meta row + the 4-field copy editor.
+    /// Keeps the editor fully visible instead of getting clipped at the bottom.
     private func cardHeight(for height: CGFloat) -> CGFloat {
-        let reserved: CGFloat = 220
-        let available = max(280, height - reserved)
-        return min(available, 580)
+        let reserved: CGFloat = 360
+        let available = max(320, height - reserved)
+        return min(available, 540)
     }
 
     private func shotCard(_ shot: GeneratedScreenshot, index: Int, height: CGFloat) -> some View {
