@@ -57,11 +57,13 @@ struct AppShotsStore {
             )
             let screenshots = entry.screenshots.map { s in
                 GeneratedScreenshot(
-                    captureId: UUID(), // synthetic — real CapturedShot is gone after restart
+                    captureId: UUID(),
                     captureLabel: s.captureLabel,
                     sourceScreenshot: s.sourceScreenshot ?? "",
                     headline: s.headline ?? "",
                     subtitle: s.subtitle ?? "",
+                    tagline: s.tagline ?? "",
+                    appName: s.appName ?? "",
                     imagePath: s.imagePath,
                     image: NSImage(contentsOfFile: s.imagePath)
                 )
@@ -91,7 +93,9 @@ struct AppShotsStore {
                     imagePath: path,
                     sourceScreenshot: shot.sourceScreenshot,
                     headline: shot.headline,
-                    subtitle: shot.subtitle
+                    subtitle: shot.subtitle,
+                    tagline: shot.tagline,
+                    appName: shot.appName
                 )
             }
             return PersistedSets.Entry(

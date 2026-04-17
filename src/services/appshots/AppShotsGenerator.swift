@@ -50,13 +50,15 @@ enum AppShotsGenerator {
         try? FileManager.default.createDirectory(atPath: request.outputDir, withIntermediateDirectories: true)
         let stamp = Int(Date().timeIntervalSince1970)
 
-        // Build a quick lookup: captureId → (effective headline, effective subtitle).
-        // Per-capture copy wins; request-level headline/subtitle is the fallback.
-        let copyByCapture: [UUID: (headline: String, subtitle: String?)] = Dictionary(
+        // Per-capture copy: capture's own value wins, else request-level fallback.
+        struct CaptureCopy { let headline: String; let subtitle: String?; let tagline: String?; let appName: String? }
+        let copyByCapture: [UUID: CaptureCopy] = Dictionary(
             uniqueKeysWithValues: request.captures.map { capture in
                 let h = capture.headline.isEmpty ? request.headline : capture.headline
                 let s = capture.subtitle.isEmpty ? request.subtitle : capture.subtitle
-                return (capture.id, (h, s))
+                let t = capture.tagline.isEmpty ? request.tagline : capture.tagline
+                let a = capture.appName.isEmpty ? request.appName : capture.appName
+                return (capture.id, CaptureCopy(headline: h, subtitle: s, tagline: t, appName: a))
             }
         )
 
@@ -85,13 +87,17 @@ enum AppShotsGenerator {
                 guard next < jobs.count else { return }
                 let job = jobs[next]
                 next += 1
-                let perCapture = copyByCapture[job.captureId] ?? (request.headline, request.subtitle)
+                let perCapture = copyByCapture[job.captureId]
+                    ?? CaptureCopy(headline: request.headline, subtitle: request.subtitle, tagline: request.tagline, appName: request.appName)
+                // Copywriter still varies subtitle per template category when user hasn't supplied one.
                 let copy = AppShotsCopywriter.copy(
                     base: perCapture.headline,
                     userSubtitle: perCapture.subtitle,
                     category: job.category,
                     seed: request.projectName
                 )
+                let tagline = perCapture.tagline
+                let appName = perCapture.appName
                 group.addTask {
                     do {
                         let resultPath = try await ASCManager.appShotsTemplatesApply(
@@ -99,6 +105,8 @@ enum AppShotsGenerator {
                             screenshot: job.screenshotPath,
                             headline: copy.headline,
                             subtitle: copy.subtitle,
+                            tagline: tagline,
+                            appName: appName,
                             imageOutput: job.outPath
                         )
                         return Outcome(templateId: job.templateId, captureId: job.captureId, result: .success(resultPath))

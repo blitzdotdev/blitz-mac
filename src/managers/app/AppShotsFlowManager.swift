@@ -258,6 +258,8 @@ final class AppShotsFlowManager {
         let request = GenerationRequest(
             headline: fallbackHeadline,
             subtitle: fallbackSubtitle,
+            tagline: nil,
+            appName: projectName.isEmpty ? nil : projectName,
             captures: activeCaptures,
             frame: frame,
             projectName: projectName,
@@ -315,6 +317,20 @@ final class AppShotsFlowManager {
         generated[setIdx].screenshots[shotIdx].subtitle = subtitle
     }
 
+    func updateShotTagline(setId: String, screenshotId: UUID, tagline: String) {
+        guard let setIdx = generated.firstIndex(where: { $0.id == setId }),
+              let shotIdx = generated[setIdx].screenshots.firstIndex(where: { $0.id == screenshotId })
+        else { return }
+        generated[setIdx].screenshots[shotIdx].tagline = tagline
+    }
+
+    func updateShotAppName(setId: String, screenshotId: UUID, appName: String) {
+        guard let setIdx = generated.firstIndex(where: { $0.id == setId }),
+              let shotIdx = generated[setIdx].screenshots.firstIndex(where: { $0.id == screenshotId })
+        else { return }
+        generated[setIdx].screenshots[shotIdx].appName = appName
+    }
+
     /// Re-render a single shot using its own current copy + sourceScreenshot.
     /// Used for "retry failed" and "apply edited text" — same call, same effect.
     func applyShotChanges(setId: String, screenshotId: UUID, projectName: String) async {
@@ -338,17 +354,23 @@ final class AppShotsFlowManager {
         let store = AppShotsStore(projectId: projectId)
         let headline = shot.effectiveHeadline(defaultHeadline: defaultHeadline, projectName: projectName)
         let subtitle = shot.effectiveSubtitle(defaultSubtitle: defaultSubtitle)
+        let tagline = shot.effectiveTagline(defaultTagline: "")
+        let appName = shot.effectiveAppName(projectName: projectName)
         let frame = useFrame ? selectedFrame : nil
 
         let request = GenerationRequest(
             headline: headline,
             subtitle: subtitle,
+            tagline: tagline,
+            appName: appName,
             captures: [CapturedShot(
                 id: shot.captureId,
                 path: shot.sourceScreenshot,
                 image: sourceImage,
                 headline: headline,
-                subtitle: subtitle ?? ""
+                subtitle: subtitle ?? "",
+                tagline: tagline ?? "",
+                appName: appName ?? ""
             )],
             frame: frame,
             projectName: projectName,

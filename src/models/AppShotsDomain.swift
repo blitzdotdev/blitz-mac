@@ -14,24 +14,22 @@ struct CapturedShot: Identifiable, Equatable {
     let id: UUID
     let path: String
     let image: NSImage
-    /// Whether to feed this capture into generation. Defaults true; auto-set to false for blanks.
     var included: Bool
-    /// Heuristic warning (e.g. "Looks nearly blank"). Non-nil means we detected something off.
     var warning: String?
-    /// Per-capture headline. Empty means "use the manager's default headline".
-    /// App Store screenshots typically progress through different feature pitches,
-    /// so each screen owns its own copy.
+    /// Per-capture text slots. Empty means "fall back to the manager's default."
     var headline: String
-    /// Per-capture subtitle. Empty = fall back to manager default (which may itself be blank,
-    /// in which case the copywriter varies per template).
     var subtitle: String
+    var tagline: String
+    var appName: String
 
     init(id: UUID = UUID(), path: String, image: NSImage,
          included: Bool = true, warning: String? = nil,
-         headline: String = "", subtitle: String = "") {
+         headline: String = "", subtitle: String = "",
+         tagline: String = "", appName: String = "") {
         self.id = id; self.path = path; self.image = image
         self.included = included; self.warning = warning
         self.headline = headline; self.subtitle = subtitle
+        self.tagline = tagline; self.appName = appName
     }
 }
 
@@ -46,6 +44,8 @@ struct DeviceFrame: Hashable {
 struct GenerationRequest {
     let headline: String
     let subtitle: String?
+    let tagline: String?
+    let appName: String?
     let captures: [CapturedShot]
     let frame: DeviceFrame?
     let projectName: String
@@ -59,9 +59,11 @@ struct GeneratedScreenshot: Identifiable {
     let captureId: UUID         // which source capture this came from (may not be live)
     let captureLabel: String    // "Screen 1", "Screen 2", …
     let sourceScreenshot: String
-    /// Copy used for this specific shot. User-editable in the detail sheet.
+    /// Editable text slots the ASC CLI accepts. Empty = fall back to defaults.
     var headline: String
     var subtitle: String
+    var tagline: String
+    var appName: String
     var imagePath: String?
     var image: NSImage?
     var error: String?
@@ -69,6 +71,7 @@ struct GeneratedScreenshot: Identifiable {
     init(id: UUID = UUID(),
          captureId: UUID, captureLabel: String, sourceScreenshot: String,
          headline: String = "", subtitle: String = "",
+         tagline: String = "", appName: String = "",
          imagePath: String? = nil, image: NSImage? = nil, error: String? = nil) {
         self.id = id
         self.captureId = captureId
@@ -76,6 +79,8 @@ struct GeneratedScreenshot: Identifiable {
         self.sourceScreenshot = sourceScreenshot
         self.headline = headline
         self.subtitle = subtitle
+        self.tagline = tagline
+        self.appName = appName
         self.imagePath = imagePath
         self.image = image
         self.error = error
@@ -83,18 +88,29 @@ struct GeneratedScreenshot: Identifiable {
 
     // MARK: - Domain behavior
 
-    /// Headline that should actually render: own value → default → project name.
+    /// Resolved copy values the renderer actually uses.
+    /// Own value → project-level default → fallback (nil or project name).
     func effectiveHeadline(defaultHeadline: String, projectName: String) -> String {
         if !headline.isEmpty { return headline }
         if !defaultHeadline.isEmpty { return defaultHeadline }
         return projectName
     }
 
-    /// Subtitle to render: own value → default → nil (copywriter varies per template).
     func effectiveSubtitle(defaultSubtitle: String) -> String? {
         if !subtitle.isEmpty { return subtitle }
         if !defaultSubtitle.isEmpty { return defaultSubtitle }
         return nil
+    }
+
+    func effectiveTagline(defaultTagline: String) -> String? {
+        if !tagline.isEmpty { return tagline }
+        if !defaultTagline.isEmpty { return defaultTagline }
+        return nil
+    }
+
+    func effectiveAppName(projectName: String) -> String? {
+        if !appName.isEmpty { return appName }
+        return projectName.isEmpty ? nil : projectName
     }
 
     var canRender: Bool {
@@ -139,8 +155,11 @@ struct PersistedSets: Codable {
         let sourceScreenshot: String?
         let headline: String?
         let subtitle: String?
+        /// v4+ slots.
+        let tagline: String?
+        let appName: String?
     }
 
-    /// v3 adds per-shot `headline`, `subtitle`, `sourceScreenshot` so edits survive restarts.
-    static let currentFormatVersion = 3
+    /// v4 adds `tagline` + `appName` per shot.
+    static let currentFormatVersion = 4
 }

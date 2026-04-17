@@ -272,7 +272,7 @@ struct AppShotsSetDetailSheet: View {
                 .padding(40)
             }
         }
-        .frame(minWidth: 860, minHeight: 720)
+        .frame(minWidth: 960, minHeight: 940)
         .background(paper)
     }
 
@@ -541,6 +541,8 @@ struct ShotCopyEditor: View {
         VStack(alignment: .leading, spacing: 8) {
             field(label: "Headline", binding: headlineBinding, prompt: headlinePrompt)
             field(label: "Subtitle · varies if blank", binding: subtitleBinding, prompt: "Optional")
+            field(label: "Tagline", binding: taglineBinding, prompt: "e.g. APP MANAGEMENT")
+            field(label: "App name", binding: appNameBinding, prompt: projectName.isEmpty ? "Optional" : projectName)
             statusRow
         }
         .padding(10)
@@ -572,6 +574,18 @@ struct ShotCopyEditor: View {
         Binding(
             get: { shot.subtitle },
             set: { manager.updateShotSubtitle(setId: setId, screenshotId: shot.id, subtitle: $0) }
+        )
+    }
+    private var taglineBinding: Binding<String> {
+        Binding(
+            get: { shot.tagline },
+            set: { manager.updateShotTagline(setId: setId, screenshotId: shot.id, tagline: $0) }
+        )
+    }
+    private var appNameBinding: Binding<String> {
+        Binding(
+            get: { shot.appName },
+            set: { manager.updateShotAppName(setId: setId, screenshotId: shot.id, appName: $0) }
         )
     }
 
