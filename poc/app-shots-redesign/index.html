@@ -222,70 +222,107 @@
   .sets-empty .step strong { display: block; color: var(--text); font-size: 11.5px; font-weight: 600; margin-bottom: 2px; }
   .sets-empty .step .num { font-size: 10px; color: var(--text-mute); letter-spacing: .08em; font-weight: 600; margin-bottom: 4px; }
 
-  /* Populated — one set per row, all shots visible inline. */
-  .sets-list { display: flex; flex-direction: column; gap: 10px; }
-
-  .set-row {
-    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
-    padding: 12px 14px; display: flex; align-items: center; gap: 16px;
-    cursor: pointer; transition: box-shadow .15s, border-color .15s, transform .15s;
-    box-shadow: var(--shadow-sm); min-height: 126px;
+  /* Populated — big cards in a grid. 3-thumb strip + "+N" overflow, like the old design
+     but with each card much larger so thumbs are readable as screenshots. */
+  .sets-grid-big {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 16px;
   }
-  .set-row:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); }
 
-  .set-row .head {
-    flex: 0 0 180px; min-width: 0;
-    display: flex; flex-direction: column; gap: 4px;
+  .set-card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 16px; cursor: pointer;
+    transition: box-shadow .15s, border-color .15s, transform .15s;
+    box-shadow: var(--shadow-sm);
+    display: flex; flex-direction: column; gap: 14px;
   }
-  .set-row .head .name { font-weight: 600; font-size: 13px; color: var(--text); }
-  .set-row .head .cat { font-size: 11px; color: var(--text-mute); }
-  .set-row .head .status { font-size: 11.5px; font-weight: 600; margin-top: 4px; font-variant-numeric: tabular-nums; }
-  .set-row .head .status.ok { color: var(--success); }
-  .set-row .head .status.partial { color: var(--warn); }
-  .set-row .head .status.loading { color: var(--text-dim); }
+  .set-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); transform: translateY(-2px); }
 
-  .set-row .strip {
-    flex: 1; display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden;
-    padding-bottom: 2px; min-width: 0;
+  .set-card .strip {
+    display: flex; gap: 8px; align-items: stretch;
   }
-  .set-row .strip::-webkit-scrollbar { height: 6px; }
-  .set-row .strip::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
-
-  .set-row .shot {
-    flex: 0 0 auto; height: 100px; aspect-ratio: 9/19.5;
-    border-radius: 8px; border: 1px solid var(--border-strong);
+  .set-card .shot {
+    flex: 1 1 0; min-width: 0;
+    aspect-ratio: 9/19.5;
+    border-radius: 12px; border: 1.5px solid rgba(0,0,0,0.08);
     background: linear-gradient(135deg, var(--c1, #e5e7eb), var(--c2, #d4d4d8));
     position: relative; overflow: hidden;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
   }
-  .set-row .shot .mini-phone {
-    position: absolute; bottom: 6%; left: 12%; right: 12%; height: 64%;
+
+  .set-card .shot .overlay-head {
+    position: absolute; top: 9%; left: 10%; right: 10%;
+    color: #fff; font-weight: 700; line-height: 1.15;
+    font-size: clamp(10px, 1.1vw, 13px);
+    text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    letter-spacing: -0.01em;
+  }
+  .set-card.on-light .shot .overlay-head { color: var(--text); text-shadow: none; }
+
+  .set-card .shot .mini-phone {
+    position: absolute; bottom: 5%; left: 12%; right: 12%; height: 62%;
     background: linear-gradient(180deg, #2a2a2e, #141416);
-    border-radius: 6px 6px 2px 2px;
-    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 12px 12px 3px 3px;
+    border: 1.5px solid rgba(255,255,255,0.14);
+    overflow: hidden;
   }
-  .set-row .shot .mini-phone::before {
-    content: ""; position: absolute; top: 6%; left: 50%; transform: translateX(-50%);
-    width: 34%; height: 8%; background: #000; border-radius: 999px;
+  .set-card .shot .mini-phone::before {
+    content: ""; position: absolute; top: 5%; left: 50%; transform: translateX(-50%);
+    width: 34%; height: 7%; background: #000; border-radius: 999px;
   }
-  .set-row.on-light .shot .mini-phone {
+  .set-card .shot .mini-phone::after {
+    content: ""; position: absolute; inset: 18% 10% 8%;
+    background:
+      linear-gradient(rgba(255,255,255,0.07), rgba(255,255,255,0.07)) top / 100% 22% no-repeat,
+      linear-gradient(rgba(255,255,255,0.07), rgba(255,255,255,0.07)) center / 100% 22% no-repeat,
+      linear-gradient(rgba(255,255,255,0.07), rgba(255,255,255,0.07)) bottom / 100% 22% no-repeat;
+    border-radius: 4px;
+  }
+  .set-card.on-light .shot .mini-phone {
     background: linear-gradient(180deg, #424245, #1d1d1f);
   }
-  .set-row .shot.failed {
-    background: repeating-linear-gradient(45deg, #fff7ed 0 8px, #ffedd5 8px 16px);
-    border-color: #fdba74;
-    display: grid; place-items: center; color: var(--warn); font-weight: 700; font-size: 14px;
+
+  .set-card .overflow {
+    flex: 0 0 78px;
+    aspect-ratio: 9/19.5;
+    display: grid; place-items: center;
+    border-radius: 12px;
+    background: var(--inset);
+    border: 1.5px dashed var(--border-strong);
+    color: var(--text-dim);
+    font-weight: 700; font-size: 17px;
   }
-  .set-row .shot.failed::before { content: "!"; }
-  .set-row .shot.loading {
+
+  .set-card .shot.failed {
+    background: repeating-linear-gradient(45deg, #fff7ed 0 10px, #ffedd5 10px 20px);
+    border-color: #fdba74;
+    display: grid; place-items: center; color: var(--warn);
+    font-weight: 700; font-size: 22px;
+  }
+  .set-card .shot.failed::before { content: "!"; }
+  .set-card .shot.loading {
     background: var(--inset);
     display: grid; place-items: center;
+    border-color: var(--border);
   }
-  .set-row .shot.loading::before {
-    content: ""; width: 14px; height: 14px; border-radius: 50%;
-    border: 2px solid var(--border-strong); border-top-color: var(--accent);
+  .set-card .shot.loading::before {
+    content: ""; width: 20px; height: 20px; border-radius: 50%;
+    border: 2.5px solid var(--border-strong); border-top-color: var(--accent);
     animation: spin 0.8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  .set-card .meta {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 0 2px;
+  }
+  .set-card .meta .name { font-weight: 600; font-size: 14px; color: var(--text); }
+  .set-card .meta .cat { font-size: 11.5px; color: var(--text-mute); margin-top: 2px; }
+  .set-card .meta .status { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+  .set-card .meta .status.ok { color: var(--success); }
+  .set-card .meta .status.partial { color: var(--warn); }
+  .set-card .meta .status.loading { color: var(--text-dim); }
 
   /* ----- Inspector ----- */
   .insp-section { padding: 0 14px 14px; }
@@ -507,7 +544,7 @@
                 <div class="step"><div class="num">03</div><strong>Generate</strong>8 ready-to-ship sets.</div>
               </div>
             </div>
-            <div id="sets-grid" class="sets-list" style="display:none;"></div>
+            <div id="sets-grid" class="sets-grid-big" style="display:none;"></div>
           </div>
         </section>
 
@@ -690,7 +727,7 @@ function renderSets(state, includedCount) {
   }
 
   empty.style.display = 'none';
-  grid.style.display = 'flex';
+  grid.style.display = 'grid';
   grid.innerHTML = '';
 
   const headline = document.getElementById('headline').value || 'Plan your day in seconds';
@@ -699,40 +736,45 @@ function renderSets(state, includedCount) {
   const totalRenders = 8 * includedCount;
   const doneRenders = state === 'generating' ? Math.floor(totalRenders * 0.55) : totalRenders - 3;
 
+  const INLINE = 3; // show up to 3 thumbs in the card, rest go to "+N" badge
   TEMPLATES.forEach((t, i) => {
     const isDone = i < doneCount;
     const failedCount = failures[t.name] || 0;
     const readyFor = isDone ? (includedCount - failedCount) : 0;
-    const row = document.createElement('div');
-    row.className = `set-row ${t.cls}${t.light ? ' on-light' : ''}`;
-    row.onclick = () => { if (state === 'done') openSheet(t); };
+    const card = document.createElement('div');
+    card.className = `set-card ${t.cls}${t.light ? ' on-light' : ''}`;
+    card.onclick = () => { if (state === 'done') openSheet(t); };
 
-    // build one thumb per included capture
+    const visibleCount = Math.min(INLINE, includedCount);
     let shots = '';
-    for (let s = 0; s < includedCount; s++) {
+    for (let s = 0; s < visibleCount; s++) {
       if (!isDone) {
         shots += `<div class="shot loading"></div>`;
-      } else if (s >= includedCount - failedCount) {
+      } else if (s >= visibleCount - failedCount) {
         shots += `<div class="shot failed" data-tooltip="Render failed — click to retry"></div>`;
       } else {
-        shots += `<div class="shot"><div class="mini-phone"></div></div>`;
+        shots += `<div class="shot"><div class="overlay-head">${headline}</div><div class="mini-phone"></div></div>`;
       }
     }
+    const overflow = includedCount - visibleCount;
+    if (overflow > 0) shots += `<div class="overflow">+${overflow}</div>`;
 
     let status;
     if (!isDone) status = `<div class="status loading">rendering…</div>`;
-    else if (failedCount) status = `<div class="status partial" data-tooltip="${failedCount} failed">${readyFor}/${includedCount}</div>`;
+    else if (failedCount) status = `<div class="status partial" data-tooltip="${failedCount} failed — click to retry">${readyFor}/${includedCount}</div>`;
     else status = `<div class="status ok">✓ ready</div>`;
 
-    row.innerHTML = `
-      <div class="head">
-        <div class="name">${t.name}</div>
-        <div class="cat">${t.cat} · ${includedCount} shots</div>
+    card.innerHTML = `
+      <div class="strip">${shots}</div>
+      <div class="meta">
+        <div>
+          <div class="name">${t.name}</div>
+          <div class="cat">${t.cat} · ${includedCount} shots</div>
+        </div>
         ${status}
       </div>
-      <div class="strip">${shots}</div>
     `;
-    grid.appendChild(row);
+    grid.appendChild(card);
   });
 
   if (state === 'generating') {
