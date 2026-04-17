@@ -9,8 +9,11 @@ enum AppShotsTokens {
     static var canvasBackground: Color { Color(nsColor: .windowBackgroundColor) }
     /// Slightly distinct surface for sidebars / inspector.
     static var panelBackground: Color { Color(nsColor: .underPageBackgroundColor) }
-    /// Inset surface — input fields, capture rows.
+    /// Inset surface — input fields, capture rows, empty-state tiles.
     static var insetBackground: Color { Color(nsColor: .controlBackgroundColor) }
+    /// Card surface — pure content area. In light mode this is white;
+    /// in dark mode a slightly elevated dark surface. Distinct from the canvas.
+    static var cardSurface: Color { Color(nsColor: .controlBackgroundColor) }
     /// Hairline rules.
     static var separator: Color { Color(nsColor: .separatorColor) }
     /// Subtle filled strokes (cards, dashed dropzones).
@@ -91,9 +94,9 @@ struct AppShotsSetCard: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity)
-            .background(RoundedRectangle(cornerRadius: 14).fill(AppShotsTokens.panelBackground))
+            .background(RoundedRectangle(cornerRadius: 14).fill(AppShotsTokens.cardSurface))
             .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(AppShotsTokens.subtleStroke))
-            .shadow(color: Color.black.opacity(0.05), radius: 3, y: 1)
+            .shadow(color: Color.black.opacity(0.06), radius: 4, y: 2)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

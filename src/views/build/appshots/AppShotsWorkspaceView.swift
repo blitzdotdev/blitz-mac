@@ -16,13 +16,13 @@ struct AppShotsWorkspaceView: View {
             if manager.step == .generating { progressStrip }
             HStack(spacing: 0) {
                 CapturesPanel(manager: manager, bootedUDID: bootedUDID)
-                    .frame(width: 280)
+                    .frame(width: 240)
                 Divider()
                 SetsPanel(manager: manager) { set in openSet = set }
                     .frame(maxWidth: .infinity)
                 Divider()
                 InspectorPanel(manager: manager, projectName: projectName)
-                    .frame(width: 280)
+                    .frame(width: 260)
             }
         }
         .sheet(item: $openSet) { set in
@@ -425,7 +425,7 @@ private struct SetsPanel: View {
 
     private var liveGrid: some View {
         LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: 380), spacing: 16)],
+            columns: [GridItem(.adaptive(minimum: 320), spacing: 14)],
             spacing: 16
         ) {
             ForEach(manager.generated) { set in
