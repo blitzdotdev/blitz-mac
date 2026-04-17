@@ -5,19 +5,24 @@ import SwiftUI
 // MARK: - Tokens
 
 enum AppShotsTokens {
-    /// Tab background — adapts to system appearance.
+    // Two-surface system — matches the POC:
+    //   canvas = the "board" — captures panel, sets canvas, inspector all share this
+    //   cardSurface = elevated white surface — cards, inputs, capture rows
+    // Everything else (shadows, borders) distinguishes elevation.
+
+    /// Board background — captures / canvas / inspector all use this.
+    /// Light gray in light mode; deep gray in dark mode.
     static var canvasBackground: Color { Color(nsColor: .windowBackgroundColor) }
-    /// Slightly distinct surface for sidebars / inspector.
-    static var panelBackground: Color { Color(nsColor: .underPageBackgroundColor) }
-    /// Inset surface — input fields, capture rows, empty-state tiles.
-    static var insetBackground: Color { Color(nsColor: .controlBackgroundColor) }
-    /// Card surface — pure content area. In light mode this is white;
-    /// in dark mode a slightly elevated dark surface. Distinct from the canvas.
+    /// Back-compat alias; same as canvas so panels don't introduce a third tint.
+    static var panelBackground: Color { canvasBackground }
+    /// Elevated surface — cards, inputs, capture rows. White in light mode.
     static var cardSurface: Color { Color(nsColor: .controlBackgroundColor) }
+    /// Alias for inset (form inputs, inset tiles).
+    static var insetBackground: Color { cardSurface }
     /// Hairline rules.
     static var separator: Color { Color(nsColor: .separatorColor) }
     /// Subtle filled strokes (cards, dashed dropzones).
-    static var subtleStroke: Color { Color.primary.opacity(0.12) }
+    static var subtleStroke: Color { Color.primary.opacity(0.10) }
 }
 
 // MARK: - Background
