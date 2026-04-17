@@ -214,8 +214,10 @@ private struct CapturesPanel: View {
                         CaptureRow(
                             index: index + 1,
                             shot: shot,
+                            defaultHeadline: manager.defaultHeadline,
                             onToggle: { manager.toggleCaptureInclusion(id: shot.id) },
-                            onRemove: { manager.removeCapture(id: shot.id) }
+                            onRemove: { manager.removeCapture(id: shot.id) },
+                            onHeadlineChange: { manager.updateCaptureHeadline(id: shot.id, headline: $0) }
                         )
                     }
                     if manager.blankWarningCount > 0 {
@@ -264,10 +266,23 @@ private struct CapturesPanel: View {
 private struct CaptureRow: View {
     let index: Int
     let shot: CapturedShot
+    let defaultHeadline: String
     let onToggle: () -> Void
     let onRemove: () -> Void
+    let onHeadlineChange: (String) -> Void
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            topRow
+            headlineField
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 10).fill(AppShotsTokens.cardSurface))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(AppShotsTokens.subtleStroke))
+        .opacity(shot.included ? 1 : 0.65)
+    }
+
+    private var topRow: some View {
         HStack(spacing: 8) {
             Button(action: onToggle) {
                 RoundedRectangle(cornerRadius: 4)
@@ -290,7 +305,7 @@ private struct CaptureRow: View {
             Image(nsImage: shot.image)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
-                .frame(width: 38, height: 76)
+                .frame(width: 32, height: 64)
                 .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: 5))
                 .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(AppShotsTokens.subtleStroke))
@@ -299,7 +314,7 @@ private struct CaptureRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 4) {
                     Text("Screen \(index)")
-                        .font(.caption.weight(.medium))
+                        .font(.caption.weight(.semibold))
                     if let warn = shot.warning {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.caption2)
@@ -311,7 +326,6 @@ private struct CaptureRow: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-            .opacity(shot.included ? 1 : 0.55)
 
             Spacer()
             Button(action: onRemove) {
@@ -321,10 +335,31 @@ private struct CaptureRow: View {
                     .padding(4)
             }
             .buttonStyle(.plain)
+            .help("Remove")
         }
-        .padding(6)
-        .background(RoundedRectangle(cornerRadius: 8).fill(AppShotsTokens.panelBackground))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(AppShotsTokens.subtleStroke))
+    }
+
+    private var headlineField: some View {
+        TextField(
+            "",
+            text: Binding(
+                get: { shot.headline },
+                set: { onHeadlineChange($0) }
+            ),
+            prompt: Text(placeholder).font(.caption)
+        )
+        .textFieldStyle(.plain)
+        .font(.caption)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 6).fill(AppShotsTokens.canvasBackground))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(AppShotsTokens.subtleStroke))
+    }
+
+    /// Placeholder cue: show the fallback that'll be used when this field is empty.
+    private var placeholder: String {
+        if !defaultHeadline.isEmpty { return defaultHeadline }
+        return "Headline for this screen"
     }
 
     private var byteSize: String {
@@ -464,18 +499,21 @@ private struct InspectorPanel: View {
     private var headlineSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
-                AppShotsLabel(text: "Headline")
+                AppShotsLabel(text: "Default Headline")
                 TextField("", text: Binding(
-                    get: { manager.headline },
-                    set: { manager.headline = $0 }
+                    get: { manager.defaultHeadline },
+                    set: { manager.defaultHeadline = $0 }
                 ), prompt: Text(projectName))
                 .textFieldStyle(.roundedBorder)
+                Text("Used for any screen whose own headline is blank.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
             VStack(alignment: .leading, spacing: 6) {
-                AppShotsLabel(text: "Subtitle · varies if blank")
+                AppShotsLabel(text: "Default Subtitle · varies if blank")
                 TextField("", text: Binding(
-                    get: { manager.subtitle },
-                    set: { manager.subtitle = $0 }
+                    get: { manager.defaultSubtitle },
+                    set: { manager.defaultSubtitle = $0 }
                 ), prompt: Text("Optional"))
                 .textFieldStyle(.roundedBorder)
             }

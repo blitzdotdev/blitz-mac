@@ -114,19 +114,18 @@ struct AppShotsSetCard: View {
         let visible = Array(set.screenshots.prefix(visibleCount))
         let overflow = max(0, set.screenshots.count - visibleCount)
         return HStack(alignment: .top, spacing: 8) {
-            ForEach(visible) { shot in
-                thumbnail(shot: shot)
-                    .frame(maxWidth: .infinity)
-            }
-            if overflow > 0 {
-                overflowTile(count: overflow)
-                    .frame(maxWidth: .infinity)
+            ForEach(Array(visible.enumerated()), id: \.element.id) { index, shot in
+                thumbnail(
+                    shot: shot,
+                    moreBadge: (index == visible.count - 1 && overflow > 0) ? "+\(overflow)" : nil
+                )
+                .frame(maxWidth: .infinity)
             }
         }
     }
 
-    private func thumbnail(shot: GeneratedScreenshot) -> some View {
-        ZStack {
+    private func thumbnail(shot: GeneratedScreenshot, moreBadge: String?) -> some View {
+        ZStack(alignment: .topTrailing) {
             // Always paint the template's palette gradient underneath — that's the card's identity.
             LinearGradient(colors: [paletteStart, paletteEnd], startPoint: .topLeading, endPoint: .bottomTrailing)
 
@@ -136,73 +135,22 @@ struct AppShotsSetCard: View {
                     .aspectRatio(contentMode: .fill)
             } else if shot.error != nil {
                 failedOverlay
-            } else {
-                // During generation: render a preview skeleton so the user sees the template
-                // style (not an empty gray void). Headline overlay + phone mockup.
-                previewSkeleton
+            }
+
+            if let moreBadge {
+                Text(moreBadge)
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(.black.opacity(0.72)))
+                    .padding(6)
             }
         }
         .aspectRatio(9/19.5, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.black.opacity(0.08), lineWidth: 1))
         .help(shot.error.map { "Render failed — \($0)" } ?? "")
-    }
-
-    /// Preview of what the template will look like — shown during generation so the
-    /// thumbnail doesn't read as "empty gray placeholder".
-    private var previewSkeleton: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .topLeading) {
-                // Headline overlay at top
-                Text(set.headline)
-                    .font(.system(size: max(7, geo.size.width * 0.11), weight: .bold))
-                    .foregroundStyle(headlineColor)
-                    .shadow(color: .black.opacity(headlineColor == .white ? 0.18 : 0), radius: 1, y: 1)
-                    .lineLimit(2)
-                    .padding(.horizontal, geo.size.width * 0.10)
-                    .padding(.top, geo.size.height * 0.09)
-
-                // Phone mockup rising from the bottom with 3 faint content stripes
-                phoneMockup(in: geo.size)
-                    .frame(
-                        width: geo.size.width * 0.76,
-                        height: geo.size.height * 0.62
-                    )
-                    .offset(x: geo.size.width * 0.12, y: geo.size.height * 0.33)
-            }
-        }
-    }
-
-    private func phoneMockup(in size: CGSize) -> some View {
-        ZStack(alignment: .top) {
-            RoundedRectangle(cornerRadius: 12)
-                .fill(LinearGradient(
-                    colors: [Color(red: 0.17, green: 0.17, blue: 0.18),
-                             Color(red: 0.08, green: 0.08, blue: 0.09)],
-                    startPoint: .top, endPoint: .bottom))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.14), lineWidth: 1.2))
-
-            // Dynamic island / notch
-            Capsule()
-                .fill(Color.black)
-                .frame(width: size.width * 0.26, height: size.height * 0.044)
-                .offset(y: size.height * 0.02)
-
-            // Three faint content stripes suggesting app content
-            VStack(spacing: size.height * 0.025) {
-                stripe
-                stripe
-                stripe
-            }
-            .padding(.horizontal, size.width * 0.14)
-            .padding(.top, size.height * 0.14)
-        }
-    }
-
-    private var stripe: some View {
-        RoundedRectangle(cornerRadius: 2)
-            .fill(Color.white.opacity(0.06))
-            .frame(height: 6)
     }
 
     private var failedOverlay: some View {
@@ -222,26 +170,6 @@ struct AppShotsSetCard: View {
         }
     }
 
-    /// Overflow tile matches the card's palette family (not gray), so the row reads as one set.
-    private func overflowTile(count: Int) -> some View {
-        ZStack {
-            LinearGradient(
-                colors: [paletteStart.opacity(0.35), paletteEnd.opacity(0.25)],
-                startPoint: .topLeading, endPoint: .bottomTrailing
-            )
-            VStack(spacing: 2) {
-                Text("+\(count)")
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(headlineColor.opacity(0.9))
-                Text("more")
-                    .font(.caption2)
-                    .foregroundStyle(headlineColor.opacity(0.65))
-            }
-        }
-        .aspectRatio(9/19.5, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.black.opacity(0.08), lineWidth: 1))
-    }
 
     // MARK: Meta row
 
@@ -305,70 +233,255 @@ struct AppShotsSetCard: View {
     }
 }
 
-/// Modal that shows every screenshot in a set at full size.
+/// Modal that shows every screenshot in a set at full size and lets the user
+/// ship them straight to App Store Connect.
 struct AppShotsSetDetailSheet: View {
     let set: GeneratedSet
     let onClose: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(set.template.name).font(.headline)
-                    Text("\(set.template.category.capitalized) · \(set.screenshots.count) shots · \"\(set.headline)\"")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-                if let folder = folderPath {
-                    Button {
-                        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: folder)
-                    } label: { Label("Show in Finder", systemImage: "folder") }
-                    .buttonStyle(.bordered)
-                }
-                Button("Done") { onClose() }
-                    .keyboardShortcut(.defaultAction)
+            header
+            Divider().opacity(0.35)
+            scroller
+            Divider().opacity(0.35)
+            footer
+        }
+        .frame(minWidth: 820, minHeight: 600)
+        .background(backdrop)
+    }
+
+    // MARK: - Backdrop
+
+    private var backdrop: some View {
+        ZStack {
+            AppShotsTokens.cardSurface
+            LinearGradient(
+                colors: [
+                    paletteColor.opacity(0.22),
+                    paletteColor.opacity(0.08),
+                    .clear
+                ],
+                startPoint: .top,
+                endPoint: .center
+            )
+        }
+        .ignoresSafeArea()
+    }
+
+    // MARK: - Header
+
+    private var header: some View {
+        HStack(alignment: .center, spacing: 14) {
+            palettePuck
+            VStack(alignment: .leading, spacing: 4) {
+                Text(set.template.name).font(.title3.weight(.semibold))
+                metaRow
             }
-            .padding(16)
-            Divider()
+            Spacer(minLength: 12)
+            if let folder = folderPath {
+                Button {
+                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: folder)
+                } label: { Label("Show in Finder", systemImage: "folder") }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+            Button {
+                // Placeholder for the ASC upload flow — stub for now.
+            } label: {
+                Label("Upload to ASC", systemImage: "arrow.up.forward.circle.fill")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .disabled(readyCount == 0)
 
-            ScrollView {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 16)], spacing: 16) {
-                    ForEach(set.screenshots) { shot in
-                        VStack(alignment: .leading, spacing: 6) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 12).fill(paletteColor)
-                                if let image = shot.image {
-                                    Image(nsImage: image)
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fit)
-                                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                                } else if shot.error != nil {
-                                    Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
-                                } else {
-                                    ProgressView().controlSize(.small)
-                                }
-                            }
-                            .aspectRatio(9/16, contentMode: .fit)
-                            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(AppShotsTokens.subtleStroke))
+            Button {
+                onClose()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24)
+                    .background(Circle().fill(Color.primary.opacity(0.06)))
+            }
+            .buttonStyle(.borderless)
+            .keyboardShortcut(.cancelAction)
+            .help("Close")
+        }
+        .padding(.horizontal, 22)
+        .padding(.vertical, 16)
+    }
 
-                            HStack {
-                                Text(shot.captureLabel).font(.caption.weight(.medium))
-                                Spacer()
-                                if let path = shot.imagePath {
-                                    Button {
-                                        NSWorkspace.shared.open(URL(fileURLWithPath: path))
-                                    } label: { Image(systemName: "eye").font(.caption2) }
-                                    .buttonStyle(.plain)
-                                    .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
+    private var palettePuck: some View {
+        RoundedRectangle(cornerRadius: 9)
+            .fill(LinearGradient(
+                colors: [paletteColor, paletteColor.opacity(0.70)],
+                startPoint: .topLeading, endPoint: .bottomTrailing))
+            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.white.opacity(0.22), lineWidth: 0.5))
+            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.black.opacity(0.08)))
+            .shadow(color: paletteColor.opacity(0.30), radius: 6, y: 2)
+            .frame(width: 32, height: 32)
+    }
+
+    private var metaRow: some View {
+        HStack(spacing: 8) {
+            categoryChip
+            Text("\(set.screenshots.count) shot\(set.screenshots.count == 1 ? "" : "s")")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("·").font(.caption).foregroundStyle(.tertiary)
+            Text("\u{201C}\(set.headline)\u{201D}")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+    }
+
+    private var categoryChip: some View {
+        Text(set.template.category.capitalized)
+            .font(.caption2.weight(.semibold))
+            .textCase(.uppercase)
+            .tracking(0.4)
+            .foregroundStyle(.primary.opacity(0.82))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2.5)
+            .background(Capsule().fill(paletteColor.opacity(0.16)))
+            .overlay(Capsule().strokeBorder(paletteColor.opacity(0.28)))
+    }
+
+    // MARK: - Horizontal screenshots row
+    //
+    // App Store listings are horizontal — so is the preview. All N screenshots
+    // stay at the same height, user scrolls left-right. Feels like the store itself.
+
+    private var scroller: some View {
+        GeometryReader { geo in
+            ScrollView(.horizontal, showsIndicators: true) {
+                HStack(alignment: .top, spacing: 20) {
+                    ForEach(Array(set.screenshots.enumerated()), id: \.element.id) { index, shot in
+                        shotCard(shot, index: index + 1, height: cardHeight(for: geo.size.height))
                     }
                 }
-                .padding(20)
+                .padding(.horizontal, 26)
+                .padding(.vertical, 24)
             }
         }
-        .frame(minWidth: 720, minHeight: 480)
+    }
+
+    /// Pick a consistent card height from the available vertical space.
+    private func cardHeight(for height: CGFloat) -> CGFloat {
+        let available = max(240, height - 88)
+        return min(available, 560)
+    }
+
+    private func shotCard(_ shot: GeneratedScreenshot, index: Int, height: CGFloat) -> some View {
+        let width = height * 9 / 16
+        return VStack(alignment: .leading, spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 22).fill(paletteColor)
+                if let image = shot.image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: 22))
+                } else if shot.error != nil {
+                    failedBadge
+                }
+            }
+            .frame(width: width, height: height)
+            .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(Color.black.opacity(0.10)))
+            .shadow(color: paletteColor.opacity(0.28), radius: 18, y: 10)
+            .shadow(color: Color.black.opacity(0.10), radius: 3, y: 2)
+
+            HStack(spacing: 6) {
+                Text("Screen \(index)")
+                    .font(.caption.weight(.semibold))
+                Text("·")
+                    .foregroundStyle(.tertiary)
+                Text(shot.captureLabel)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                if shot.error != nil {
+                    Button {
+                        // Hook for retry — wired in caller later.
+                    } label: {
+                        Image(systemName: "arrow.clockwise").font(.caption2)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.orange)
+                    .help("Retry this render")
+                } else if let path = shot.imagePath {
+                    iconButton(systemName: "eye", tooltip: "Preview") {
+                        NSWorkspace.shared.open(URL(fileURLWithPath: path))
+                    }
+                    iconButton(systemName: "folder", tooltip: "Show in Finder") {
+                        NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: "")
+                    }
+                }
+            }
+            .frame(width: width)
+        }
+    }
+
+    private func iconButton(systemName: String, tooltip: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.caption2)
+                .frame(width: 22, height: 22)
+                .background(Circle().fill(Color.primary.opacity(0.05)))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .help(tooltip)
+    }
+
+    private var failedBadge: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.title2)
+                .foregroundStyle(.orange)
+            Text("Render failed")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.orange)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(RoundedRectangle(cornerRadius: 18).fill(Color.orange.opacity(0.10)))
+    }
+
+    // MARK: - Footer
+
+    private var footer: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.up.forward.circle")
+                .foregroundStyle(.secondary)
+            Text(footerText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button("Change locale") {
+                // Placeholder — future locale picker.
+            }
+            .buttonStyle(.plain)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(Color.accentColor)
+        }
+        .padding(.horizontal, 22)
+        .padding(.vertical, 12)
+    }
+
+    private var footerText: String {
+        let ready = readyCount
+        if ready == 0 { return "No renders ready yet — upload will enable once at least one shot finishes." }
+        return "Uploading sends these \(ready) PNG\(ready == 1 ? "" : "s") to the en-US locale in App Store Connect."
+    }
+
+    // MARK: - Helpers
+
+    private var readyCount: Int {
+        let shots = set.screenshots
+        return shots.filter { $0.image != nil }.count
     }
 
     private var paletteColor: Color {
