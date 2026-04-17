@@ -283,15 +283,17 @@
     background: linear-gradient(180deg, #424245, #1d1d1f);
   }
 
-  .set-card .overflow {
-    flex: 0 0 78px;
-    aspect-ratio: 9/19.5;
-    display: grid; place-items: center;
-    border-radius: 12px;
-    background: var(--inset);
-    border: 1.5px dashed var(--border-strong);
-    color: var(--text-dim);
-    font-weight: 700; font-size: 17px;
+  /* Last visible thumb gets a "+N more" corner chip instead of a dedicated placeholder tile. */
+  .set-card .shot .more-chip {
+    position: absolute; top: 6px; right: 6px;
+    padding: 3px 7px; border-radius: 6px;
+    background: rgba(0, 0, 0, 0.65); color: #fff;
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.01em;
+    backdrop-filter: blur(6px);
+    z-index: 2;
+  }
+  .set-card.on-light .shot .more-chip {
+    background: rgba(0, 0, 0, 0.75);
   }
 
   .set-card .shot.failed {
@@ -736,7 +738,7 @@ function renderSets(state, includedCount) {
   const totalRenders = 8 * includedCount;
   const doneRenders = state === 'generating' ? Math.floor(totalRenders * 0.55) : totalRenders - 3;
 
-  const INLINE = 3; // show up to 3 thumbs in the card, rest go to "+N" badge
+  const INLINE = 3; // show up to 3 thumbs; remaining count goes into a corner chip on the last thumb
   TEMPLATES.forEach((t, i) => {
     const isDone = i < doneCount;
     const failedCount = failures[t.name] || 0;
@@ -746,18 +748,19 @@ function renderSets(state, includedCount) {
     card.onclick = () => { if (state === 'done') openSheet(t); };
 
     const visibleCount = Math.min(INLINE, includedCount);
+    const overflow = includedCount - visibleCount;
     let shots = '';
     for (let s = 0; s < visibleCount; s++) {
+      const isLast = (s === visibleCount - 1);
+      const chip = (isLast && overflow > 0) ? `<div class="more-chip">+${overflow}</div>` : '';
       if (!isDone) {
-        shots += `<div class="shot loading"></div>`;
+        shots += `<div class="shot loading">${chip}</div>`;
       } else if (s >= visibleCount - failedCount) {
-        shots += `<div class="shot failed" data-tooltip="Render failed — click to retry"></div>`;
+        shots += `<div class="shot failed" data-tooltip="Render failed — click to retry">${chip}</div>`;
       } else {
-        shots += `<div class="shot"><div class="overlay-head">${headline}</div><div class="mini-phone"></div></div>`;
+        shots += `<div class="shot"><div class="overlay-head">${headline}</div><div class="mini-phone"></div>${chip}</div>`;
       }
     }
-    const overflow = includedCount - visibleCount;
-    if (overflow > 0) shots += `<div class="overflow">+${overflow}</div>`;
 
     let status;
     if (!isDone) status = `<div class="status loading">rendering…</div>`;
