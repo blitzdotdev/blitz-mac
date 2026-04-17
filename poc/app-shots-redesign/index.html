@@ -745,25 +745,23 @@
 <div class="sheet-backdrop" id="sheet-backdrop" onclick="if(event.target===this)closeSheet()">
   <div class="sheet" id="sheet">
     <div class="palette-strip"></div>
-    <button class="sheet-close" onclick="closeSheet()" aria-label="Close">✕</button>
 
     <div class="sheet-head">
       <div class="head-left">
-        <div class="category">
+        <div class="title" id="sheet-title">Bold Gradient</div>
+        <div class="meta">
           <span class="cat-dot"></span>
-          <span id="sheet-cat">BOLD</span>
-        </div>
-        <h1 class="sheet-title" id="sheet-title">Bold Gradient</h1>
-        <div class="sheet-meta">
+          <span id="sheet-cat">Bold</span>
+          ·
           <span id="sheet-count">8 shots</span>
-          <span class="pip"></span>
+          ·
           <span class="quote">“<span id="sheet-headline">Plan your day in seconds</span>”</span>
         </div>
       </div>
-      <div class="head-right">
-        <button class="btn">📁 Show in Finder</button>
-        <button class="btn primary">↗ Upload to ASC</button>
-      </div>
+      <div class="head-spacer"></div>
+      <button class="btn sm">📁 Show in Finder</button>
+      <button class="btn sm primary">↗ Upload to ASC</button>
+      <button class="btn sm ghost" onclick="closeSheet()">✕</button>
     </div>
 
     <div class="sheet-body">
@@ -967,7 +965,7 @@ function openSheet(template) {
   if (t.light) sheet.classList.add('on-light');
 
   document.getElementById('sheet-title').textContent = t.name;
-  document.getElementById('sheet-cat').textContent = t.cat.toUpperCase();
+  document.getElementById('sheet-cat').textContent = t.cat;
   document.getElementById('sheet-count').textContent = `${included.length} shot${included.length === 1 ? '' : 's'}`;
   document.getElementById('sheet-headline').textContent = headline;
   document.getElementById('sheet-foot-count').textContent = included.length;
