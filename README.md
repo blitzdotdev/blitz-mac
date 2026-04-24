@@ -52,7 +52,7 @@ https://github.com/user-attachments/assets/07364d9f-f6a7-4375-acc8-b7ab46dcc60e
 | **MCP server (~35 tools)** | Claude Code, Codex, Cursor, or any MCP client drives the full workflow                                           |
 | **[asc-cli](https://github.com/rudrankriyam/App-Store-Connect-CLI) (bundled)** | Scriptable CLI for edge-case ASC operations. Auto-installed, shared auth, available in every Blitz agent session |
 
-## Download
+## Download Blitz
 
 [Download from blitz.dev](https://blitz.dev)
 
@@ -82,7 +82,7 @@ Then tell your agent
 Use teeny cli (run `teeny docs` first to learn about teenybase) to add a backend to this project.
 ```
 
-## Build from source
+## Build Blitz from source
 
 **Requirements:** macOS 14+ · Xcode 16+ · Node.js 18+ · Go 1.26+
 
