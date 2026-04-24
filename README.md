@@ -56,6 +56,32 @@ https://github.com/user-attachments/assets/07364d9f-f6a7-4375-acc8-b7ab46dcc60e
 
 [Download from blitz.dev](https://blitz.dev)
 
+## Need a backend?
+
+We launched [**teeny CLI**](https://teenybase.com), a CLI that lets your agent define a complete backend in one TypeScript file and deploy to Cloudflare's infra. Your agent handles everything:
+- **Auth**: sign-up/sign-in users in with Google, GitHub, Discord, or email/password
+- **Database**: store and query your app's data with row-level security so users only see their own
+- **File storage**: upload and serve files from Cloudflare R2, serve up to 10GB of content to your customers
+- **Server logic**: write arbitrary endpoints to handle Stripe payments, rate limits, and custom business logic your app needs
+
+You get up to 5 free backends you can deploy when you register in the terminal via ```teeny register```. Each free backend gives you: 
+- 1M requests/month (Cloudflare Worker)
+- 100MB SQLite database (Cloudflare D1)
+- 10GB file storage (Cloudflare R2)
+
+That's enough to cover 5 apps with 1K daily active users without paying a cent.
+
+Install with
+
+```bash
+npm install -g teenybase
+```
+
+Then tell your agent
+```text
+Use teeny cli (run `teeny docs` first to learn about teenybase) to add a backend to this project.
+```
+
 ## Build from source
 
 **Requirements:** macOS 14+ · Xcode 16+ · Node.js 18+ · Go 1.26+
