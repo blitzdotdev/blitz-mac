@@ -117,6 +117,7 @@ enum AppSubTab: String, CaseIterable, Identifiable {
     case simulator
     case tests
     case icon
+    case appShots
 
     static let visibleCases: [AppSubTab] = allCases
 
@@ -128,6 +129,7 @@ enum AppSubTab: String, CaseIterable, Identifiable {
         case .simulator: "Simulator"
         case .tests: "Tests"
         case .icon: "Icon"
+        case .appShots: "App Shots"
         }
     }
 
@@ -137,6 +139,7 @@ enum AppSubTab: String, CaseIterable, Identifiable {
         case .simulator: "iphone"
         case .tests: "checkmark.circle"
         case .icon: "photo.badge.plus"
+        case .appShots: "camera.on.rectangle"
         }
     }
 }
