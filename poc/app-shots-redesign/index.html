@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>App Shots — light workspace</title>
+<style>
+  :root {
+    --canvas: #fafafa;
+    --panel: #ffffff;
+    --inset: #f5f5f7;
+    --surface-hover: #f0f0f3;
+    --border: rgba(0, 0, 0, 0.08);
+    --border-strong: rgba(0, 0, 0, 0.14);
+    --divider: rgba(0, 0, 0, 0.06);
+    --text: #1d1d1f;
+    --text-dim: #6e6e73;
+    --text-mute: #8e8e93;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --success: #22c55e;
+    --warn: #f59e0b;
+    --danger: #ef4444;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-md: 0 2px 6px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-lg: 0 12px 32px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.06);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    background: var(--canvas); color: var(--text);
+    -webkit-font-smoothing: antialiased; font-size: 13px;
+  }
+
+  /* Window */
+  .window { height: 100vh; display: grid; grid-template-columns: 220px 1fr; overflow: hidden; }
+  .sidebar { background: var(--panel); color: var(--text); border-right: 1px solid var(--border); padding: 40px 10px 10px; }
+  .sidebar .group { color: var(--text-mute); font-size: 10px; text-transform: uppercase; letter-spacing: .1em; padding: 10px 10px 4px; }
+  .sidebar .item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; color: var(--text-dim); cursor: pointer; }
+  .sidebar .item:hover { background: var(--surface-hover); color: var(--text); }
+  .sidebar .item.active { background: var(--accent); color: #fff; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .5; }
+
+  .main { position: relative; overflow: hidden; display: flex; flex-direction: column; background: var(--canvas); }
+
+  .tabbar { height: 40px; border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 16px; gap: 20px; font-size: 12px; color: var(--text-dim); background: var(--panel); flex-shrink: 0; }
+  .tabbar .tab { padding: 10px 0; cursor: pointer; }
+  .tabbar .tab.on { color: var(--text); border-bottom: 2px solid var(--accent); margin-bottom: -1px; }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 6px 11px; border-radius: 7px; border: 1px solid var(--border-strong);
+    background: var(--panel); color: var(--text); cursor: pointer; font: inherit; font-size: 12.5px;
+    box-shadow: var(--shadow-sm);
+  }
+  .btn:hover { background: var(--surface-hover); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 1px 2px rgba(37,99,235,0.25); }
+  .btn.primary:hover { background: var(--accent-hover); }
+  .btn.primary:disabled, .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn.ghost { border: 0; background: transparent; box-shadow: none; color: var(--text-dim); }
+  .btn.ghost:hover { background: var(--surface-hover); color: var(--text); }
+  .btn.lg { padding: 14px 28px; font-size: 15px; font-weight: 600; border-radius: 10px; }
+  .btn.sm { padding: 4px 8px; font-size: 11.5px; border-radius: 5px; }
+  .btn.warn { background: #fff7ed; border-color: #fdba74; color: #9a3412; }
+
+  /* ============== HERO ============== */
+  .hero-stage {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 48px 40px; gap: 16px; text-align: center;
+    background: radial-gradient(ellipse at top, rgba(37,99,235,0.05), transparent 60%);
+  }
+  .hero-stage .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 12px; border-radius: 999px;
+    background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.2);
+    color: var(--accent); font-size: 11px;
+  }
+  .hero-stage h1 { font-size: 32px; font-weight: 600; letter-spacing: -0.01em; max-width: 720px; color: var(--text); }
+  .hero-stage p { color: var(--text-dim); max-width: 560px; line-height: 1.55; font-size: 15px; }
+  .hero-stage .cta {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 14px 28px; font-size: 15px; font-weight: 600;
+    border: 0; border-radius: 12px; cursor: pointer;
+    background: var(--accent); color: #fff;
+    box-shadow: 0 10px 30px rgba(37,99,235,0.35);
+    transition: transform .15s, box-shadow .15s;
+  }
+  .hero-stage .cta:hover { transform: translateY(-1px); box-shadow: 0 14px 40px rgba(37,99,235,0.45); }
+  .hero-stage .meta { color: var(--text-mute); font-size: 12px; }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; max-width: 760px; width: 100%; margin-top: 24px; }
+  .tile { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; text-align: left; box-shadow: var(--shadow-sm); }
+  .tile .n { font-size: 10px; color: var(--text-mute); margin-bottom: 6px; letter-spacing: .08em; }
+  .tile .t { font-weight: 600; font-size: 12.5px; margin-bottom: 4px; color: var(--text); }
+  .tile .d { color: var(--text-dim); font-size: 11.5px; line-height: 1.45; }
+
+  /* ============== WORKSPACE ============== */
+  .workspace { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+
+  .ws-toolbar {
+    height: 44px; padding: 0 14px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px; background: var(--panel); flex-shrink: 0;
+  }
+  .ws-toolbar .crumbs { display: flex; align-items: center; gap: 8px; }
+  .ws-toolbar .crumbs strong { color: var(--text); font-weight: 600; font-size: 13.5px; }
+  .ws-toolbar .crumbs .sep { color: var(--text-mute); }
+  .ws-toolbar .crumbs .context { color: var(--text-dim); font-size: 12.5px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 500;
+    border: 1px solid var(--border); background: var(--inset); color: var(--text-dim);
+  }
+  .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 1; }
+  .pill.gen { background: rgba(37,99,235,0.08); color: var(--accent); border-color: rgba(37,99,235,0.24); }
+  .pill.done { background: rgba(34,197,94,0.1); color: #15803d; border-color: rgba(34,197,94,0.28); }
+  .spacer { flex: 1; }
+
+  .progress-strip {
+    height: 2px; background: var(--divider); position: relative; overflow: hidden;
+  }
+  .progress-strip > div {
+    height: 100%; background: linear-gradient(90deg, var(--accent), #7c3aed);
+    animation: grow 1.8s ease-in-out infinite;
+  }
+  @keyframes grow { 0% { width: 15%; } 50% { width: 70%; } 100% { width: 85%; } }
+
+  .ws-grid { flex: 1; display: grid; grid-template-columns: 280px 1fr 300px; min-height: 0; }
+  .ws-panel { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--panel); }
+  .ws-panel.left { border-right: 1px solid var(--border); }
+  .ws-panel.center { background: var(--canvas); }
+  .ws-panel.right { border-left: 1px solid var(--border); }
+
+  .ws-head {
+    padding: 13px 14px 8px;
+    display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+  }
+  .ws-head .title { font-size: 11px; font-weight: 600; letter-spacing: .08em; color: var(--text-mute); text-transform: uppercase; }
+  .ws-head .count { font-size: 11.5px; color: var(--text-mute); font-variant-numeric: tabular-nums; }
+  .ws-body { flex: 1; overflow-y: auto; padding: 0 14px 14px; min-height: 0; }
+
+  /* ----- Captures column ----- */
+  .cap-actions { display: flex; flex-direction: column; gap: 6px; padding: 0 14px 12px; }
+  .cap-actions .btn { width: 100%; justify-content: flex-start; padding: 7px 10px; }
+  .cap-actions .btn.primary { justify-content: center; padding: 9px 10px; }
+  .cap-actions .hint { font-size: 11px; color: var(--text-mute); padding: 4px 2px 0; line-height: 1.35; }
+
+  .cap-list { display: flex; flex-direction: column; gap: 6px; }
+  .cap-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 6px 6px 8px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--panel);
+    box-shadow: var(--shadow-sm);
+    transition: background .12s;
+  }
+  .cap-item:hover { background: var(--surface-hover); }
+  .cap-item.excluded { opacity: .55; background: var(--inset); }
+  .cap-item.excluded .thumb { filter: grayscale(1); }
+
+  .cap-check {
+    width: 16px; height: 16px; border-radius: 4px;
+    border: 1.5px solid var(--border-strong); background: var(--panel);
+    display: grid; place-items: center; cursor: pointer; flex-shrink: 0;
+    font-size: 10px; color: #fff;
+  }
+  .cap-check.on { background: var(--accent); border-color: var(--accent); }
+  .cap-check.on::after { content: "✓"; }
+
+  .cap-item .thumb {
+    width: 34px; height: 68px; border-radius: 5px;
+    background: linear-gradient(180deg, #93c5fd, #3b82f6);
+    flex-shrink: 0; border: 1px solid var(--border-strong);
+  }
+  .cap-item .thumb.black { background: #0a0a0a; }
+  .cap-item .info { flex: 1; min-width: 0; }
+  .cap-item .info .label { font-size: 12px; font-weight: 500; color: var(--text); display: flex; align-items: center; gap: 5px; }
+  .cap-item .info .warn-dot { color: var(--warn); font-size: 10px; cursor: help; }
+  .cap-item .info .meta { font-size: 10.5px; color: var(--text-mute); margin-top: 1px; }
+  .cap-item .x { color: var(--text-mute); cursor: pointer; padding: 4px; font-size: 11px; }
+  .cap-item .x:hover { color: var(--text); }
+
+  .cap-empty {
+    border: 1.5px dashed var(--border-strong); border-radius: 10px;
+    padding: 24px 12px; text-align: center; color: var(--text-mute);
+    font-size: 12px; line-height: 1.5; background: var(--inset);
+  }
+  .cap-empty .arrow { font-size: 18px; margin-bottom: 4px; display: block; }
+
+  .cap-warn-banner {
+    margin-top: 10px; padding: 8px 10px;
+    background: #fff7ed; border: 1px solid #fdba74; color: #9a3412;
+    border-radius: 8px; font-size: 11.5px; line-height: 1.4;
+    display: flex; gap: 6px; align-items: flex-start;
+  }
+  .cap-warn-banner .ic { flex-shrink: 0; }
+
+  /* ----- Sets column ----- */
+  /* Empty state — friendly, focused, no fake-card noise. */
+  .sets-empty {
+    max-width: 560px; margin: 60px auto 0;
+    padding: 36px 32px; text-align: center; color: var(--text-dim);
+    background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+    box-shadow: var(--shadow-sm);
+  }
+  .sets-empty .icon-wrap {
+    width: 72px; height: 72px; margin: 0 auto 16px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, rgba(37,99,235,0.12), rgba(124,58,237,0.12));
+    display: grid; place-items: center;
+    color: var(--accent); font-size: 30px;
+  }
+  .sets-empty h3 { font-size: 17px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+  .sets-empty p { font-size: 13.5px; line-height: 1.55; max-width: 400px; margin: 0 auto; }
+  .sets-empty .steps {
+    display: flex; gap: 8px; justify-content: center; margin-top: 22px; padding-top: 22px;
+    border-top: 1px solid var(--divider);
+  }
+  .sets-empty .step {
+    flex: 1; max-width: 140px; text-align: left;
+    padding: 10px 12px; background: var(--inset); border-radius: 10px;
+    font-size: 11.5px; color: var(--text-dim); line-height: 1.4;
+  }
+  .sets-empty .step strong { display: block; color: var(--text); font-size: 11.5px; font-weight: 600; margin-bottom: 2px; }
+  .sets-empty .step .num { font-size: 10px; color: var(--text-mute); letter-spacing: .08em; font-weight: 600; margin-bottom: 4px; }
+
+  /* Populated — big cards in a grid. 3-thumb strip + "+N" overflow, like the old design
+     but with each card much larger so thumbs are readable as screenshots. */
+  .sets-grid-big {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 16px;
+  }
+
+  .set-card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 16px; cursor: pointer;
+    transition: box-shadow .15s, border-color .15s, transform .15s;
+    box-shadow: var(--shadow-sm);
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .set-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); transform: translateY(-2px); }
+
+  .set-card .strip {
+    display: flex; gap: 8px; align-items: stretch;
+  }
+  .set-card .shot {
+    flex: 1 1 0; min-width: 0;
+    aspect-ratio: 9/19.5;
+    border-radius: 12px; border: 1.5px solid rgba(0,0,0,0.08);
+    background: linear-gradient(135deg, var(--c1, #e5e7eb), var(--c2, #d4d4d8));
+    position: relative; overflow: hidden;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+  }
+
+  .set-card .shot .overlay-head {
+    position: absolute; top: 9%; left: 10%; right: 10%;
+    color: #fff; font-weight: 700; line-height: 1.15;
+    font-size: clamp(10px, 1.1vw, 13px);
+    text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    letter-spacing: -0.01em;
+  }
+  .set-card.on-light .shot .overlay-head { color: var(--text); text-shadow: none; }
+
+  .set-card .shot .mini-phone {
+    position: absolute; bottom: 5%; left: 12%; right: 12%; height: 62%;
+    background: linear-gradient(180deg, #2a2a2e, #141416);
+    border-radius: 12px 12px 3px 3px;
+    border: 1.5px solid rgba(255,255,255,0.14);
+    overflow: hidden;
+  }
+  .set-card .shot .mini-phone::before {
+    content: ""; position: absolute; top: 5%; left: 50%; transform: translateX(-50%);
+    width: 34%; height: 7%; background: #000; border-radius: 999px;
+  }
+  .set-card .shot .mini-phone::after {
+    content: ""; position: absolute; inset: 18% 10% 8%;
+    background:
+      linear-gradient(rgba(255,255,255,0.07), rgba(255,255,255,0.07)) top / 100% 22% no-repeat,
+      linear-gradient(rgba(255,255,255,0.07), rgba(255,255,255,0.07)) center / 100% 22% no-repeat,
+      linear-gradient(rgba(255,255,255,0.07), rgba(255,255,255,0.07)) bottom / 100% 22% no-repeat;
+    border-radius: 4px;
+  }
+  .set-card.on-light .shot .mini-phone {
+    background: linear-gradient(180deg, #424245, #1d1d1f);
+  }
+
+  /* Last visible thumb gets a "+N more" corner chip instead of a dedicated placeholder tile. */
+  .set-card .shot .more-chip {
+    position: absolute; top: 6px; right: 6px;
+    padding: 3px 7px; border-radius: 6px;
+    background: rgba(0, 0, 0, 0.65); color: #fff;
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.01em;
+    backdrop-filter: blur(6px);
+    z-index: 2;
+  }
+  .set-card.on-light .shot .more-chip {
+    background: rgba(0, 0, 0, 0.75);
+  }
+
+  .set-card .shot.failed {
+    background: repeating-linear-gradient(45deg, #fff7ed 0 10px, #ffedd5 10px 20px);
+    border-color: #fdba74;
+    display: grid; place-items: center; color: var(--warn);
+    font-weight: 700; font-size: 22px;
+  }
+  .set-card .shot.failed::before { content: "!"; }
+  .set-card .shot.loading {
+    background: var(--inset);
+    display: grid; place-items: center;
+    border-color: var(--border);
+  }
+  .set-card .shot.loading::before {
+    content: ""; width: 20px; height: 20px; border-radius: 50%;
+    border: 2.5px solid var(--border-strong); border-top-color: var(--accent);
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .set-card .meta {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 0 2px;
+  }
+  .set-card .meta .name { font-weight: 600; font-size: 14px; color: var(--text); }
+  .set-card .meta .cat { font-size: 11.5px; color: var(--text-mute); margin-top: 2px; }
+  .set-card .meta .status { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+  .set-card .meta .status.ok { color: var(--success); }
+  .set-card .meta .status.partial { color: var(--warn); }
+  .set-card .meta .status.loading { color: var(--text-dim); }
+
+  /* ----- Inspector ----- */
+  .insp-section { padding: 0 14px 14px; }
+  .insp-section + .insp-section { border-top: 1px solid var(--divider); padding-top: 14px; }
+  .field { margin-bottom: 12px; }
+  .field label {
+    display: block; font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--text-mute); margin-bottom: 6px; font-weight: 600;
+  }
+  .field input, .field select {
+    width: 100%; background: var(--panel);
+    border: 1px solid var(--border-strong); color: var(--text);
+    padding: 7px 9px; border-radius: 6px; font: inherit;
+    box-shadow: var(--shadow-sm);
+  }
+  .field input:focus, .field select:focus { outline: 2px solid rgba(37,99,235,0.3); outline-offset: -1px; border-color: var(--accent); }
+
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; }
+  .toggle-row .label { font-size: 12.5px; font-weight: 500; color: var(--text); }
+  .toggle-row .hint { font-size: 11px; color: var(--text-mute); margin-top: 2px; line-height: 1.3; }
+  .toggle { position: relative; width: 32px; height: 18px; border-radius: 10px; background: var(--border-strong); cursor: pointer; flex-shrink: 0; transition: background .12s; }
+  .toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: var(--shadow-sm); transition: left .15s; }
+  .toggle.on { background: var(--accent); }
+  .toggle.on::after { left: 16px; }
+
+  .generate-section {
+    padding: 14px; border-top: 1px solid var(--divider); background: var(--panel);
+  }
+  .generate-section .btn { width: 100%; padding: 11px 14px; font-weight: 600; }
+  .generate-section .hint { font-size: 11px; color: var(--text-mute); margin-top: 8px; text-align: center; line-height: 1.4; }
+
+  /* ============== DETAIL SHEET ============== */
+  .sheet-backdrop {
+    position: fixed; inset: 0; background: rgba(15,15,18,0.42);
+    backdrop-filter: blur(4px) saturate(0.95);
+    display: none; z-index: 100;
+    align-items: center; justify-content: center; padding: 32px;
+  }
+  .sheet-backdrop.on { display: flex; animation: sheetFade .22s ease-out both; }
+  @keyframes sheetFade { from { opacity: 0; } to { opacity: 1; } }
+
+  .sheet {
+    position: relative;
+    background: #FAF9F6;                            /* warm paper — not system gray */
+    border-radius: 18px; width: min(1080px, 100%); height: min(880px, 100%);
+    box-shadow: 0 24px 80px rgba(0,0,0,0.22), 0 8px 24px rgba(0,0,0,0.12);
+    display: flex; flex-direction: column; overflow: hidden;
+    animation: sheetPop .28s cubic-bezier(.2,.8,.2,1) both;
+  }
+  @keyframes sheetPop { from { transform: translateY(12px) scale(.985); } to { transform: none; } }
+
+  /* 4pt palette band — brand identity without colonising the canvas */
+  .sheet .palette-strip {
+    height: 4px;
+    background: linear-gradient(90deg,
+      var(--c1, #3b82f6),
+      var(--c2, #1d4ed8) 40%,
+      var(--c1, #3b82f6));
+    flex-shrink: 0;
+  }
+
+  /* Compact header — title + meta on left, inline buttons + close on right */
+  .sheet-head {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+    flex-shrink: 0;
+  }
+  .sheet-head .head-left { min-width: 0; }
+  .sheet-head .title { font-size: 15px; font-weight: 600; color: var(--text); }
+  .sheet-head .meta { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; }
+  .sheet-head .meta .cat-dot {
+    display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--c1, var(--accent)); margin-right: 5px;
+    vertical-align: 1px;
+  }
+  .sheet-head .meta .quote { font-style: italic; }
+  .sheet-head .head-spacer { flex: 1; }
+
+  /* Horizontal scroller — App Store-style preview */
+  .sheet-body {
+    flex: 1; overflow: hidden; min-height: 0;
+    padding: 0;
+    background:
+      radial-gradient(1200px 400px at 50% -20%, rgba(0,0,0,0.025), transparent 70%),
+      #FAF9F6;
+  }
+  .shots-scroller {
+    height: 100%; overflow-x: auto; overflow-y: hidden;
+    padding: 28px 28px 28px;
+    display: flex; gap: 24px; align-items: stretch;
+    scroll-behavior: smooth;
+  }
+  .shots-scroller::-webkit-scrollbar { height: 10px; }
+  .shots-scroller::-webkit-scrollbar-track { background: transparent; }
+  .shots-scroller::-webkit-scrollbar-thumb {
+    background: rgba(0,0,0,0.15); border-radius: 999px;
+    border: 3px solid #FAF9F6;
+  }
+  .shots-scroller::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
+
+  /* Shot column — phone + label + editor */
+  .shot-col {
+    flex: 0 0 auto; width: 260px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+
+  .shot-frame {
+    width: 260px; aspect-ratio: 9/16;
+    border-radius: 24px;
+    background: linear-gradient(135deg, var(--c1, #e5e7eb), var(--c2, #d4d4d8));
+    border: 1px solid rgba(0,0,0,0.06);
+    position: relative; overflow: hidden;
+    box-shadow:
+      0 32px 48px -12px color-mix(in srgb, var(--c1, #3b82f6) 38%, transparent),
+      0 4px 8px rgba(0,0,0,0.10);
+  }
+  .shot-frame .overlay-head {
+    position: absolute; top: 9%; left: 10%; right: 10%;
+    color: #fff; font-weight: 700; line-height: 1.15;
+    font-size: 14px;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.25);
+    letter-spacing: -0.012em;
+  }
+  .shot-col.on-light .shot-frame .overlay-head { color: var(--text); text-shadow: none; }
+  .shot-frame .mini-phone {
+    position: absolute; bottom: 5%; left: 13%; right: 13%; height: 65%;
+    background: linear-gradient(180deg, #2a2a2e, #141416);
+    border-radius: 14px 14px 3px 3px;
+    border: 1.5px solid rgba(255,255,255,0.14);
+    overflow: hidden;
+  }
+  .shot-frame .mini-phone::before {
+    content: ""; position: absolute; top: 4%; left: 50%; transform: translateX(-50%);
+    width: 32%; height: 6%; background: #000; border-radius: 999px;
+  }
+  .shot-frame .mini-phone::after {
+    content: ""; position: absolute; inset: 15% 10% 8%;
+    background:
+      linear-gradient(rgba(255,255,255,0.08), rgba(255,255,255,0.08)) top / 100% 22% no-repeat,
+      linear-gradient(rgba(255,255,255,0.08), rgba(255,255,255,0.08)) center / 100% 22% no-repeat,
+      linear-gradient(rgba(255,255,255,0.08), rgba(255,255,255,0.08)) bottom / 100% 22% no-repeat;
+    border-radius: 4px;
+  }
+  .shot-frame.failed {
+    background: repeating-linear-gradient(45deg, #fff7ed 0 10px, #ffedd5 10px 20px);
+    border-color: #fdba74;
+    display: grid; place-items: center;
+    box-shadow: 0 8px 20px rgba(251,146,60,0.22), 0 2px 6px rgba(0,0,0,0.06);
+  }
+  .shot-frame.failed .failed-tag {
+    background: #fff; padding: 8px 12px; border-radius: 8px; color: var(--warn);
+    font-size: 11px; font-weight: 600; border: 1px solid #fdba74;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+
+  /* Label row below phone — 01 [captureLabel] ... 👁 📁 */
+  .shot-label {
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 4px;
+  }
+  .shot-label .index {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.03em;
+    color: rgba(0,0,0,0.55);
+  }
+  .shot-label .name {
+    font-size: 11px; font-weight: 500; color: rgba(0,0,0,0.80);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+  }
+  .shot-label .sp { flex: 1; }
+  .shot-label .icon-btn {
+    width: 22px; height: 22px; border-radius: 5px; background: transparent; border: 0;
+    display: grid; place-items: center; cursor: pointer;
+    color: var(--text-mute); font-size: 11px;
+  }
+  .shot-label .icon-btn:hover { background: rgba(0,0,0,0.05); color: var(--text); }
+
+  /* Inline copy editor — direct manipulation under the phone */
+  .copy-editor {
+    background: #ffffff; border: 1px solid rgba(0,0,0,0.08); border-radius: 10px;
+    padding: 10px; display: flex; flex-direction: column; gap: 7px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  }
+  .copy-editor .ce-field { display: flex; flex-direction: column; gap: 4px; }
+  .copy-editor .ce-label {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
+    color: var(--text-mute); text-transform: uppercase;
+  }
+  .copy-editor .ce-input {
+    width: 100%; background: #FAF9F6;
+    border: 1px solid rgba(0,0,0,0.08); border-radius: 6px;
+    padding: 6px 8px; font: inherit; font-size: 12px; color: var(--text);
+    transition: border-color .12s, box-shadow .12s;
+  }
+  .copy-editor .ce-input::placeholder { color: var(--text-mute); }
+  .copy-editor .ce-input:focus {
+    outline: none;
+    border-color: var(--c1, var(--accent));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--c1, var(--accent)) 18%, transparent);
+  }
+  .copy-editor .ce-regen-row {
+    display: flex; align-items: center; gap: 8px;
+    padding-top: 2px;
+  }
+  .copy-editor .ce-fallback {
+    font-size: 10.5px; color: var(--text-mute);
+  }
+  .copy-editor .ce-regen-row .sp { flex: 1; }
+  .copy-editor .ce-regen {
+    padding: 4px 10px; font-size: 11px; font-weight: 500;
+    border: 1px solid rgba(0,0,0,0.14); border-radius: 6px;
+    background: #fff; color: var(--text); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .copy-editor .ce-regen:hover { background: #f5f5f7; }
+
+  /* Footer — minimal with hairline top */
+  .sheet-foot {
+    padding: 14px 28px;
+    display: flex; gap: 12px; align-items: center;
+    border-top: 1px solid rgba(0,0,0,0.06);
+    background: #FAF9F6; flex-shrink: 0;
+  }
+  .sheet-foot .foot-icon { color: var(--text-mute); font-size: 12px; }
+  .sheet-foot .note { flex: 1; font-size: 11.5px; color: var(--text-dim); }
+  .sheet-foot .change-locale {
+    background: transparent; border: 0; cursor: pointer;
+    color: var(--accent); font: inherit; font-size: 11.5px; font-weight: 500;
+    padding: 4px 6px;
+  }
+  .sheet-foot .change-locale:hover { text-decoration: underline; }
+
+  /* Tooltip */
+  [data-tooltip] { position: relative; }
+  [data-tooltip]:hover::after {
+    content: attr(data-tooltip);
+    position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+    background: #1d1d1f; color: #fff; padding: 5px 9px; border-radius: 6px;
+    font-size: 11px; white-space: nowrap; z-index: 20; font-weight: 400;
+  }
+
+  /* state switcher */
+  .switcher {
+    position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+    background: #1d1d1f; color: #fff; border-radius: 999px; padding: 5px;
+    display: flex; gap: 3px; z-index: 200; box-shadow: var(--shadow-lg);
+  }
+  .switcher button {
+    padding: 6px 12px; border: 0; background: transparent; color: rgba(255,255,255,0.65);
+    cursor: pointer; border-radius: 999px; font-size: 11px; font-weight: 500;
+  }
+  .switcher button.on { background: var(--accent); color: #fff; }
+
+  /* palettes */
+  .c-bold { --c1:#3b82f6; --c2:#1d4ed8; }
+  .c-minimal { --c1:#ffffff; --c2:#f4f4f5; }
+  .c-minimal .head, .c-minimal .sub { color: var(--text) !important; }
+  .c-elegant { --c1:#475569; --c2:#1e293b; }
+  .c-playful { --c1:#fb923c; --c2:#ef4444; }
+  .c-pro { --c1:#10b981; --c2:#064e3b; }
+  .c-show { --c1:#a78bfa; --c2:#6d28d9; }
+  .c-midnight { --c1:#27272a; --c2:#09090b; }
+  .c-sunset { --c1:#f472b6; --c2:#c2410c; }
+</style>
+</head>
+<body>
+
+<div class="window">
+  <aside class="sidebar">
+    <div class="group">Projects</div>
+    <div class="item"><span class="dot"></span>Dashboard</div>
+    <div class="item active"><span class="dot"></span>demo</div>
+    <div class="group">Release</div>
+    <div class="item"><span class="dot"></span>App Information</div>
+    <div class="item"><span class="dot"></span>Screenshots</div>
+    <div class="group">TestFlight</div>
+    <div class="item"><span class="dot"></span>Builds</div>
+    <div class="item"><span class="dot"></span>Groups</div>
+  </aside>
+
+  <main class="main">
+    <div class="tabbar">
+      <div class="tab">Overview</div>
+      <div class="tab">Simulator</div>
+      <div class="tab">Tests</div>
+      <div class="tab">Icon</div>
+      <div class="tab on">App Shots</div>
+    </div>
+
+    <!-- HERO -->
+    <div class="hero-stage" id="hero-stage" style="display:none;">
+      <span class="badge">✦ No screenshot sets yet</span>
+      <h1>Build your App Store screenshots in one session</h1>
+      <p>Capture a few screens from your simulator, write one headline — we lay them into 8 polished template sets you can ship.</p>
+      <button class="cta" onclick="go('workspace-empty')">Get started →</button>
+      <div class="meta">About 1 minute · device frames included · always editable</div>
+      <div class="tiles">
+        <div class="tile"><div class="n">01 CAPTURE</div><div class="t">Screens from your sim</div><div class="d">Capture or Record while you tap through your app. Uploading PNGs works too.</div></div>
+        <div class="tile"><div class="n">02 FRAME & WRITE</div><div class="t">Frame + per-template copy</div><div class="d">Auto device-frame; subtitles vary so the 8 sets actually feel distinct.</div></div>
+        <div class="tile"><div class="n">03 SHIP</div><div class="t">One click to ASC</div><div class="d">Pick a set, upload straight to App Store Connect as your locale's screenshots.</div></div>
+      </div>
+    </div>
+
+    <!-- WORKSPACE -->
+    <div class="workspace" id="workspace">
+      <div class="ws-toolbar">
+        <div class="crumbs">
+          <strong>demo</strong>
+          <span class="sep">·</span>
+          <span class="context">App Shots</span>
+        </div>
+        <span class="pill" id="status-pill">
+          <span class="dot"></span>
+          <span id="status-text">Ready · 0 captures</span>
+        </span>
+        <div class="spacer"></div>
+        <button class="btn sm" id="upload-btn" style="display:none;">↗ Upload to ASC</button>
+        <button class="btn sm" id="folder-btn" style="display:none;">📁 Show folder</button>
+        <button class="btn sm ghost">↻ Reset</button>
+      </div>
+
+      <div class="progress-strip" id="progress-strip" style="display:none;"><div></div></div>
+
+      <div class="ws-grid">
+        <!-- LEFT -->
+        <aside class="ws-panel left">
+          <div class="ws-head">
+            <div class="title">Captures</div>
+            <div class="count"><span id="cap-active">0</span> of <span id="cap-total">0</span> active</div>
+          </div>
+          <div class="cap-actions">
+            <button class="btn primary">📷 Capture screen</button>
+            <button class="btn">● Record flow</button>
+            <button class="btn">↥ Upload PNGs</button>
+            <div class="hint">Uncheck a capture to skip it during generation.</div>
+          </div>
+          <div class="ws-body">
+            <div id="cap-list" class="cap-list"></div>
+            <div id="cap-empty" class="cap-empty">
+              <span class="arrow">↑</span>
+              No captures yet —<br/>start with <b>Capture screen</b> above.
+            </div>
+            <div id="cap-warn" class="cap-warn-banner" style="display:none;">
+              <span class="ic">⚠</span>
+              <span><b>2 captures look blank.</b> They've been auto-excluded. Uncheck the warning icon to include them anyway.</span>
+            </div>
+          </div>
+        </aside>
+
+        <!-- CENTER -->
+        <section class="ws-panel center">
+          <div class="ws-head">
+            <div class="title">Screenshot sets</div>
+            <div class="count" id="sets-count">0 of 8 sets</div>
+          </div>
+          <div class="ws-body">
+            <div id="sets-empty" class="sets-empty">
+              <div class="icon-wrap">✦</div>
+              <h3>Your 8 sets will appear here</h3>
+              <p>Capture screens on the left and pick a headline on the right — we'll render 8 polished template sets in about a minute.</p>
+              <div class="steps">
+                <div class="step"><div class="num">01</div><strong>Capture</strong>Screens from your simulator.</div>
+                <div class="step"><div class="num">02</div><strong>Write</strong>One headline for all sets.</div>
+                <div class="step"><div class="num">03</div><strong>Generate</strong>8 ready-to-ship sets.</div>
+              </div>
+            </div>
+            <div id="sets-grid" class="sets-grid-big" style="display:none;"></div>
+          </div>
+        </section>
+
+        <!-- RIGHT -->
+        <aside class="ws-panel right">
+          <div class="ws-head">
+            <div class="title">Inspector</div>
+          </div>
+          <div class="ws-body" style="padding-top: 0;">
+            <div class="insp-section">
+              <div class="field">
+                <label>Headline</label>
+                <input id="headline" value="Plan your day in seconds" />
+              </div>
+              <div class="field">
+                <label>Subtitle · varies if blank</label>
+                <input placeholder="Optional" />
+              </div>
+            </div>
+            <div class="insp-section">
+              <div class="toggle-row">
+                <div>
+                  <div class="label">Apply device frame</div>
+                  <div class="hint">Wrap each capture in an iPhone bezel.</div>
+                </div>
+                <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+              </div>
+              <div class="field" style="margin-top: 10px;">
+                <label>Device</label>
+                <select>
+                  <option>iPhone 17 Pro Max</option>
+                  <option>iPhone 17 Pro</option>
+                  <option>iPhone 17</option>
+                  <option>iPhone Air</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="generate-section">
+            <button class="btn primary" id="generate-btn" onclick="simulateGenerate()">✦ Generate 8 sets</button>
+            <div class="hint" id="generate-hint">Add at least one capture to start.</div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Detail sheet -->
+<div class="sheet-backdrop" id="sheet-backdrop" onclick="if(event.target===this)closeSheet()">
+  <div class="sheet" id="sheet">
+    <div class="palette-strip"></div>
+
+    <div class="sheet-head">
+      <div class="head-left">
+        <div class="title" id="sheet-title">Bold Gradient</div>
+        <div class="meta">
+          <span class="cat-dot"></span>
+          <span id="sheet-cat">Bold</span>
+          ·
+          <span id="sheet-count">8 shots</span>
+          ·
+          <span class="quote">“<span id="sheet-headline">Plan your day in seconds</span>”</span>
+        </div>
+      </div>
+      <div class="head-spacer"></div>
+      <button class="btn sm">📁 Show in Finder</button>
+      <button class="btn sm primary">↗ Upload to ASC</button>
+      <button class="btn sm ghost" onclick="closeSheet()">✕</button>
+    </div>
+
+    <div class="sheet-body">
+      <div class="shots-scroller" id="sheet-shots"></div>
+    </div>
+
+    <div class="sheet-foot">
+      <span class="foot-icon">↗</span>
+      <div class="note">Uploading sends these <b id="sheet-foot-count">8</b> PNGs to the <b>en-US</b> locale in App Store Connect.</div>
+      <button class="change-locale">Change locale</button>
+    </div>
+  </div>
+</div>
+
+<!-- state switcher -->
+<div class="switcher">
+  <button data-s="hero" onclick="go('hero')">1 · Hero</button>
+  <button class="on" data-s="workspace-empty" onclick="go('workspace-empty')">2 · Empty</button>
+  <button data-s="workspace-captured" onclick="go('workspace-captured')">3 · With captures</button>
+  <button data-s="workspace-generating" onclick="go('workspace-generating')">4 · Generating</button>
+  <button data-s="workspace-done" onclick="go('workspace-done')">5 · Done</button>
+  <button data-s="sheet" onclick="go('workspace-done');openSheet()">6 · Set detail</button>
+</div>
+
+<script>
+const TEMPLATES = [
+  { name: "Bold Gradient", cat: "Bold", cls: "c-bold", light: false, sub: "Move fast. Finish strong." },
+  { name: "Minimal Light", cat: "Minimal", cls: "c-minimal", light: true, sub: "Less noise. More focus." },
+  { name: "Elegant Serif", cat: "Elegant", cls: "c-elegant", light: false, sub: "A calmer way to work." },
+  { name: "Playful Pop", cat: "Playful", cls: "c-playful", light: false, sub: "Your day, but way better." },
+  { name: "Professional", cat: "Professional", cls: "c-pro", light: false, sub: "Reliable, fast, measurable." },
+  { name: "Showcase", cat: "Showcase", cls: "c-show", light: false, sub: "Beautifully yours." },
+  { name: "Midnight", cat: "Bold", cls: "c-midnight", light: false, sub: "Quiet power, everyday." },
+  { name: "Sunset", cat: "Playful", cls: "c-sunset", light: false, sub: "Finish strong." }
+];
+
+// captures shape: [{ label, kb, black, included, warn }]
+const SAMPLE_CAPTURES = [
+  { label: "Screen 1", kb: 63, black: true, included: false, warn: "Looks nearly blank — auto-excluded." },
+  { label: "Screen 2", kb: 64, black: true, included: false, warn: "Looks nearly blank — auto-excluded." },
+  { label: "Screen 3", kb: 3214, black: false, included: true },
+  { label: "Screen 4", kb: 3220, black: false, included: true },
+  { label: "Screen 5", kb: 3199, black: false, included: true },
+  { label: "Screen 6", kb: 3208, black: false, included: true },
+  { label: "Screen 7", kb: 3225, black: false, included: true },
+  { label: "Screen 8", kb: 3216, black: false, included: true }
+];
+
+function renderCaptures(list) {
+  const el = document.getElementById('cap-list');
+  const empty = document.getElementById('cap-empty');
+  const warn = document.getElementById('cap-warn');
+  el.innerHTML = '';
+  if (list.length === 0) { empty.style.display = 'block'; warn.style.display = 'none'; return; }
+  empty.style.display = 'none';
+  const anyBlack = list.some(c => c.black);
+  warn.style.display = anyBlack ? 'flex' : 'none';
+
+  list.forEach((c, i) => {
+    const item = document.createElement('div');
+    item.className = 'cap-item' + (c.included ? '' : ' excluded');
+    item.innerHTML = `
+      <div class="cap-check${c.included ? ' on' : ''}" onclick="toggleCapture(${i})"></div>
+      <div class="thumb${c.black ? ' black' : ''}"></div>
+      <div class="info">
+        <div class="label">
+          ${c.label}
+          ${c.warn ? `<span class="warn-dot" data-tooltip="${c.warn}">⚠</span>` : ''}
+        </div>
+        <div class="meta">${c.kb >= 1000 ? (c.kb/1024).toFixed(1) + ' MB' : c.kb + ' KB'} · just now</div>
+      </div>
+      <div class="x">✕</div>
+    `;
+    el.appendChild(item);
+  });
+
+  const active = list.filter(c => c.included).length;
+  document.getElementById('cap-active').textContent = active;
+  document.getElementById('cap-total').textContent = list.length;
+  updateStatusPill('ready', active);
+  document.getElementById('generate-btn').disabled = active === 0;
+  document.getElementById('generate-hint').textContent = active === 0
+    ? 'Add at least one capture to start.'
+    : `Will render 8 templates × ${active} captures = ${active * 8} screenshots.`;
+}
+
+function toggleCapture(i) {
+  SAMPLE_CAPTURES[i].included = !SAMPLE_CAPTURES[i].included;
+  renderCaptures(SAMPLE_CAPTURES);
+}
+
+function updateStatusPill(kind, detail) {
+  const pill = document.getElementById('status-pill');
+  const text = document.getElementById('status-text');
+  pill.className = 'pill';
+  if (kind === 'ready') {
+    text.textContent = `Ready · ${detail} active`;
+  } else if (kind === 'gen') {
+    pill.classList.add('gen');
+    text.textContent = `Generating · ${detail.done} of ${detail.total}`;
+  } else if (kind === 'done') {
+    pill.classList.add('done');
+    text.textContent = `${detail.done} of ${detail.total} sets ready`;
+  }
+}
+
+function renderSets(state, includedCount) {
+  const empty = document.getElementById('sets-empty');
+  const grid = document.getElementById('sets-grid');
+  const count = document.getElementById('sets-count');
+  const progress = document.getElementById('progress-strip');
+  const uploadBtn = document.getElementById('upload-btn');
+  const folderBtn = document.getElementById('folder-btn');
+
+  if (state === 'empty') {
+    empty.style.display = 'block';
+    grid.style.display = 'none';
+    count.textContent = '0 of 8 sets';
+    progress.style.display = 'none';
+    uploadBtn.style.display = 'none';
+    folderBtn.style.display = 'none';
+    return;
+  }
+
+  empty.style.display = 'none';
+  grid.style.display = 'grid';
+  grid.innerHTML = '';
+
+  const headline = document.getElementById('headline').value || 'Plan your day in seconds';
+  const doneCount = state === 'generating' ? 5 : 8;
+  const failures = state === 'done' ? { 'Playful Pop': 2, 'Showcase': 1 } : {};
+  const totalRenders = 8 * includedCount;
+  const doneRenders = state === 'generating' ? Math.floor(totalRenders * 0.55) : totalRenders - 3;
+
+  const INLINE = 3; // show up to 3 thumbs; remaining count goes into a corner chip on the last thumb
+  TEMPLATES.forEach((t, i) => {
+    const isDone = i < doneCount;
+    const failedCount = failures[t.name] || 0;
+    const readyFor = isDone ? (includedCount - failedCount) : 0;
+    const card = document.createElement('div');
+    card.className = `set-card ${t.cls}${t.light ? ' on-light' : ''}`;
+    card.onclick = () => { if (state === 'done') openSheet(t); };
+
+    const visibleCount = Math.min(INLINE, includedCount);
+    const overflow = includedCount - visibleCount;
+    let shots = '';
+    for (let s = 0; s < visibleCount; s++) {
+      const isLast = (s === visibleCount - 1);
+      const chip = (isLast && overflow > 0) ? `<div class="more-chip">+${overflow}</div>` : '';
+      if (!isDone) {
+        shots += `<div class="shot loading">${chip}</div>`;
+      } else if (s >= visibleCount - failedCount) {
+        shots += `<div class="shot failed" data-tooltip="Render failed — click to retry">${chip}</div>`;
+      } else {
+        shots += `<div class="shot"><div class="overlay-head">${headline}</div><div class="mini-phone"></div>${chip}</div>`;
+      }
+    }
+
+    let status;
+    if (!isDone) status = `<div class="status loading">rendering…</div>`;
+    else if (failedCount) status = `<div class="status partial" data-tooltip="${failedCount} failed — click to retry">${readyFor}/${includedCount}</div>`;
+    else status = `<div class="status ok">✓ ready</div>`;
+
+    card.innerHTML = `
+      <div class="strip">${shots}</div>
+      <div class="meta">
+        <div>
+          <div class="name">${t.name}</div>
+          <div class="cat">${t.cat} · ${includedCount} shots</div>
+        </div>
+        ${status}
+      </div>
+    `;
+    grid.appendChild(card);
+  });
+
+  if (state === 'generating') {
+    updateStatusPill('gen', { done: doneRenders, total: totalRenders });
+    count.textContent = `${doneCount} of 8 sets`;
+    progress.style.display = 'block';
+  } else {
+    const readySets = 8 - Object.keys(failures).length;
+    updateStatusPill('done', { done: readySets, total: 8 });
+    count.textContent = `${readySets} of 8 sets`;
+    progress.style.display = 'none';
+    uploadBtn.style.display = 'inline-flex';
+    folderBtn.style.display = 'inline-flex';
+  }
+}
+
+function openSheet(template) {
+  const t = template || TEMPLATES[0];
+  const headline = document.getElementById('headline').value || 'Plan your day in seconds';
+  const included = SAMPLE_CAPTURES.filter(c => c.included);
+
+  // Tokens so the whole sheet inherits the palette (strip, shadows, focus rings)
+  const sheet = document.getElementById('sheet');
+  sheet.classList.remove(...Array.from(sheet.classList).filter(c => c.startsWith('c-')));
+  sheet.classList.remove('on-light');
+  sheet.classList.add(t.cls);
+  if (t.light) sheet.classList.add('on-light');
+
+  document.getElementById('sheet-title').textContent = t.name;
+  document.getElementById('sheet-cat').textContent = t.cat;
+  document.getElementById('sheet-count').textContent = `${included.length} shot${included.length === 1 ? '' : 's'}`;
+  document.getElementById('sheet-headline').textContent = headline;
+  document.getElementById('sheet-foot-count').textContent = included.length;
+
+  const scroller = document.getElementById('sheet-shots');
+  scroller.innerHTML = '';
+
+  included.forEach((cap, i) => {
+    const isFailed = (t.name === 'Playful Pop' && i >= included.length - 2);
+    const col = document.createElement('div');
+    col.className = `shot-col ${t.cls}${t.light ? ' on-light' : ''}`;
+    const idx = String(i + 1).padStart(2, '0');
+
+    const frame = isFailed
+      ? `<div class="shot-frame failed"><div class="failed-tag">⚠ Render failed</div></div>`
+      : `<div class="shot-frame">
+           <div class="overlay-head">${headline}</div>
+           <div class="mini-phone"></div>
+         </div>`;
+
+    const actions = isFailed
+      ? `<button class="icon-btn" data-tooltip="Retry render">↻</button>`
+      : `<button class="icon-btn" data-tooltip="Preview">👁</button>
+         <button class="icon-btn" data-tooltip="Show in Finder">📁</button>`;
+
+    col.innerHTML = `
+      ${frame}
+      <div class="shot-label">
+        <span class="index">${idx}</span>
+        <span class="name">${cap.label}</span>
+        <span class="sp"></span>
+        ${actions}
+      </div>
+      <div class="copy-editor">
+        <div class="ce-field">
+          <label class="ce-label">Headline</label>
+          <input class="ce-input" value="${i === 0 ? headline : ''}" placeholder="${headline}" />
+        </div>
+        <div class="ce-field">
+          <label class="ce-label">Subtitle · varies if blank</label>
+          <input class="ce-input" placeholder="Optional" />
+        </div>
+        <div class="ce-regen-row">
+          <span class="ce-fallback">${i === 0 ? '' : 'Falls back to default'}</span>
+          <span class="sp"></span>
+          <button class="ce-regen">↻ Regenerate</button>
+        </div>
+      </div>
+    `;
+    scroller.appendChild(col);
+  });
+
+  document.getElementById('sheet-backdrop').classList.add('on');
+}
+function closeSheet() { document.getElementById('sheet-backdrop').classList.remove('on'); }
+
+function simulateGenerate() {
+  go('workspace-generating');
+  setTimeout(() => go('workspace-done'), 1400);
+}
+
+function go(state) {
+  const isHero = state === 'hero';
+  document.getElementById('hero-stage').style.display = isHero ? 'flex' : 'none';
+  document.getElementById('workspace').style.display = isHero ? 'none' : 'flex';
+  document.querySelectorAll('.switcher button').forEach(b => b.classList.toggle('on', b.dataset.s === state));
+
+  if (state === 'hero' || state === 'workspace-empty') {
+    renderCaptures([]);
+    renderSets('empty', 0);
+  } else {
+    renderCaptures(SAMPLE_CAPTURES);
+    const included = SAMPLE_CAPTURES.filter(c => c.included).length;
+    if (state === 'workspace-captured') renderSets('empty', 0);
+    else if (state === 'workspace-generating') renderSets('generating', included);
+    else if (state === 'workspace-done') renderSets('done', included);
+  }
+}
+
+go('workspace-empty');
+</script>
+</body>
+</html>

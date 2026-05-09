@@ -1,0 +1,202 @@
+{
+  "iPhone 11 Pro Max": {
+    "outputWidth": 1463,
+    "outputHeight": 2888,
+    "screenInsetX": 110,
+    "screenInsetY": 100,
+    "screenInsetTop": 100,
+    "screenInsetBottom": 100
+  },
+  "iPhone 11 Pro": {
+    "outputWidth": 1365,
+    "outputHeight": 2656,
+    "screenInsetX": 120,
+    "screenInsetY": 110,
+    "screenInsetTop": 110,
+    "screenInsetBottom": 110
+  },
+  "iPhone 11": {
+    "outputWidth": 1008,
+    "outputHeight": 1952,
+    "screenInsetX": 90,
+    "screenInsetY": 80,
+    "screenInsetTop": 80,
+    "screenInsetBottom": 80
+  },
+  "iPhone 12 Mini": {
+    "outputWidth": 1325,
+    "outputHeight": 2616,
+    "screenInsetX": 122,
+    "screenInsetY": 138,
+    "screenInsetTop": 138,
+    "screenInsetBottom": 138
+  },
+  "iPhone 12 Pro Max": {
+    "outputWidth": 1484,
+    "outputHeight": 2978,
+    "screenInsetX": 100,
+    "screenInsetY": 100,
+    "screenInsetTop": 100,
+    "screenInsetBottom": 100
+  },
+  "iPhone 12 Pro": {
+    "outputWidth": 1370,
+    "outputHeight": 2712,
+    "screenInsetX": 100,
+    "screenInsetY": 90,
+    "screenInsetTop": 90,
+    "screenInsetBottom": 90
+  },
+  "iPhone 12": {
+    "outputWidth": 1370,
+    "outputHeight": 2712,
+    "screenInsetX": 100,
+    "screenInsetY": 90,
+    "screenInsetTop": 90,
+    "screenInsetBottom": 90
+  },
+  "iPhone 13 Pro Max": {
+    "outputWidth": 1500,
+    "outputHeight": 3000,
+    "screenInsetX": 108,
+    "screenInsetY": 111,
+    "screenInsetTop": 111,
+    "screenInsetBottom": 111
+  },
+  "iPhone 13 Pro": {
+    "outputWidth": 1400,
+    "outputHeight": 2700,
+    "screenInsetX": 115,
+    "screenInsetY": 84,
+    "screenInsetTop": 84,
+    "screenInsetBottom": 84
+  },
+  "iPhone 14 Plus": {
+    "outputWidth": 1464,
+    "outputHeight": 2978,
+    "screenInsetX": 90,
+    "screenInsetY": 100,
+    "screenInsetTop": 100,
+    "screenInsetBottom": 100
+  },
+  "iPhone 14 Pro Max": {
+    "outputWidth": 1450,
+    "outputHeight": 2936,
+    "screenInsetX": 80,
+    "screenInsetY": 70,
+    "screenInsetTop": 70,
+    "screenInsetBottom": 70
+  },
+  "iPhone 14 Pro": {
+    "outputWidth": 1339,
+    "outputHeight": 2716,
+    "screenInsetX": 80,
+    "screenInsetY": 80,
+    "screenInsetTop": 80,
+    "screenInsetBottom": 80
+  },
+  "iPhone 14": {
+    "outputWidth": 1370,
+    "outputHeight": 2732,
+    "screenInsetX": 100,
+    "screenInsetY": 100,
+    "screenInsetTop": 100,
+    "screenInsetBottom": 100
+  },
+  "iPhone 15 Plus": {
+    "outputWidth": 1530,
+    "outputHeight": 3036,
+    "screenInsetX": 120,
+    "screenInsetY": 120,
+    "screenInsetTop": 120,
+    "screenInsetBottom": 120
+  },
+  "iPhone 15 Pro Max": {
+    "outputWidth": 1530,
+    "outputHeight": 3036,
+    "screenInsetX": 120,
+    "screenInsetY": 120,
+    "screenInsetTop": 120,
+    "screenInsetBottom": 120
+  },
+  "iPhone 15 Pro": {
+    "outputWidth": 1419,
+    "outputHeight": 2796,
+    "screenInsetX": 120,
+    "screenInsetY": 120,
+    "screenInsetTop": 120,
+    "screenInsetBottom": 120
+  },
+  "iPhone 15": {
+    "outputWidth": 1419,
+    "outputHeight": 2796,
+    "screenInsetX": 120,
+    "screenInsetY": 120,
+    "screenInsetTop": 120,
+    "screenInsetBottom": 120
+  },
+  "iPhone 16": {
+    "outputWidth": 1359,
+    "outputHeight": 2736,
+    "screenInsetX": 90,
+    "screenInsetY": 90,
+    "screenInsetTop": 102,
+    "screenInsetBottom": 102
+  },
+  "iPhone 16 Plus": {
+    "outputWidth": 1470,
+    "outputHeight": 2970,
+    "screenInsetX": 90,
+    "screenInsetY": 87,
+    "screenInsetTop": 99,
+    "screenInsetBottom": 99
+  },
+  "iPhone 16 Pro": {
+    "outputWidth": 1350,
+    "outputHeight": 2760,
+    "screenInsetX": 72,
+    "screenInsetY": 69,
+    "screenInsetTop": 81,
+    "screenInsetBottom": 81
+  },
+  "iPhone 16 Pro Max": {
+    "outputWidth": 1470,
+    "outputHeight": 3000,
+    "screenInsetX": 75,
+    "screenInsetY": 66,
+    "screenInsetTop": 79,
+    "screenInsetBottom": 79
+  },
+  "iPhone 17": {
+    "outputWidth": 1350,
+    "outputHeight": 2760,
+    "screenInsetX": 85,
+    "screenInsetY": 102,
+    "screenInsetTop": 81,
+    "screenInsetBottom": 81
+  },
+  "iPhone 17 Pro": {
+    "outputWidth": 1350,
+    "outputHeight": 2760,
+    "screenInsetX": 72,
+    "screenInsetY": 69,
+    "screenInsetTop": 81,
+    "screenInsetBottom": 81
+  },
+  "iPhone 17 Pro Max": {
+    "outputWidth": 1470,
+    "outputHeight": 3000,
+    "screenInsetX": 75,
+    "screenInsetY": 66,
+    "screenInsetTop": 80,
+    "screenInsetBottom": 79
+  },
+  "iPhone Air": {
+    "outputWidth": 1380,
+    "outputHeight": 2880,
+    "screenInsetX": 87,
+    "screenInsetY": 129,
+    "screenInsetTop": 81,
+    "screenInsetBottom": 81
+  }
+}
