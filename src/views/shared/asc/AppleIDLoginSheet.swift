@@ -53,9 +53,22 @@ struct ASCWebView: NSViewRepresentable {
     @Binding var isLoading: Bool
     var onSessionCaptured: (IrisSession) -> Void
 
+    // A stable, app-scoped (not shared with Safari) *persistent* data store.
+    // This used to be `.nonPersistent()`, which discards all cookies —
+    // including Apple's own "remember this device" trust cookie — the
+    // instant the sheet closes. That forced Apple ID's 2FA to re-verify
+    // (and re-show "Trust This Browser") on *every single* sign-in, and
+    // checking that box could never have any effect, since there was
+    // nothing left afterward for it to persist into. Using a persistent,
+    // identifier-scoped store lets the WebView remember the ASC session
+    // (and Apple's device trust) across launches like a normal browser
+    // would, while keeping it fully isolated from the user's actual Safari
+    // data. The cookie-capture flow below is unchanged.
+    private static let persistentStoreID = UUID(uuidString: "6F1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C4D")!
+
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
-        config.websiteDataStore = .nonPersistent()
+        config.websiteDataStore = WKWebsiteDataStore(forIdentifier: Self.persistentStoreID)
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
