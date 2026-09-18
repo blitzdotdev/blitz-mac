@@ -198,9 +198,13 @@ extension ASCManager {
 
     // MARK: - Subscription Creation
 
-    func createSubscription(groupName: String, name: String, productId: String, displayName: String, description: String?, duration: String, price: String, screenshotPath: String? = nil) {
+    func createSubscription(groupName: String? = nil, groupId: String? = nil, name: String, productId: String, displayName: String, description: String?, duration: String, price: String, screenshotPath: String? = nil) {
         guard let service else { return }
         guard let appId = app?.id else { return }
+        guard groupId != nil || groupName != nil else {
+            writeError = "A subscription group ID or name is required."
+            return
+        }
         let startedAt = Date()
         writeError = nil
         isCreating = true
@@ -212,15 +216,26 @@ extension ASCManager {
             do {
                 createProgress = 0.03
                 let group: ASCSubscriptionGroup
-                if let existing = subscriptionGroups.first(where: { $0.attributes.referenceName == groupName }) {
+                let groups = try await service.fetchSubscriptionGroups(appId: appId)
+                if let groupId,
+                   let existing = groups.first(where: { $0.id == groupId }) {
+                    group = existing
+                } else if let groupName,
+                          let existing = groups.first(where: { $0.attributes.referenceName == groupName }) {
                     let groupLocs = try await service.fetchSubscriptionGroupLocalizations(groupId: existing.id)
                     if groupLocs.isEmpty {
                         try await service.localizeSubscriptionGroup(groupId: existing.id, locale: "en-US", name: groupName)
                     }
                     group = existing
-                } else {
+                } else if let groupName {
                     group = try await service.createSubscriptionGroup(appId: appId, referenceName: groupName)
                     try await service.localizeSubscriptionGroup(groupId: group.id, locale: "en-US", name: groupName)
+                } else {
+                    throw NSError(
+                        domain: "ASCMonetization",
+                        code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: "Subscription group \(groupId ?? "") was not found."]
+                    )
                 }
 
                 createProgressMessage = "Creating subscription…"

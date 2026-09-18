@@ -166,11 +166,12 @@ Create an in-app purchase. Creates the IAP, adds en-US localization, and sets th
 
 ### asc_create_subscription
 
-Create an auto-renewable subscription. Creates or reuses a subscription group.
+Create an auto-renewable subscription. Pass `groupId` to add it to an existing subscription group, or `groupName` to create/reuse a group by reference name.
 
 | param | type | required | notes |
 |---|---|---|---|
-| groupName | string | yes | Subscription group name (created if doesn't exist) |
+| groupId | string | one of groupId/groupName | Existing App Store Connect subscription group ID; preferred when adding to an existing group |
+| groupName | string | one of groupId/groupName | Subscription group reference name (created if it doesn't exist) |
 | productId | string | yes | Unique product identifier |
 | name | string | yes | Internal reference name |
 | displayName | string | yes | User-facing display name (en-US) |
