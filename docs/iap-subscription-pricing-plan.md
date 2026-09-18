@@ -57,7 +57,7 @@ This avoids changing any existing callers.
 | Tool | Required Params | Key Enums |
 |------|----------------|-----------|
 | `asc_create_iap` | productId, name, type, displayName, price | type: CONSUMABLE, NON_CONSUMABLE, NON_RENEWING_SUBSCRIPTION |
-| `asc_create_subscription` | groupName, productId, name, displayName, duration, price | duration: ONE_WEEK..ONE_YEAR |
+| `asc_create_subscription` | groupId or groupName, productId, name, displayName, duration, price | `groupId` adds to an existing group; duration: ONE_WEEK..ONE_YEAR |
 | `asc_set_app_price` | price | — |
 
 **B) Add category mapping** (in `category(for:)` at line ~469):

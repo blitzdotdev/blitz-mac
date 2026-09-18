@@ -32,6 +32,15 @@ struct MCPRegistryCompatibilityTests {
         #expect(properties["bundleId"] != nil)
     }
 
+    @Test func ascCreateSubscriptionSupportsExistingGroupId() throws {
+        let tools = MCPRegistry.allTools()
+        let createSubscription = try #require(tool(named: "asc_create_subscription", in: tools))
+        let schema = try #require(createSubscription["inputSchema"] as? [String: Any])
+        let properties = try #require(schema["properties"] as? [String: Any])
+        #expect(properties["groupId"] != nil)
+        #expect((schema["required"] as? [String])?.contains("groupName") == false)
+    }
+
     @Test func screenshotRegistryUsesDirectTrackTools() {
         let tools = MCPRegistry.allTools()
         #expect(tool(named: "screenshots_add_asset", in: tools) == nil)

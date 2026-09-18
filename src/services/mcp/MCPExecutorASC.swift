@@ -1442,14 +1442,18 @@ extension MCPExecutor {
     }
 
     func executeASCCreateSubscription(_ args: [String: Any]) async throws -> [String: Any] {
-        guard let groupName = args["groupName"] as? String,
-              let productId = args["productId"] as? String,
+        guard let productId = args["productId"] as? String,
               let name = args["name"] as? String,
               let displayName = args["displayName"] as? String,
               let duration = args["duration"] as? String,
               let priceStr = args["price"] as? String,
               let screenshotPath = args["screenshotPath"] as? String else {
             throw MCPServerService.MCPError.invalidToolArgs
+        }
+        let groupId = args["groupId"] as? String
+        let groupName = args["groupName"] as? String
+        guard (groupId?.isEmpty == false) || (groupName?.isEmpty == false) else {
+            return mcpText("Error: provide either groupId for an existing subscription group or groupName for a new/reused group.")
         }
         let description = args["description"] as? String
 
@@ -1463,13 +1467,14 @@ extension MCPExecutor {
         await MainActor.run {
             var values: [String: String] = [
                 "kind": "subscription",
-                "groupName": groupName,
                 "name": name,
                 "productId": productId,
                 "displayName": displayName,
                 "duration": duration,
                 "price": priceStr
             ]
+            if let groupId, !groupId.isEmpty { values["groupId"] = groupId }
+            if let groupName, !groupName.isEmpty { values["groupName"] = groupName }
             if let description { values["description"] = description }
             appState.ascManager.pendingCreateValues = values
         }
@@ -1477,6 +1482,7 @@ extension MCPExecutor {
         await MainActor.run {
             appState.ascManager.createSubscription(
                 groupName: groupName,
+                groupId: groupId,
                 name: name,
                 productId: productId,
                 displayName: displayName,
@@ -1491,14 +1497,16 @@ extension MCPExecutor {
             return mcpText("Error creating subscription: \(error)")
         }
 
-        return mcpJSON([
+        var result: [String: Any] = [
             "success": true,
-            "groupName": groupName,
             "productId": productId,
             "displayName": displayName,
             "duration": duration,
             "price": priceStr
-        ])
+        ]
+        if let groupId, !groupId.isEmpty { result["groupId"] = groupId }
+        if let groupName, !groupName.isEmpty { result["groupName"] = groupName }
+        return mcpJSON(result)
     }
 
     func pollASCCreation() async -> String? {

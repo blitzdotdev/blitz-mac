@@ -326,9 +326,10 @@ enum MCPRegistry {
 
         tools.append(tool(
             name: "asc_create_subscription",
-            description: "Create an auto-renewable subscription in App Store Connect. Creates or reuses a subscription group, adds the subscription with en-US localization, sets the price, and uploads a review screenshot. You MUST provide a screenshot — take one of the subscription content in the app simulator first (e.g. the paywall or premium features screen), save to /tmp, then pass the path.",
+            description: "Create an auto-renewable subscription in App Store Connect. Provide groupId to add it to an existing subscription group, or groupName to create/reuse a group by reference name. Adds en-US localization, sets the price, and uploads a review screenshot. You MUST provide a screenshot — take one of the subscription content in the app simulator first (e.g. the paywall or premium features screen), save to /tmp, then pass the path.",
             properties: [
-                "groupName": ["type": "string", "description": "Subscription group name (created if doesn't exist)"],
+                "groupId": ["type": "string", "description": "Existing App Store Connect subscription group ID. Use this to add a product to an existing group."],
+                "groupName": ["type": "string", "description": "Subscription group reference name. Used only when groupId is omitted; creates the group if it does not exist."],
                 "productId": ["type": "string", "description": "Unique product identifier"],
                 "name": ["type": "string", "description": "Internal reference name"],
                 "displayName": ["type": "string", "description": "User-facing display name (en-US localization)"],
@@ -339,7 +340,7 @@ enum MCPRegistry {
                 "description": ["type": "string", "description": "User-facing description (optional)"],
                 "screenshotPath": ["type": "string", "description": "Path to review screenshot (min 640x920px PNG/JPEG). Use blitz-iphone to take a screenshot of the subscription content in the simulator."]
             ],
-            required: ["groupName", "productId", "name", "displayName", "duration", "price", "screenshotPath"]
+            required: ["productId", "name", "displayName", "duration", "price", "screenshotPath"]
         ))
 
         tools.append(tool(
