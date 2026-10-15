@@ -3,6 +3,14 @@ import CoreServices
 
 /// Launches the user's configured terminal with an AI agent CLI command.
 enum TerminalLauncher {
+    /// Identical launches inside this window are treated as one (e.g. a double-click
+    /// on a "Setup with AI" button). The osascript launch blocks the main thread, so a
+    /// second click is queued and replayed right after the first launch returns —
+    /// without this guard it opens a second terminal running the same agent prompt.
+    private static let duplicateLaunchWindow: TimeInterval = 3
+    private static let lastLaunchLock = NSLock()
+    private static var lastLaunch: (command: String, date: Date)?
+
     static func buildAgentCommand(
         projectPath: String?,
         agent: AIAgent,
@@ -68,18 +76,30 @@ enum TerminalLauncher {
             skipPermissions: skipPermissions
         )
 
+        if case .builtIn = terminal.resolvedFallback {
+            return false // Handled by ContentView directly
+        }
+        guard claimLaunch(of: shellCommand) else {
+            return true // Same agent session was just launched; don't open it twice.
+        }
+        let launched: Bool
         switch terminal.resolvedFallback {
         case .builtIn:
-            return false // Handled by ContentView directly
+            launched = false
         case .terminal:
-            return launchTerminalApp(command: shellCommand)
+            launched = launchTerminalApp(command: shellCommand)
         case .ghostty:
-            return launchGhostty(command: shellCommand)
+            launched = launchGhostty(command: shellCommand)
         case .iterm:
-            return launchITerm(command: shellCommand)
+            launched = launchITerm(command: shellCommand)
         case .custom(let path):
-            return launchCustom(appPath: path, command: shellCommand)
+            launched = launchCustom(appPath: path, command: shellCommand)
         }
+        // Measure the window from when the (blocking) launch finishes, so a click
+        // queued behind a slow osascript call is still recognised as a duplicate.
+        // A failed launch is forgotten so an immediate retry isn't swallowed.
+        finishLaunch(of: shellCommand, succeeded: launched)
+        return launched
     }
 
     /// Launch using the settings from SettingsService
@@ -190,6 +210,25 @@ enum TerminalLauncher {
     }
 
     // MARK: - Helpers
+
+    /// Returns false if the identical command was launched within `duplicateLaunchWindow`.
+    static func claimLaunch(of command: String, now: Date = Date()) -> Bool {
+        lastLaunchLock.lock()
+        defer { lastLaunchLock.unlock() }
+        if let last = lastLaunch,
+           last.command == command,
+           now.timeIntervalSince(last.date) < duplicateLaunchWindow {
+            return false
+        }
+        lastLaunch = (command, now)
+        return true
+    }
+
+    static func finishLaunch(of command: String, succeeded: Bool) {
+        lastLaunchLock.lock()
+        defer { lastLaunchLock.unlock() }
+        lastLaunch = succeeded ? (command, Date()) : nil
+    }
 
     private static func escapeForAppleScript(_ command: String) -> String {
         command
