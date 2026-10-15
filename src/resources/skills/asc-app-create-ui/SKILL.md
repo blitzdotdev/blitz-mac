@@ -41,7 +41,12 @@ Key differences from the public REST API:
 
 ```bash
 python3 -c "
-import json, os, urllib.request, sys
+import json, os, urllib.request, sys, gzip
+
+def read_body(r):
+    # iris may gzip responses even unasked; urllib does not decompress
+    b = r.read()
+    return (gzip.decompress(b) if b[:2] == bytes([31, 139]) else b).decode()
 
 BUNDLE_ID = 'BUNDLE_ID_HERE'
 SKU = 'SKU_HERE'
@@ -127,7 +132,7 @@ req = urllib.request.Request(
     data=create_body, method='POST', headers=headers)
 try:
     resp = urllib.request.urlopen(req)
-    result = json.loads(resp.read().decode())
+    result = json.loads(read_body(resp))
     app_id = result['data']['id']
     print(f'App created successfully!')
     print(f'App ID: {app_id}')
@@ -135,7 +140,7 @@ try:
     print(f'Name: {APP_NAME}')
     print(f'SKU: {SKU}')
 except urllib.error.HTTPError as e:
-    body = e.read().decode()
+    body = read_body(e)
     if e.code == 401:
         print('ERROR: Session expired. Call asc_web_auth MCP tool to re-authenticate.')
     elif e.code == 409:

@@ -41,7 +41,12 @@ Use the following self-contained script. Replace `KEY_NAME` with the user's chos
 
 ```bash
 python3 -c "
-import json, urllib.request, base64, os, sys, time
+import json, urllib.request, base64, os, sys, time, gzip
+
+def read_body(r):
+    # iris may gzip responses even unasked; urllib does not decompress
+    b = r.read()
+    return (gzip.decompress(b) if b[:2] == bytes([31, 139]) else b).decode()
 
 KEY_NAME = 'KEY_NAME_HERE'
 
@@ -88,9 +93,9 @@ req = urllib.request.Request(
     data=create_body, method='POST', headers=headers)
 try:
     resp = urllib.request.urlopen(req)
-    create_data = json.loads(resp.read().decode())
+    create_data = json.loads(read_body(resp))
 except urllib.error.HTTPError as e:
-    body = e.read().decode()
+    body = read_body(e)
     if e.code == 401:
         print('ERROR: Session expired. Call asc_web_auth MCP tool to re-authenticate.')
     elif e.code == 409:
@@ -116,9 +121,9 @@ req = urllib.request.Request(
     method='GET', headers=dl_headers)
 try:
     resp = urllib.request.urlopen(req)
-    dl_data = json.loads(resp.read().decode())
+    dl_data = json.loads(read_body(resp))
 except urllib.error.HTTPError as e:
-    print(f'ERROR downloading key: HTTP {e.code} — {e.read().decode()[:300]}')
+    print(f'ERROR downloading key: HTTP {e.code} — {read_body(e)[:300]}')
     sys.exit(1)
 
 pk_b64 = dl_data['data']['attributes'].get('privateKey')
@@ -135,7 +140,7 @@ req = urllib.request.Request(
     method='GET', headers=dl_headers)
 try:
     resp = urllib.request.urlopen(req)
-    provider_data = json.loads(resp.read().decode())
+    provider_data = json.loads(read_body(resp))
     issuer_id = None
     for inc in provider_data.get('included', []):
         if inc['type'] == 'contentProviders':
@@ -188,6 +193,11 @@ After the script runs, report:
 
 ### 401 Not Authorized
 The web session has expired or doesn't exist. Call the `asc_web_auth` MCP tool — this opens the Apple ID login window in Blitz and refreshes `~/.blitz/asc-agent/web-session.json` automatically. Then retry the key creation script.
+
+### Script fails after "Created API key" (or crashes with no output)
+The key may already exist in ASC. Do NOT re-run the script, which creates a duplicate. List keys
+(`GET /iris/v1/apiKeys?limit=200`), find the one whose `nickname` matches, and if `canDownload` is still
+true, run steps 2–4 of the script against that key ID.
 
 ### 409 Conflict
 A key with the same name may already exist, or another conflict occurred. Try a different name.

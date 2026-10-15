@@ -44,7 +44,12 @@ Use the iris API to list subscription groups (with subscriptions) and in-app pur
 
 ```bash
 python3 -c "
-import json, os, urllib.request, sys
+import json, os, urllib.request, sys, gzip
+
+def read_body(r):
+    # iris may gzip responses even unasked; urllib does not decompress
+    b = r.read()
+    return (gzip.decompress(b) if b[:2] == bytes([31, 139]) else b).decode()
 
 APP_ID = 'APP_ID_HERE'
 
@@ -76,12 +81,12 @@ def iris_get(path):
     req = urllib.request.Request(url, method='GET', headers=headers)
     try:
         resp = urllib.request.urlopen(req)
-        return json.loads(resp.read().decode())
+        return json.loads(read_body(resp))
     except urllib.error.HTTPError as e:
         if e.code == 401:
             print('ERROR: Session expired. Call asc_web_auth MCP tool to re-authenticate.')
             sys.exit(1)
-        print(f'ERROR: HTTP {e.code} — {e.read().decode()[:200]}')
+        print(f'ERROR: HTTP {e.code} — {read_body(e)[:200]}')
         sys.exit(1)
 
 # List subscription groups with subscriptions included
@@ -114,7 +119,12 @@ Use the following script to attach subscriptions. **Do not print or log the cook
 
 ```bash
 python3 -c "
-import json, os, urllib.request, sys
+import json, os, urllib.request, sys, gzip
+
+def read_body(r):
+    # iris may gzip responses even unasked; urllib does not decompress
+    b = r.read()
+    return (gzip.decompress(b) if b[:2] == bytes([31, 139]) else b).decode()
 
 session_path = os.path.expanduser('~/.blitz/asc-agent/web-session.json')
 if not os.path.isfile(session_path):
@@ -152,7 +162,7 @@ def iris_attach_subscription(sub_id):
         resp = urllib.request.urlopen(req)
         print(f'Attached subscription {sub_id}: HTTP {resp.status}')
     except urllib.error.HTTPError as e:
-        body = e.read().decode()
+        body = read_body(e)
         if 'already set to submit' in body:
             print(f'Subscription {sub_id} already attached (OK)')
         elif e.code == 401:
@@ -170,7 +180,12 @@ For in-app purchases (non-subscription), change the type and relationship:
 
 ```bash
 python3 -c "
-import json, os, urllib.request, sys
+import json, os, urllib.request, sys, gzip
+
+def read_body(r):
+    # iris may gzip responses even unasked; urllib does not decompress
+    b = r.read()
+    return (gzip.decompress(b) if b[:2] == bytes([31, 139]) else b).decode()
 
 session_path = os.path.expanduser('~/.blitz/asc-agent/web-session.json')
 if not os.path.isfile(session_path):
@@ -208,7 +223,7 @@ def iris_attach_iap(iap_id):
         resp = urllib.request.urlopen(req)
         print(f'Attached IAP {iap_id}: HTTP {resp.status}')
     except urllib.error.HTTPError as e:
-        body = e.read().decode()
+        body = read_body(e)
         if 'already set to submit' in body:
             print(f'IAP {iap_id} already attached (OK)')
         elif e.code == 401:
