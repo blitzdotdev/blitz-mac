@@ -51,12 +51,31 @@ struct ProjectAgentConfigService {
         import os
         import signal
         import sys
+        import time
+
+        def stop_server(child_pid: int) -> None:
+            # The child is a session leader (setsid), so its pid is also its process group:
+            # this stops the server and anything it spawned.
+            try:
+                os.killpg(child_pid, signal.SIGTERM)
+            except ProcessLookupError:
+                return
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                if os.waitpid(child_pid, os.WNOHANG)[0] == child_pid:
+                    return
+                time.sleep(0.1)
+            try:
+                os.killpg(child_pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
 
         def main() -> int:
             if len(sys.argv) < 2:
                 print("usage: blitz-detached-mcp <command> [args...]", file=sys.stderr)
                 return 64
 
+            client_pid = os.getppid()
             child_pid = os.fork()
             if child_pid == 0:
                 os.setsid()
@@ -71,12 +90,20 @@ struct ProjectAgentConfigService {
             for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
                 signal.signal(sig, forward)
 
+            # The MCP client can exit without signalling us (killed, crashed, terminal closed).
+            # The detached server never sees that, so watch for being reparented and stop it
+            # rather than leave it running with its viewer port open.
             while True:
                 try:
-                    _, status = os.waitpid(child_pid, 0)
-                    break
+                    pid, status = os.waitpid(child_pid, os.WNOHANG)
                 except InterruptedError:
                     continue
+                if pid == child_pid:
+                    break
+                if os.getppid() != client_pid:
+                    stop_server(child_pid)
+                    return 0
+                time.sleep(1)
 
             if os.WIFEXITED(status):
                 return os.WEXITSTATUS(status)
